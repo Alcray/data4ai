@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { introductionHtml } from "./generated/introduction";
+import { lecture1Html } from "./generated/lecture-1";
 
 const navigation = [
   "Home",
@@ -11,20 +13,29 @@ const navigation = [
   "Projects",
 ] as const;
 
+const lectures = ["Introduction", "Lecture 1"] as const;
+type PageName = (typeof navigation)[number] | (typeof lectures)[number];
+
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [active, setActive] = useState<(typeof navigation)[number]>("Home");
+  const [lecturesOpen, setLecturesOpen] = useState(true);
+  const [active, setActive] = useState<PageName>("Home");
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
 
   const results = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return [];
-    return navigation.filter((item) => item.toLowerCase().includes(normalized));
+    return [...navigation, ...lectures].filter((item) =>
+      item.toLowerCase().includes(normalized),
+    );
   }, [query]);
 
-  function choosePage(item: (typeof navigation)[number]) {
+  function choosePage(item: PageName) {
     setActive(item);
+    if (lectures.includes(item as (typeof lectures)[number])) {
+      setLecturesOpen(true);
+    }
     setQuery("");
     setSearchOpen(false);
     setMenuOpen(false);
@@ -35,7 +46,7 @@ export default function Home() {
       <aside className="side-bar">
         <header className="site-header">
           <button className="site-title" onClick={() => choosePage("Home")}>
-            CS324
+            Data for AI
           </button>
           <button
             className="site-button"
@@ -56,7 +67,13 @@ export default function Home() {
             {navigation.map((item) => (
               <li className="nav-list-item" key={item}>
                 {item === "Lectures" && (
-                  <span className="nav-list-expander" aria-hidden="true" />
+                  <button
+                    className={`nav-list-expander${lecturesOpen ? " expanded" : ""}`}
+                    type="button"
+                    aria-label={lecturesOpen ? "Collapse lectures" : "Expand lectures"}
+                    aria-expanded={lecturesOpen}
+                    onClick={() => setLecturesOpen((open) => !open)}
+                  />
                 )}
                 <button
                   className={`nav-list-link${active === item ? " active" : ""}`}
@@ -65,6 +82,21 @@ export default function Home() {
                 >
                   {item}
                 </button>
+                {item === "Lectures" && lecturesOpen && (
+                  <ul className="nav-list nav-list-nested">
+                    {lectures.map((lecture) => (
+                      <li className="nav-list-item" key={lecture}>
+                        <button
+                          className={`nav-list-link${active === lecture ? " active" : ""}`}
+                          type="button"
+                          onClick={() => choosePage(lecture)}
+                        >
+                          {lecture}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>
@@ -86,8 +118,8 @@ export default function Home() {
               <input
                 className="search-input"
                 type="search"
-                placeholder="Search CS324"
-                aria-label="Search CS324"
+                placeholder="Search Data for AI"
+                aria-label="Search Data for AI"
                 autoComplete="off"
                 value={query}
                 onChange={(event) => {
@@ -135,7 +167,19 @@ export default function Home() {
           aria-label={`${active} content`}
           onClick={() => setSearchOpen(false)}
         >
-          <div className="main-content" aria-hidden="true" />
+          {active === "Introduction" ? (
+            <article
+              className="main-content lecture-content"
+              dangerouslySetInnerHTML={{ __html: introductionHtml }}
+            />
+          ) : active === "Lecture 1" ? (
+            <article
+              className="main-content lecture-content"
+              dangerouslySetInnerHTML={{ __html: lecture1Html }}
+            />
+          ) : (
+            <div className="main-content" aria-hidden="true" />
+          )}
         </div>
 
         {searchOpen && query.trim() && (

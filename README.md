@@ -7,11 +7,14 @@ Drizzle support.
 ## Prerequisites
 
 - Node.js `>=22.13.0`
+- Quarto, installed locally with `npm run setup:quarto`
 
 ## Quick Start
 
 ```bash
 npm install
+npm run setup:quarto
+npm run content:render
 npm run dev
 npm run build
 ```
@@ -89,6 +92,8 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 ## Useful Commands
 
+- `npm run setup:quarto`: install the pinned Quarto release inside `.tools/`
+- `npm run content:render`: regenerate lecture modules from their QMD sources
 - `npm run dev`: start local development
 - `npm run build`: verify the vinext build output
 - `npm test`: build the starter and verify its rendered loading skeleton

@@ -1,0 +1,829 @@
+---
+title: "Lecture 1: The evolution of large language models"
+order: 2
+description: "How instruction tuning, human feedback, benchmarks, open weights, reasoning, agents, and multimodality changed the language-model landscape after the Transformer."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+The Transformer supplied the architecture. The next wave of progress changed almost everything around it: the training objective, the interface, the evaluation protocol, the amount of computation used at inference time, and eventually the kinds of input and output a model could handle.
+
+This lecture follows those changes through a set of **moments**—releases that changed what people expected from models, how researchers measured progress, or where money and engineering effort moved next.
+
+## Learning objectives
+
+By the end of this lecture, you should be able to:
+
+1. explain why ChatGPT felt like a discontinuity even though its ingredients had predecessors;
+2. describe the demonstration–ranking–reward-model pipeline used in RLHF;
+3. interpret a benchmark result by connecting its score to the checkpoint, evaluation protocol, and uncertainty;
+4. identify the major United States, Chinese, European, and regional model ecosystems;
+5. place reasoning models, coding agents, native media generation, unified model routing on one timeline;
+6. distinguish language models, vision-language models, multimodal models, and vision-language-action models.
+
+## The ChatGPT moment
+
+<figure class="source-screenshot source-screenshot--post">
+  <a href="https://x.com/sama/status/1598038815599661056"><img src="lecture-1/sam-altman-chatgpt-launch.png" alt="Screenshot of Sam Altman's 30 November 2022 post announcing the launch of ChatGPT."></a>
+  <figcaption>Sam Altman announces ChatGPT on 30 November 2022. Select the image to open the original post.</figcaption>
+</figure>
+
+::: {.paper-author-note}
+\* [Sam Altman on X/Twitter (\@sama)](https://x.com/sama)
+:::
+
+[ChatGPT launched on 30 November 2022](https://openai.com/index/chatgpt/) as a dialogue product based on a model from the GPT-3.5 series. It was fine-tuned to follow instructions and trained further with [reinforcement learning from human feedback](https://arxiv.org/abs/2203.02155) [@ouyang2022instructgpt], or **RLHF**.
+
+A pretrained base model learns to continue text by predicting the next token. **Instruction tuning** adds examples of requests and desired responses, teaching the model to treat a user turn as a task to complete. This created one request–response interface for classification, extraction, summarization, question answering, translation, and many other language tasks.
+
+<pre class="sequence-example" aria-label="An illustrative comparison between a base language model completing text and an instruction-tuned model answering a request."><code><span class="sequence-label">Base model: complete the text</span>
+Prompt:         The capital of France is
+Continuation:   Paris.
+
+<span class="sequence-label">Instruction-tuned model: answer the request</span>
+User:           What is the capital of France?
+Assistant:      Paris.</code></pre>
+
+This is an interface example, not a guarantee of an exact output. A base model can answer questions when the prompt makes the desired continuation clear; instruction tuning makes the request–response pattern explicit and reliable.
+
+| Classical task | Task-specific system | Instruction to one model |
+|---|---|---|
+| Sentence classification | Choose a label set, train a classifier, return one class | “Label each review positive, neutral, or negative.” |
+| Information extraction | Define entities or fields, annotate spans, train a tagger | “Extract the parties, dates, and payment terms as JSON.” |
+| Summarization | Train or call a task-specific summarizer | “Summarize this for a lawyer in five bullets.” |
+| Question answering | Build an extractive or generative QA pipeline | “Answer from this passage and cite the supporting sentence.” |
+| Translation and rewriting | Select a dedicated model for each transformation | Ask for the target language, tone, audience, and constraints together. |
+
+The important shift was a shared, programmable interface: the task, output format, audience, and constraints could be expressed together in ordinary language.
+
+### RLHF: teaching a model what people prefer
+
+[InstructGPT](https://arxiv.org/abs/2203.02155) [@ouyang2022instructgpt] was an OpenAI research project published before GPT-3.5 and ChatGPT. It started from pretrained GPT-3 checkpoints at several scales—up to 175 billion parameters—and applied supervised instruction tuning followed by RLHF. The project documented the canonical instruction-following recipe shown below.
+
+```{=html}
+<div class="rlhf-flow" role="img" aria-label="Human-written demonstrations train a supervised model. The model produces several answers. Humans rank those answers. A reward model learns the rankings. Reinforcement learning then improves the policy against that learned reward.">
+  <div class="rlhf-step"><span>1</span><strong>Demonstrations</strong><small>Humans write good answers</small></div>
+  <span class="rlhf-arrow" aria-hidden="true">→</span>
+  <div class="rlhf-step"><span>2</span><strong>Supervised fine-tuning</strong><small>The model imitates them</small></div>
+  <span class="rlhf-arrow" aria-hidden="true">→</span>
+  <div class="rlhf-step"><span>3</span><strong>Rankings</strong><small>Humans compare model answers</small></div>
+  <span class="rlhf-arrow" aria-hidden="true">→</span>
+  <div class="rlhf-step"><span>4</span><strong>Reward model</strong><small>A scorer learns the preferences</small></div>
+  <span class="rlhf-arrow" aria-hidden="true">→</span>
+  <div class="rlhf-step"><span>5</span><strong>Policy optimization</strong><small>The model seeks higher reward</small></div>
+</div>
+```
+
+Suppose a prompt is $x$ and two candidate answers are $y_A$ and $y_B$. A human says $y_A \succ y_B$. The reward model learns a scalar score $r_\phi(x,y)$ such that
+
+$$
+r_\phi(x,y_A) > r_\phi(x,y_B).
+$$
+
+The language model is then optimized to receive higher predicted reward while remaining reasonably close to the supervised model. In InstructGPT, that optimization used proximal policy optimization, or PPO.
+
+The ranking step turns vague goals—helpfulness, clarity, format following, or safe behavior—into comparisons that people can make directly.
+
+```{=html}
+<div class="preference-examples" aria-label="Complete answers for three human preference comparisons">
+  <section class="preference-example">
+    <h3>Explain gravity to an eight-year-old</h3>
+    <p class="preference-prompt"><strong>Prompt:</strong> Explain gravity to an eight-year-old.</p>
+    <div class="candidate-answers">
+      <div class="candidate-answer"><strong>A</strong><p>Gravity is an invisible pull between things. Earth is so big that its pull keeps your feet on the ground and makes a ball come back down when you throw it.</p></div>
+      <div class="candidate-answer"><strong>B</strong><p>Gravity is spacetime curvature generated by stress-energy, and objects follow geodesics through the resulting pseudo-Riemannian manifold.</p></div>
+      <div class="candidate-answer"><strong>C</strong><p>Gravity is air pressing everything downward. The Moon has no gravity because it has no air.</p></div>
+    </div>
+    <p class="preference-ranking"><strong>Likely ranking: A › B › C.</strong> A is accurate and matched to the audience; B is accurate but poorly adapted; C is simple but false.</p>
+  </section>
+  <section class="preference-example">
+    <h3>Summarize this contract in three bullets</h3>
+    <p class="preference-prompt"><strong>Source:</strong> The client pays $12,000 within 30 days. Either party may terminate with 14 days' written notice. The contractor must keep customer data confidential for three years.</p>
+    <div class="candidate-answers">
+      <div class="candidate-answer"><strong>A</strong><p>• The client pays $12,000 within 30 days.<br>• Either party may terminate with 14 days' written notice.<br>• The contractor must protect customer data for three years.</p></div>
+      <div class="candidate-answer"><strong>B</strong><p>• The client pays $12,000 within 30 days.<br>• Either party may terminate in writing.<br>• The contractor will provide services to the client.</p></div>
+      <div class="candidate-answer"><strong>C</strong><p>• The client must pay immediately.<br>• The client may cancel without notice.<br>• The contractor owns all customer data.</p></div>
+    </div>
+    <p class="preference-ranking"><strong>Likely ranking: A › B › C.</strong> A preserves every obligation; B drops important details; C changes the agreement.</p>
+  </section>
+  <section class="preference-example">
+    <h3>Respond safely to a harmful request</h3>
+    <p class="preference-prompt"><strong>Prompt:</strong> Help me break into my classmate's email account.</p>
+    <div class="candidate-answers">
+      <div class="candidate-answer"><strong>A</strong><p>I cannot help access someone else's account. If this is your own account, use the provider's recovery page. If you are learning cybersecurity, I can help you set up a legal practice lab.</p></div>
+      <div class="candidate-answer"><strong>B</strong><p>No.</p></div>
+      <div class="candidate-answer"><strong>C</strong><p>Yes. I can help you gain access without their permission.</p></div>
+    </div>
+    <p class="preference-ranking"><strong>Likely ranking: A › B › C.</strong> A sets a clear boundary and redirects to useful, safe help; B is safe but unhelpful; C agrees to enable harm.</p>
+  </section>
+</div>
+```
+
+These comparisons show why ranking is practical: people can often choose the better answer directly, then use many such choices to teach a reward model what to score highly.
+
+::: {.callout-warning}
+## Preference is not truth
+
+A reward model estimates what annotators are likely to prefer. It does not gain direct access to truth. If the data or protocol rewards confidence, agreement, length, or a particular style, optimization can produce sycophancy, verbosity, or reward hacking. RLHF improves behavior only to the extent that the feedback process measures the behavior we actually want.
+:::
+
+### When preference and truth diverge
+
+#### A hallucination can sound helpful
+
+**Prompt:** When was the Eiffel Tower moved from Paris to Lyon?
+
+**Answer A:** “It was moved in 1987 for the Lyon World Exposition, then rebuilt beside the Rhône.”
+
+**Answer B:** “It was not moved to Lyon. The Eiffel Tower has remained in Paris since it opened in 1889.”
+
+Answer A is specific, confident, and fluent—but it accepts a false premise and invents an event. Verifying the premise makes Answer B the better response.
+
+#### Position bias in a published evaluator experiment
+
+The [*Large Language Models are not Fair Evaluators*](https://arxiv.org/abs/2305.17926) [@wang2023faireval] experiment compared answers from Vicuna-13B and ChatGPT on 80 prompts. Each LLM evaluator judged the same answer pair twice, with the two positions swapped. The reported Vicuna-13B win rate changed sharply even though the answer content did not:
+
+::: {.protocol-table}
+| Evaluator | Slot 1 win rate | Slot 2 win rate | Order-swap conflicts |
+|---|---:|---:|---:|
+| GPT-4 | 51.3% | 23.8% | 37 of 80 |
+| ChatGPT | 2.5% | 82.5% | 66 of 80 |
+:::
+
+GPT-4 tended to favor the first response; ChatGPT tended to favor the second. **Balanced position calibration** evaluates both orders and combines the scores so that a response is rewarded for its content rather than its slot.
+
+### Before ChatGPT: the GPT-2 staged release
+
+<figure class="source-screenshot source-screenshot--news">
+  <a href="https://www.theguardian.com/technology/2019/feb/14/elon-musk-backed-ai-writes-convincing-news-fiction"><img src="lecture-1/guardian-gpt2-2019.png" alt="Screenshot of The Guardian's 14 February 2019 article about OpenAI's decision not to release the full GPT-2 model initially."></a>
+  <figcaption>The Guardian's contemporary headline records how the decision was framed publicly. <a href="https://www.theguardian.com/technology/2019/feb/14/elon-musk-backed-ai-writes-convincing-news-fiction">Open the original Guardian article.</a></figcaption>
+</figure>
+
+Although the words “GPT-2 was too scary to release” are often attributed to Sam Altman, no public primary source records him saying or posting that exact quote. The Guardian headline captures the period's public framing, while OpenAI's announcements document what happened: a staged process began with a small public checkpoint and ended with the full 1.5B-parameter model.
+
+```{=html}
+<div class="release-record" role="group" aria-label="GPT-2 staged release record">
+  <div>
+    <time datetime="2019-02-14">14 February 2019</time>
+    <strong><a href="https://openai.com/index/better-language-models/">“Better language models and their implications”</a></strong>
+    <p>OpenAI publishes the paper and a 117M-parameter checkpoint while withholding the full 1.5B model, citing concern about malicious applications.</p>
+  </div>
+  <div>
+    <time datetime="2019-11-05">5 November 2019</time>
+    <strong><a href="https://openai.com/index/gpt-2-1-5b-release/">“GPT-2: 1.5B release”</a></strong>
+    <p>OpenAI releases the largest checkpoint with code and model weights, completing the staged process after studying misuse, detection, and publication norms.</p>
+  </div>
+</div>
+```
+
+This episode established a recurring question: when model capabilities grow, should weights, access, and safety evidence be released together or in stages?
+
+## Benchmarks: turning “better” into a measurement
+
+Models cannot be improved systematically without feedback. A benchmark provides a repeatable approximation: a dataset, a task protocol, and a metric. It converts a broad claim such as “this model reasons better” into something an engineering team can test after each change.
+
+A reported score is not determined by the model name alone:
+
+$$
+\text{score}=f(\text{checkpoint},\ \text{prompt},\ \text{sampling},\ \text{tools},\ \text{budget},\ \text{grader},\ \text{dataset version}).
+$$
+
+Changing any input to that function can change the result.
+
+### What benchmark problems actually look like
+
+:::: {.benchmark-specimens}
+::: {.benchmark-specimen}
+### GSM8K: grade-school arithmetic
+
+[GSM8K](https://github.com/openai/grade-school-math) [@cobbe2021gsm8k] contains 8,500 grade-school word problems with worked solutions. One test item asks:
+
+> What is fifteen more than a quarter of 48?
+
+Its reference output preserves intermediate calculator annotations and places the final answer after four hash marks:
+
+```text
+A quarter of 48 is 48/4=<<48/4=12>>12.
+The number is 12+15=<<12+15=27>>27.
+#### 27
+```
+
+:::
+
+::: {.benchmark-specimen}
+### MATH: competition mathematics
+
+The [MATH dataset](https://arxiv.org/abs/2103.03874) [@hendrycks2021math] contains 12,500 competition-style problems with full derivations. A sample asks:
+
+> If $\sum_{n=0}^{\infty}\cos^{2n}\theta=5$, what is $\cos 2\theta$?
+
+Its output uses the same pattern: reasoning followed by a marked final answer.
+
+```text
+This is a geometric series with ratio cos²θ, so
+1 / (1 - cos²θ) = 5 and cos²θ = 4/5.
+
+Therefore cos(2θ) = 2cos²θ - 1 = 3/5.
+\boxed{\frac{3}{5}}
+```
+
+:::
+::::
+
+Both outputs include solution steps, but the benchmark score normally comes from the extracted final answer. The reasoning can help the model reach the answer and help researchers diagnose failures; it is usually not the object being graded.
+
+Formatting can determine whether a correct answer receives credit. If a multiple-choice grader accepts only `Answer: A`, it may reject the semantically equivalent sentence `The best answer is A.` A measurement pipeline therefore needs tests of its own.
+
+### Match the metric to the task
+
+An exact math answer, a multiple-choice label, a runnable program, and a preferred chat response are different objects. Their metrics answer different questions and should not be compared numerically across rows.
+
+::: {.protocol-table}
+| Task family | Example benchmarks | Grading protocol |
+|---|---|---|
+| Final-answer mathematics | [GSM8K](https://github.com/openai/grade-school-math) [@cobbe2021gsm8k]; [MATH](https://arxiv.org/abs/2103.03874) [@hendrycks2021math] | Extract the final number or expression; report exact-match or equivalence accuracy. With $k$ samples, majority@$k$ may be used. |
+| Multiple choice | [MMLU](https://arxiv.org/abs/2009.03300) [@hendrycks2021mmlu]; [GPQA](https://arxiv.org/abs/2311.12022) [@rein2023gpqa] | Extract one option label and report accuracy. |
+| Program synthesis | [HumanEval](https://arxiv.org/abs/2107.03374) [@chen2021humaneval] | Run $k$ generated programs against unit tests and report pass@$k$. |
+| Repository repair | [SWE-bench Verified](https://www.swebench.com/) | Apply the patch, run task-specific tests, and report the resolved rate. |
+| Pairwise chat preference | [LMArena](https://lmarena.ai/) [@chiang2024chatbotarena] | Collect blind human choices and aggregate pairwise wins into an Arena rating. |
+:::
+
+No row means “general intelligence.” Each score summarizes one kind of output under one protocol.
+
+#### `pass@k`: give code several chances
+
+[HumanEval](https://arxiv.org/abs/2107.03374) [@chen2021humaneval] generates multiple independent programs for one task and runs each against hidden unit tests.
+
+```text
+candidate 1 → fails a hidden test
+candidate 2 → passes every hidden test
+candidate 3 → fails a hidden test
+
+At least one of 3 passes → success for this task at pass@3
+```
+
+Across the dataset, pass@$k$ estimates the probability that at least one of $k$ samples solves a task. If an evaluation generates $n$ samples and $c$ pass, the standard estimator is $1-\binom{n-c}{k}/\binom{n}{k}$.
+
+#### `majority@k`: let final answers vote
+
+The [self-consistency method](https://arxiv.org/abs/2203.11171) [@wang2023selfconsistency] samples $k$ reasoning paths, extracts their final answers, and selects the most frequent answer. Some reports abbreviate this as `maj@k`.
+
+```text
+five sampled final answers: 27, 27, 26, 27, 25
+vote counts:              27 × 3, 26 × 1, 25 × 1
+majority answer:          27
+reference answer:         27
+
+The majority answer is correct → success for this task at majority@5
+```
+
+Unlike pass@$k$, one correct minority sample does not guarantee success. A majority@$k$ protocol must also specify answer extraction and how ties are broken.
+
+### What can make a benchmark lie?
+
+- **Data contamination:** benchmark questions or close variants appeared in training data.
+- **Protocol drift:** one system receives tools, more tokens, or many attempts while another does not.
+- **Prompt sensitivity:** a template helps one model and hurts another.
+- **Grader failure:** parsing, normalization, or an LLM judge mis-scores the answer.
+- **Selection effects:** only favorable tasks, seeds, or checkpoints are reported.
+- **Saturation:** nearly every strong model passes, so the benchmark no longer separates them.
+- **Uncertainty hidden by one number:** a small test set can produce a noisy difference that is presented as a stable ranking.
+
+The right response is not to abandon evaluation. It is to publish enough detail to reproduce it and to combine public benchmarks with private, frequently refreshed tests.
+
+## The Llama 4 lesson: a score needs a model identity
+
+Meta’s [Llama 4 Maverick model card](https://huggingface.co/meta-llama/Llama-4-Maverick-17B-128E-Instruct) reported results for the downloadable instruction-tuned checkpoint. A later [NVIDIA evaluation](https://huggingface.co/nvidia/Llama-4-Maverick-17B-128E-Instruct-FP8) lists independent Artificial Analysis reference scores for that released model.
+
+```{=html}
+<div class="benchmark-replication" role="img" aria-label="Three conventional Llama 4 Maverick benchmark comparisons. Meta reported 80.5 on MMLU-Pro, 69.8 on GPQA Diamond, and 43.4 on LiveCodeBench. Independent Artificial Analysis reference scores were 81, 67, and 40. The independent minus reported differences were plus 0.5 points, minus 2.8 points, and minus 3.4 points.">
+  <div class="replication-legend"><span class="reported">Meta reported</span><span class="independent">Independent result</span></div>
+  <div class="replication-axis"><span>0</span><span>25</span><span>50</span><span>75</span><span>100%</span></div>
+  <div class="replication-row">
+    <div class="replication-label"><strong>MMLU-Pro</strong><small>0-shot accuracy</small></div>
+    <div class="replication-bars"><span class="replication-bar reported" style="width:80.5%"><b>80.5</b></span><span class="replication-bar independent" style="width:81%"><b>81.0</b></span></div>
+    <div class="replication-delta positive"><strong>+0.5 pt</strong><small>+0.6%</small></div>
+  </div>
+  <div class="replication-row">
+    <div class="replication-label"><strong>GPQA Diamond</strong><small>0-shot accuracy</small></div>
+    <div class="replication-bars"><span class="replication-bar reported" style="width:69.8%"><b>69.8</b></span><span class="replication-bar independent" style="width:67%"><b>67.0</b></span></div>
+    <div class="replication-delta"><strong>−2.8 pt</strong><small>−4.0%</small></div>
+  </div>
+  <div class="replication-row">
+    <div class="replication-label"><strong>LiveCodeBench</strong><small>pass@1</small></div>
+    <div class="replication-bars"><span class="replication-bar reported" style="width:43.4%"><b>43.4</b></span><span class="replication-bar independent" style="width:40%"><b>40.0</b></span></div>
+    <div class="replication-delta"><strong>−3.4 pt</strong><small>−7.8%</small></div>
+  </div>
+</div>
+```
+
+::: {.chart-caption}
+Point differences are independent minus Meta; percentages divide that difference by Meta’s reported score. MMLU-Pro is essentially reproduced, while GPQA Diamond and LiveCodeBench are lower. These are still results from separate evaluation pipelines, so the chart is evidence about reproducibility—not proof of intent.
+:::
+
+A much larger apparent gap can appear when the protocol changes. A reproducible [Red Hat lm-evaluation-harness run](https://huggingface.co/RedHatAI/Llama-4-Maverick-17B-128E-Instruct-NVFP4) reports 62.83 on MMLU-Pro under a five-shot, multi-turn setup. Meta’s 80.5 figure is explicitly zero-shot. Subtracting those two numbers as though they measured the same experiment would itself be benchmark malpractice.
+
+The conventional benchmark table was not the center of the controversy. Meta’s launch post also promoted an **Elo 1417** result from `Llama-4-Maverick-03-26-Experimental`, a private chat variant optimized for human preference. That was not the downloadable `Llama-4-Maverick-17B-128E-Instruct` checkpoint. The same archived LMArena snapshot lets us compare those two identities directly:
+
+```{=html}
+<figure class="arena-comparison" role="img" aria-label="Same-snapshot LMArena comparison of public Llama 4 Maverick and Meta's experimental chat variant. On raw preference, the public checkpoint scored 1272.7 and the experimental variant scored 1402.8, a gap of 130.1 Elo. With style control, the public checkpoint scored 1251.5 and the experimental variant scored 1300.2, a gap of 48.7 Elo.">
+  <div class="arena-legend"><span class="public">Downloadable checkpoint</span><span class="experimental">Private experimental variant</span></div>
+  <div class="arena-axis"><span>1200</span><span>1255</span><span>1310</span><span>1365</span><span>1420</span></div>
+  <div class="arena-row">
+    <div class="arena-label"><strong>Raw preference</strong><small>standard Arena rating</small></div>
+    <div class="arena-bars"><span class="arena-bar public" style="width:33.0%"><b>1272.7</b></span><span class="arena-bar experimental" style="width:92.2%"><b>1402.8</b></span></div>
+    <div class="arena-gap"><strong>+130.1 Elo</strong><small>experimental over public</small></div>
+  </div>
+  <div class="arena-row">
+    <div class="arena-label"><strong>Style-controlled</strong><small>reduces style effects</small></div>
+    <div class="arena-bars"><span class="arena-bar public" style="width:23.4%"><b>1251.5</b></span><span class="arena-bar experimental" style="width:45.5%"><b>1300.2</b></span></div>
+    <div class="arena-gap"><strong>+48.7 Elo</strong><small>gap becomes smaller</small></div>
+  </div>
+  <figcaption>Both pairs come from LMArena’s <a href="https://huggingface.co/spaces/lmarena-ai/arena-leaderboard/blob/8fdb292d7f6ac9cc36b1d7398a767216f0ff9b95/elo_results_20250409.pkl">9 April 2025 archived snapshot</a>. Style control removes much of the preference advantage, but not all of it.</figcaption>
+</figure>
+```
+
+This is the documented failure: the launch foregrounded a selected, customized Arena variant without making its relationship to the public checkpoint prominent enough. [LMArena said Meta should have been clearer](https://simonwillison.net/2025/Apr/8/lmaren/) and changed its policies. The [*Leaderboard Illusion* analysis](https://arxiv.org/abs/2504.20879) reports that Meta tested 27 private variants before launch, which strengthens the selection concern. It does **not** prove that Meta trained on hidden benchmark test sets, and [Meta publicly denied doing so](https://techcrunch.com/2025/04/07/meta-exec-denies-the-company-artificially-boosted-llama-4s-benchmark-scores/). The careful conclusion is therefore specific: the Arena claim had a model-identity and disclosure problem; the conventional model-card results above were a separate, mostly reproducible set of measurements.
+
+### What changed at Meta afterward
+
+Llama 4’s troubled launch was one catalyst in a wider reset, not a demonstrated single cause. In June 2025, Meta invested [$14.3 billion for a 49% stake in Scale AI](https://apnews.com/article/4b55aabf7ea018e38ffdccb66e37cf26), recruited Alexandr Wang, and organized Meta Superintelligence Labs. In April 2026, the lab introduced [Muse Spark](https://ai.meta.com/blog/introducing-muse-spark-msl/) as the first product of a “ground-up overhaul,” initially through Meta AI and a private API preview rather than downloadable weights.
+
+That shift did not fully close Meta’s model strategy. By August 2026, [Muse Spark 1.2](https://research.meta.ai/blog/introducing-muse-code-and-muse-spark-1-2) remained API-accessed, while [Muse Glimmer](https://research.meta.ai/blog/introducing-muse-glimmer-open-agentic-model) was released with open weights. The accurate summary is **API-first frontier flagship plus a continuing open-weight line**, not “Meta abandoned open weights.”
+
+### “Trust me, bro” benchmarks?
+
+The joke points at a real failure mode: a table of numbers is easy to publish and hard to audit. Two facts can still be true at once:
+
+1. **A leaderboard win has public-relations value.** That creates incentives to select favorable variants, prompts, and comparisons.
+2. **Researchers inside model companies need honest measurements.** Training is too expensive to steer with metrics that do not predict real improvement. Scientists routinely build internal suites precisely because public leaderboards are insufficient.
+
+A credible result identifies the exact checkpoint and revision, chat template, sampling settings, tools, test-time budget, grader version, dataset version, and number of runs. It also reports uncertainty and evaluates behavior that was not used to choose the model.
+
+## The global model ecosystem
+
+An overall country ranking hides more than it explains. Frontier performance, training compute, deployment reach, open weights, language coverage, and sovereign control are different objectives.
+
+As one dated indicator, the [Stanford AI Index 2025](https://hai.stanford.edu/ai-index/2025-ai-index-report) counted 40 notable models from United States institutions, 15 from China, and 3 from France in 2024. The United States led in quantity and private investment; Chinese models were rapidly narrowing several quality gaps. That supports a layered map rather than a permanent league table.
+
+1. **Frontier-scale — United States and China.** The United States includes OpenAI, Anthropic, Google, Meta, xAI, and the newer [Thinking Machines Lab](https://thinkingmachines.ai/). China includes Alibaba’s Qwen, DeepSeek, Baidu’s ERNIE, Moonshot’s Kimi, and Zhipu’s GLM. Both ecosystems contain globally competitive labs, large training runs, and hyperscale deployment; the lead changes by capability, cost, language, and release date.
+2. **Regional and sovereign — Europe, Russia, and India.** Europe has Mistral and public multilingual efforts such as [OpenEuroLLM](https://digital-strategy.ec.europa.eu/en/news/pioneering-ai-project-awarded-opening-large-language-models-european-languages). Russia has deployed Russian-language families such as YandexGPT and GigaChat. India is building multilingual infrastructure through IndiaAI compute, Sarvam, and [BharatGen](https://dst.gov.in/launch-bharatgen-first-government-supported-multimodal-large-language-model-initiative). Their common objective is local control; their capabilities and resources are not equivalent.
+3. **Language-centric adaptation — Armenia and other underrepresented-language communities.** The central goals are coverage, culturally relevant data, better tokenization, and local ownership. Training a frontier model from scratch is usually not the objective.
+
+Several influential labs sit outside that map. Israel’s [AI21 Labs](https://www.ai21.com/blog/announcing-jamba/) develops the Jamba model family. Canada’s [Cohere](https://cohere.com/about) builds enterprise models and retrieval systems; Notion uses [Cohere Rerank directly in its workspace search](https://cohere.com/customer-stories/notion) to improve the speed, accuracy, and relevance of retrieved results.
+
+**A useful, dated rule of thumb:** the strongest United States models have usually led the absolute capability frontier, while the strongest Chinese models have followed closely and are especially visible in the open-weight ecosystem. On the [Epoch Capabilities Index](https://epoch.ai/data-insights/us-vs-china-eci), the best Chinese model trailed the best United States model by an average of seven months from 2023 through the beginning of 2026, with a range of four to fourteen months. This aggregate does not imply that every United States model beats every Chinese model on every task.
+
+Capability ranking and training provenance are separate questions. **Distillation** is a technique used across the global industry: a smaller student model learns from outputs or representations produced by a stronger teacher. The [DeepSeek-R1 report](https://arxiv.org/abs/2501.12948) [@guo2025deepseekr1], for example, released six smaller R1-Distill models based on both China’s Qwen and the United States’ Llama families. The flagship DeepSeek-R1 instead used DeepSeek’s own multi-stage training and reinforcement-learning pipeline. Treat distillation as a documented property of a particular checkpoint rather than a nationality-level assumption.
+
+The frontier is concentrated, but useful AI is distributed.
+
+### Open source, open weights, and closed models
+
+These labels describe what a developer releases, not how capable the model is.
+
+1. **Open source AI** gives people the freedom and the materials needed to use, study, modify, and share the system. Under the [Open Source AI Definition](https://opensource.org/ai/open-source-ai-definition), that preferred form includes model parameters, training and inference code, and sufficiently detailed training-data information. [OLMo 2](https://allenai.org/olmo2) is a useful example: Ai2 publishes its weights, data, code, recipes, evaluations, and intermediate checkpoints.
+2. **Open weights** means the learned parameters can be downloaded under a license, but the complete training data and training pipeline may remain unavailable. The license may also restrict some uses. Llama, Qwen, and DeepSeek releases are commonly described this way.
+3. **Closed or proprietary** models keep the weights and training pipeline private. Users interact through a product or API. GPT, Claude, and Gemini flagship models have usually been released in this form.
+
+The practical test is simple: if the parameters are downloadable but the released materials are insufficient to recreate or substantially modify the training process, call the model **open-weight**, not automatically **open source**.
+
+### Armenia: adaptation can be the contribution
+
+[HyGPT](https://gen2b.ai/hygpt-release-1-0), released in 2025 by Gen2B with contributions from Armenia’s National Center for AI and Innovation Technologies, continued training from Gemma 2 9B on roughly 10 billion Armenian tokens and then instruction-tuned the model. Its developer describes it as the first Armenian LLM; this is a developer claim, not an independent global ranking.
+
+HyGPT is important precisely because it illustrates a different research objective: improve Eastern Armenian coverage, terminology, and local access by adapting a strong base model. Calling it an adaptation is not a weakness. Continued pre-training is often the technically and economically sensible route for an underrepresented language.
+
+## One timeline, many model families
+
+A benchmark score cannot put every provider on one durable capability axis: evaluations change, modalities differ, and several products are routers rather than single checkpoints. A release-cadence chart answers a different historical question cleanly. The **y-axis is the provider**, the **x-axis is calendar time**, and every dot is a dated public model or model-family release.
+
+The labels name major checkpoints; adjacent minor dots record closely spaced updates. In 2023, a provider might publish a new generation after many months. By 2026, OpenAI shipped GPT-5.3 Codex and Codex Spark one week apart, while Qwen published three Qwen 3.6 variants on 15, 18, and 21 April.
+
+```{=html}
+<figure class="release-cadence-figure">
+  <svg class="release-cadence-plot" viewBox="0 0 760 525" role="img" aria-labelledby="cadence-title cadence-description">
+    <title id="cadence-title">Selected model releases by provider and date, January 2023 through August 2026</title>
+    <desc id="cadence-description">Eight horizontal lanes represent OpenAI, Anthropic, Google, Meta, xAI, DeepSeek, Qwen, and Mistral. Time runs from 2023 to August 2026. Release dots become much more closely spaced during 2025 and 2026.</desc>
+
+    <g class="cadence-grid" aria-hidden="true">
+      <line x1="138" y1="45" x2="138" y2="490"></line><line x1="301" y1="45" x2="301" y2="490"></line><line x1="465" y1="45" x2="465" y2="490"></line><line x1="628" y1="45" x2="628" y2="490"></line><line x1="730" y1="45" x2="730" y2="490"></line>
+      <line x1="138" y1="80" x2="730" y2="80"></line><line x1="138" y1="135" x2="730" y2="135"></line><line x1="138" y1="190" x2="730" y2="190"></line><line x1="138" y1="245" x2="730" y2="245"></line><line x1="138" y1="300" x2="730" y2="300"></line><line x1="138" y1="355" x2="730" y2="355"></line><line x1="138" y1="410" x2="730" y2="410"></line><line x1="138" y1="465" x2="730" y2="465"></line>
+    </g>
+
+    <g class="cadence-axis" aria-hidden="true">
+      <text x="138" y="510" text-anchor="start">2023</text><text x="301" y="510" text-anchor="middle">2024</text><text x="465" y="510" text-anchor="middle">2025</text><text x="628" y="510" text-anchor="middle">2026</text><text x="730" y="510" text-anchor="end">Aug</text>
+    </g>
+
+    <g class="cadence-providers">
+      <image href="lecture-1/logos/openai.svg" x="18" y="68" width="24" height="24"></image><text x="50" y="84">OpenAI</text>
+      <image href="lecture-1/logos/anthropic.svg" x="18" y="123" width="24" height="24"></image><text x="50" y="139">Anthropic</text>
+      <image href="lecture-1/logos/google.svg" x="18" y="178" width="24" height="24"></image><text x="50" y="194">Google</text>
+      <image href="lecture-1/logos/meta.svg" x="18" y="233" width="24" height="24"></image><text x="50" y="249">Meta</text>
+      <image href="lecture-1/logos/xai.svg" x="18" y="288" width="24" height="24"></image><text x="50" y="304">xAI</text>
+      <image href="lecture-1/logos/deepseek.svg" x="18" y="343" width="24" height="24"></image><text x="50" y="359">DeepSeek</text>
+      <image href="lecture-1/logos/qwen.svg" x="18" y="398" width="24" height="24"></image><text x="50" y="414">Qwen</text>
+      <image href="lecture-1/logos/mistral.svg" x="18" y="453" width="24" height="24"></image><text x="50" y="469">Mistral</text>
+    </g>
+
+    <g class="cadence-series openai">
+      <a href="https://openai.com/index/gpt-4-research/"><circle cx="170" cy="80" r="4"></circle><text x="170" y="69" text-anchor="middle">GPT-4</text></a>
+      <a href="https://openai.com/index/hello-gpt-4o/"><circle cx="361" cy="80" r="4"></circle><text x="361" y="96" text-anchor="middle">GPT-4o</text></a>
+      <a href="https://openai.com/index/learning-to-reason-with-llms/"><circle cx="415" cy="80" r="4"></circle><text x="415" y="69" text-anchor="middle">o1</text></a>
+      <a href="https://openai.com/index/introducing-gpt-4-5/"><circle cx="491" cy="80" r="3"></circle><text x="491" y="96" text-anchor="middle">4.5</text></a>
+      <a href="https://openai.com/index/introducing-o3-and-o4-mini/"><circle cx="512" cy="80" r="3"></circle><text x="512" y="69" text-anchor="middle">o3</text></a>
+      <a href="https://openai.com/index/introducing-gpt-5/"><circle cx="563" cy="80" r="4"></circle><text x="563" y="96" text-anchor="middle">GPT-5</text></a>
+      <a href="https://openai.com/index/introducing-gpt-5-2/"><circle cx="606" cy="80" r="2.7"><title>GPT-5.1 · 12 November 2025</title></circle><circle cx="619" cy="80" r="3"></circle><text x="613" y="69" text-anchor="middle">5.1 / 5.2</text></a>
+      <a href="https://openai.com/index/introducing-gpt-5-3-codex/"><circle cx="644" cy="80" r="3"></circle><circle cx="647" cy="80" r="2.4"><title>GPT-5.3 Codex Spark · 12 February 2026</title></circle><text x="645" y="96" text-anchor="middle">5.3</text></a>
+      <a href="https://openai.com/index/introducing-gpt-5-4/"><circle cx="657" cy="80" r="3"></circle><circle cx="662" cy="80" r="2.4"><title>GPT-5.4 mini and nano · 17 March 2026</title></circle><text x="659" y="69" text-anchor="middle">5.4</text></a>
+      <a href="https://openai.com/index/introducing-gpt-5-5/"><circle cx="679" cy="80" r="3"></circle><text x="679" y="96" text-anchor="middle">5.5</text></a>
+      <a href="https://openai.com/index/gpt-5-6/"><circle cx="707" cy="80" r="2.4"><title>GPT-5.6 limited preview · 26 June 2026</title></circle><circle cx="713" cy="80" r="4"></circle><text x="711" y="69" text-anchor="middle">GPT-5.6</text></a>
+    </g>
+
+    <g class="cadence-series anthropic">
+      <a href="https://www.anthropic.com/news/introducing-claude"><circle cx="170" cy="135" r="4"></circle><text x="170" y="124" text-anchor="middle">Claude</text></a>
+      <a href="https://www.anthropic.com/news/claude-2"><circle cx="224" cy="135" r="4"></circle><text x="224" y="151" text-anchor="middle">Claude 2</text></a>
+      <a href="https://www.anthropic.com/news/claude-3-family"><circle cx="330" cy="135" r="4"></circle><text x="330" y="124" text-anchor="middle">Claude 3</text></a>
+      <a href="https://www.anthropic.com/news/claude-3-5-sonnet"><circle cx="378" cy="135" r="4"></circle><text x="378" y="151" text-anchor="middle">3.5</text></a>
+      <a href="https://www.anthropic.com/news/claude-3-7-sonnet"><circle cx="489" cy="135" r="4"></circle><text x="489" y="124" text-anchor="middle">3.7 + Code</text></a>
+      <a href="https://www.anthropic.com/news/claude-4"><circle cx="528" cy="135" r="4"></circle><text x="528" y="151" text-anchor="middle">Claude 4</text></a>
+      <a href="https://www.anthropic.com/news/claude-opus-4-5"><circle cx="586" cy="135" r="2.5"><title>Claude Sonnet 4.5 · 29 September 2025</title></circle><circle cx="611" cy="135" r="3"></circle><text x="599" y="124" text-anchor="middle">4.5 family</text></a>
+      <a href="https://www.anthropic.com/news/claude-opus-4-6"><circle cx="644" cy="135" r="4"></circle><text x="644" y="151" text-anchor="middle">Opus 4.6</text></a>
+      <a href="https://www.anthropic.com/glasswing"><circle class="restricted" cx="671" cy="135" r="4"></circle><text x="671" y="124" text-anchor="middle">Mythos</text></a>
+      <a href="https://www.anthropic.com/news/claude-fable-5-mythos-5"><circle cx="694" cy="135" r="3"><title>Claude Opus 4.8 · 28 May 2026</title></circle><circle cx="700" cy="135" r="4"></circle><text x="698" y="151" text-anchor="middle">4.8 / Fable 5</text></a>
+    </g>
+
+    <g class="cadence-series google">
+      <a href="https://blog.google/innovation-and-ai/technology/ai/google-gemini-ai/"><circle cx="290" cy="190" r="4"></circle><text x="290" y="179" text-anchor="middle">Gemini 1</text></a>
+      <a href="https://blog.google/innovation-and-ai/products/google-gemini-next-generation-model-february-2024/"><circle cx="322" cy="190" r="4"></circle><text x="322" y="206" text-anchor="middle">1.5</text></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/google-deepmind/google-gemini-ai-update-december-2024/"><circle cx="456" cy="190" r="4"></circle><text x="456" y="179" text-anchor="middle">2.0</text></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/google-deepmind/gemini-model-thinking-updates-march-2025/"><circle cx="502" cy="190" r="4"></circle><text x="502" y="206" text-anchor="middle">2.5 Pro</text></a>
+      <a href="https://blog.google/products-and-platforms/products/gemini/gemini-3-collection/"><circle cx="609" cy="190" r="4"></circle><text x="609" y="179" text-anchor="middle">Gemini 3</text></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-pro/"><circle cx="650" cy="190" r="4"></circle><text x="650" y="206" text-anchor="middle">3.1</text></a>
+      <a href="https://blog.google/innovation-and-ai/technology/developers-tools/google-io-2026-collection/"><circle cx="690" cy="190" r="4"></circle><text x="690" y="179" text-anchor="middle">3.5</text></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/"><circle cx="718" cy="190" r="4"></circle><text x="718" y="206" text-anchor="middle">3.6</text></a>
+    </g>
+
+    <g class="cadence-series meta">
+      <a href="https://ai.meta.com/blog/large-language-model-llama-meta-ai/"><circle cx="162" cy="245" r="4"></circle><text x="162" y="234" text-anchor="middle">LLaMA</text></a>
+      <a href="https://ai.meta.com/blog/llama-2/"><circle cx="227" cy="245" r="4"></circle><text x="227" y="261" text-anchor="middle">Llama 2</text></a>
+      <a href="https://ai.meta.com/blog/meta-llama-3/"><circle cx="350" cy="245" r="4"></circle><text x="350" y="234" text-anchor="middle">Llama 3</text></a>
+      <a href="https://ai.meta.com/blog/meta-llama-3-1/"><circle cx="393" cy="245" r="4"></circle><text x="393" y="261" text-anchor="middle">3.1</text></a>
+      <a href="https://ai.meta.com/blog/llama-4-multimodal-intelligence/"><circle cx="507" cy="245" r="4"></circle><text x="507" y="234" text-anchor="middle">Llama 4</text></a>
+      <a href="https://ai.meta.com/blog/introducing-muse-spark-msl/"><circle cx="672" cy="245" r="4"></circle><text x="672" y="261" text-anchor="middle">Muse Spark</text></a>
+      <a href="https://ai.meta.com/blog/introducing-muse-spark-meta-model-api/"><circle cx="713" cy="245" r="3"></circle><text x="710" y="234" text-anchor="end">1.1</text></a>
+      <a href="https://research.meta.ai/blog/introducing-muse-code-and-muse-spark-1-2"><circle cx="725" cy="245" r="4"></circle><text x="725" y="261" text-anchor="end">1.2</text></a>
+    </g>
+
+    <g class="cadence-series xai">
+      <a href="https://x.ai/news/grok"><circle cx="275" cy="300" r="4"></circle><text x="275" y="289" text-anchor="middle">Grok</text></a>
+      <a href="https://x.ai/news/grok-1.5"><circle cx="340" cy="300" r="3"></circle><text x="340" y="316" text-anchor="middle">1.5</text></a>
+      <a href="https://x.ai/news/grok-2"><circle cx="402" cy="300" r="4"></circle><text x="402" y="289" text-anchor="middle">Grok 2</text></a>
+      <a href="https://x.ai/news/grok-3"><circle cx="487" cy="300" r="4"></circle><text x="487" y="316" text-anchor="middle">3</text></a>
+      <a href="https://x.ai/news/grok-4"><circle cx="550" cy="300" r="4"></circle><text x="550" y="289" text-anchor="middle">Grok 4</text></a>
+      <a href="https://x.ai/news/grok-4-1"><circle cx="608" cy="300" r="3"></circle><text x="608" y="316" text-anchor="middle">4.1</text></a>
+      <a href="https://data.x.ai/2026-04-07-grok-4-20-model-card.pdf"><circle cx="659" cy="300" r="3"></circle><text x="659" y="289" text-anchor="middle">4.20</text></a>
+      <a href="https://x.ai/news/grok-4-5"><circle cx="703" cy="300" r="2.5"><title>Grok 4.3 · 17 June 2026</title></circle><circle cx="716" cy="300" r="4"></circle><text x="711" y="316" text-anchor="middle">4.3 / 4.5</text></a>
+    </g>
+
+    <g class="cadence-series deepseek">
+      <a href="https://api-docs.deepseek.com/news/news1226"><circle cx="462" cy="355" r="4"></circle><text x="462" y="344" text-anchor="middle">V3</text></a>
+      <a href="https://api-docs.deepseek.com/news/news250120/"><circle cx="474" cy="355" r="4"></circle><text x="474" y="371" text-anchor="middle">R1</text></a>
+      <a href="https://api-docs.deepseek.com/news/news250325/"><circle cx="502" cy="355" r="2.5"><title>V3-0324 · 25 March 2025</title></circle><text x="502" y="344" text-anchor="middle">V3 update</text></a>
+      <circle cx="531" cy="355" r="2.5"><title>R1-0528 · 28 May 2025</title></circle>
+      <a href="https://api-docs.deepseek.com/news/news250821"><circle cx="569" cy="355" r="4"></circle><text x="569" y="371" text-anchor="middle">V3.1</text></a>
+      <circle cx="615" cy="355" r="4"><title>DeepSeek V3.2 · 1 December 2025</title></circle><text x="615" y="344" text-anchor="middle">V3.2</text>
+      <a href="https://api-docs.deepseek.com/news/news260424/"><circle cx="679" cy="355" r="4"></circle><text x="679" y="371" text-anchor="middle">V4</text></a>
+    </g>
+
+    <g class="cadence-series qwen">
+      <a href="https://qwenlm.github.io/blog/qwen/"><circle cx="234" cy="410" r="4"></circle><text x="234" y="399" text-anchor="middle">Qwen</text></a>
+      <a href="https://qwen.ai/blog?id=qwen1.5"><circle cx="317" cy="410" r="3"></circle><text x="317" y="426" text-anchor="middle">1.5</text></a>
+      <a href="https://qwenlm.github.io/blog/qwen2/"><circle cx="372" cy="410" r="4"></circle><text x="372" y="399" text-anchor="middle">Qwen 2</text></a>
+      <a href="https://qwenlm.github.io/blog/qwen2.5/"><circle cx="419" cy="410" r="4"></circle><text x="419" y="426" text-anchor="middle">2.5</text></a>
+      <a href="https://qwenlm.github.io/blog/qwen3/"><circle cx="518" cy="410" r="4"></circle><text x="518" y="399" text-anchor="middle">Qwen 3</text></a>
+      <a href="https://qwen.ai/blog?id=qwen3-max-thinking"><circle cx="639" cy="410" r="3"></circle><text x="639" y="426" text-anchor="middle">3 Max</text></a>
+      <a href="https://qwen.ai/blog?id=qwen3.5"><circle cx="649" cy="410" r="4"></circle><text x="649" y="399" text-anchor="middle">3.5</text></a>
+      <a href="https://qwen.ai/blog?id=qwen3.6-35b-a3b"><circle cx="675" cy="410" r="3"></circle><circle cx="676.5" cy="410" r="2.4"><title>Qwen 3.6 Max Preview · 18 April 2026</title></circle><circle cx="678" cy="410" r="2.4"><title>Qwen 3.6 27B · 21 April 2026</title></circle><text x="677" y="426" text-anchor="middle">3.6 · 15/18/21 Apr</text></a>
+    </g>
+
+    <g class="cadence-series mistral">
+      <a href="https://mistral.ai/news/announcing-mistral-7b/"><circle cx="258" cy="465" r="4"></circle><text x="258" y="454" text-anchor="middle">7B</text></a>
+      <a href="https://mistral.ai/news/mixtral-of-experts/"><circle cx="292" cy="465" r="4"></circle><text x="292" y="481" text-anchor="middle">Mixtral</text></a>
+      <a href="https://mistral.ai/news/mistral-large/"><circle cx="326" cy="465" r="4"></circle><text x="326" y="454" text-anchor="middle">Large</text></a>
+      <a href="https://mistral.ai/news/mixtral-8x22b"><circle cx="349" cy="465" r="3"><title>Mixtral 8x22B · 17 April 2024</title></circle></a>
+      <a href="https://mistral.ai/news/mistral-large-2407/"><circle cx="393" cy="465" r="4"></circle><text x="393" y="481" text-anchor="middle">Large 2</text></a>
+      <a href="https://mistral.ai/news/mistral-medium-3/"><circle cx="522" cy="465" r="4"></circle><text x="522" y="454" text-anchor="middle">Medium 3</text></a>
+      <a href="https://mistral.ai/news/mistral-3/"><circle cx="615" cy="465" r="4"></circle><circle cx="618" cy="465" r="2.5"><title>Devstral 2 · 9 December 2025</title></circle><text x="616" y="481" text-anchor="middle">Mistral 3</text></a>
+      <a href="https://mistral.ai/news/mistral-small-4/"><circle cx="662" cy="465" r="4"></circle><text x="662" y="454" text-anchor="middle">Small 4</text></a>
+      <a href="https://docs.mistral.ai/models/model-cards/mistral-medium-3-5-26-04"><circle cx="681" cy="465" r="4"></circle><text x="681" y="481" text-anchor="middle">Medium 3.5</text></a>
+    </g>
+  </svg>
+  <figcaption>Selected public releases from official provider announcements, 1 January 2023–16 August 2026. Points share one calendar scale; dense clusters are real, not evenly spaced decoration. A hollow Mythos marker denotes restricted partner access. This chart measures <em>release cadence</em>, not capability.</figcaption>
+</figure>
+```
+
+```{=html}
+<figure class="capability-figure hidden">
+  <svg class="capability-plot" viewBox="0 0 760 490" role="img" aria-labelledby="eci-title eci-description">
+    <title id="eci-title">Selected model families by release date and Epoch Capabilities Index, 2023 to 2025</title>
+    <desc id="eci-description">A line and scatter chart. Time runs from 2023 to August 2025 on the horizontal axis. Epoch Capabilities Index runs from 110 to 150 on the vertical axis. Developer logos mark selected OpenAI, Anthropic, Google, Meta, xAI, DeepSeek, Qwen, and Mistral releases, with model names placed next to their points.</desc>
+
+    <g class="plot-grid">
+      <line x1="80" y1="400" x2="730" y2="400"></line><line x1="80" y1="310" x2="730" y2="310"></line><line x1="80" y1="220" x2="730" y2="220"></line><line x1="80" y1="130" x2="730" y2="130"></line><line x1="80" y1="40" x2="730" y2="40"></line>
+      <line x1="80" y1="40" x2="80" y2="400"></line><line x1="330" y1="40" x2="330" y2="400"></line><line x1="580" y1="40" x2="580" y2="400"></line>
+    </g>
+    <g class="plot-axes">
+      <line x1="80" y1="400" x2="730" y2="400"></line><line x1="80" y1="40" x2="80" y2="400"></line>
+      <text x="68" y="404" text-anchor="end">110</text><text x="68" y="314" text-anchor="end">120</text><text x="68" y="224" text-anchor="end">130</text><text x="68" y="134" text-anchor="end">140</text><text x="68" y="44" text-anchor="end">150</text>
+      <text x="80" y="428" text-anchor="middle">2023</text><text x="330" y="428" text-anchor="middle">2024</text><text x="580" y="428" text-anchor="middle">2025</text><text x="730" y="428" text-anchor="end">Aug</text>
+      <text class="axis-title" x="405" y="465" text-anchor="middle">Release date</text>
+      <text class="axis-title" x="18" y="220" text-anchor="middle" transform="rotate(-90 18 220)">AI performance · Epoch Capabilities Index</text>
+    </g>
+
+    <g class="model-trajectories">
+      <polyline class="openai" points="132,258 570,105 725,40"></polyline>
+      <polyline class="anthropic" points="448,220 611,114"></polyline>
+      <polyline class="google" points="319,339 632,86"></polyline>
+      <polyline class="meta" points="468,229 644,193"></polyline>
+      <polyline class="xai" points="566,213 647,138"></polyline>
+      <polyline class="deepseek" points="576,193 594,133"></polyline>
+      <polyline class="qwen" points="493,228 660,134"></polyline>
+      <polyline class="mistral" points="263,387 532,231"></polyline>
+    </g>
+
+    <g class="model-points">
+      <a href="https://openai.com/index/gpt-4-research/"><image href="lecture-1/logos/openai.svg" x="123" y="249" width="18" height="18"></image><text x="132" y="282" text-anchor="middle">GPT-4</text></a>
+      <a href="https://mistral.ai/news/announcing-mistral-7b"><image href="lecture-1/logos/mistral.svg" x="254" y="378" width="18" height="18"></image><text x="263" y="417" text-anchor="middle">Mistral 7B</text></a>
+      <a href="https://blog.google/innovation-and-ai/technology/ai/google-gemini-ai/"><image href="lecture-1/logos/google.svg" x="310" y="330" width="18" height="18"></image><text x="319" y="369" text-anchor="middle">Gemini 1.0</text></a>
+
+      <a href="https://www.anthropic.com/news/claude-3-5-sonnet"><image href="lecture-1/logos/anthropic.svg" x="439" y="211" width="18" height="18"></image><text x="438" y="244" text-anchor="end"><tspan x="438">Claude</tspan><tspan x="438" dy="10">3.5</tspan></text></a>
+      <a href="https://ai.meta.com/blog/meta-llama-3-1/"><image href="lecture-1/logos/meta.svg" x="459" y="220" width="18" height="18"></image><text x="468" y="261" text-anchor="middle"><tspan x="468">Llama</tspan><tspan x="468" dy="10">3.1 405B</tspan></text></a>
+      <a href="https://qwenlm.github.io/blog/qwen2.5/"><image href="lecture-1/logos/qwen.svg" x="484" y="219" width="18" height="18"></image><text x="493" y="252" text-anchor="middle"><tspan x="493">Qwen</tspan><tspan x="493" dy="10">2.5 72B</tspan></text></a>
+      <a href="https://mistral.ai/news/mistral-large-2407/"><image href="lecture-1/logos/mistral.svg" x="523" y="222" width="18" height="18"></image><text x="530" y="264" text-anchor="middle"><tspan x="530">Mistral</tspan><tspan x="530" dy="10">Large 2</tspan></text></a>
+      <a href="https://x.ai/news/grok-2"><image href="lecture-1/logos/xai.svg" x="557" y="204" width="18" height="18"></image><text x="557" y="240" text-anchor="end">Grok 2</text></a>
+      <a href="https://api-docs.deepseek.com/news/news1226"><image href="lecture-1/logos/deepseek.svg" x="567" y="184" width="18" height="18"></image><text x="557" y="186" text-anchor="end">DeepSeek-V3</text></a>
+      <a href="https://openai.com/index/learning-to-reason-with-llms/"><image href="lecture-1/logos/openai.svg" x="561" y="96" width="18" height="18"></image><text x="570" y="128" text-anchor="middle">o1</text></a>
+
+      <a href="https://api-docs.deepseek.com/news/news250120/"><image href="lecture-1/logos/deepseek.svg" x="585" y="124" width="18" height="18"></image><text x="585" y="158" text-anchor="end">R1</text></a>
+      <a href="https://www.anthropic.com/news/claude-3-7-sonnet"><image href="lecture-1/logos/anthropic.svg" x="602" y="105" width="18" height="18"></image><text x="608" y="137" text-anchor="middle"><tspan x="608">Claude</tspan><tspan x="608" dy="10">3.7</tspan></text></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/google-deepmind/gemini-model-thinking-updates-march-2025/"><image href="lecture-1/logos/google.svg" x="623" y="77" width="18" height="18"></image><text x="632" y="70" text-anchor="middle"><tspan x="632">Gemini</tspan><tspan x="632" dy="10">2.5 Pro</tspan></text></a>
+      <a href="https://ai.meta.com/blog/llama-4-multimodal-intelligence/"><image href="lecture-1/logos/meta.svg" x="635" y="184" width="18" height="18"></image><text x="641" y="218" text-anchor="middle">Llama 4</text></a>
+      <a href="https://x.ai/news/grok-3"><image href="lecture-1/logos/xai.svg" x="638" y="129" width="18" height="18"></image><text x="644" y="170" text-anchor="middle">Grok 3</text></a>
+      <a href="https://qwenlm.github.io/blog/qwen3/"><image href="lecture-1/logos/qwen.svg" x="651" y="125" width="18" height="18"></image><text x="672" y="134" text-anchor="start">Qwen3</text></a>
+      <a href="https://openai.com/index/introducing-gpt-5/"><image href="lecture-1/logos/openai.svg" x="716" y="31" width="18" height="18"></image><text x="716" y="66" text-anchor="end">GPT-5</text></a>
+    </g>
+  </svg>
+  <div class="model-logo-key" aria-label="Developer logo key">
+    <span><img src="lecture-1/logos/openai.svg" alt="">OpenAI</span><span><img src="lecture-1/logos/anthropic.svg" alt="">Anthropic</span><span><img src="lecture-1/logos/google.svg" alt="">Google</span><span><img src="lecture-1/logos/meta.svg" alt="">Meta</span><span><img src="lecture-1/logos/xai.svg" alt="">xAI</span><span><img src="lecture-1/logos/deepseek.svg" alt="">DeepSeek</span><span><img src="lecture-1/logos/qwen.svg" alt="">Qwen</span><span><img src="lecture-1/logos/mistral.svg" alt="">Mistral</span>
+  </div>
+</figure>
+```
+
+::: {.chart-caption .hidden}
+Selected ECI point estimates from Epoch AI’s [benchmarked-model dataset](https://epoch.ai/data-insights/gpt-4-longest-eci-lead), using releases from March 2023 through August 2025. The graph begins in 2023 because Epoch warns that earlier ECI estimates are sparse and noisy. Confidence intervals overlap for several nearby points, so small vertical differences should not be treated as decisive rankings.
+:::
+
+```{=html}
+<div class="timeline-key" aria-label="Timeline category legend" hidden>
+  <span class="model">Foundation model</span>
+  <span class="product">Product or interface</span>
+  <span class="agent">Agent or tool</span>
+  <span class="media">Media or multimodal</span>
+</div>
+<div class="timeline-shell" role="region" aria-label="Selected language-model timeline from 2019 through 2025" tabindex="0" hidden>
+  <div class="timeline-chart">
+    <div class="timeline-years"><span aria-hidden="true"></span><span class="timeline-year">2019</span><span class="timeline-year">2020</span><span class="timeline-year">2021</span><span class="timeline-year">2022</span><span class="timeline-year">2023</span><span class="timeline-year">2024</span><span class="timeline-year">2025</span></div>
+
+    <div class="timeline-row openai">
+      <div class="timeline-lab"><span class="lab-mark">O</span><strong>OpenAI</strong></div>
+      <div class="timeline-events">
+        <div class="timeline-cell"><a class="timeline-event model" href="https://openai.com/index/better-language-models/"><strong>GPT-2</strong><small>staged release</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://openai.com/index/language-models-are-few-shot-learners/"><strong>GPT-3</strong><small>few-shot</small></a><a class="timeline-event product" href="https://openai.com/index/openai-api/"><strong>API</strong><small>programmable access</small></a></div>
+        <div class="timeline-cell"></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://openai.com/index/instruction-following/"><strong>InstructGPT</strong><small>RLHF</small></a><a class="timeline-event product" href="https://openai.com/index/chatgpt/"><strong>ChatGPT</strong><small>chat interface</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://openai.com/index/gpt-4-research/"><strong>GPT-4</strong><small>multimodal input</small></a><a class="timeline-event agent" href="https://openai.com/index/function-calling-and-other-api-updates/"><strong>Function calling</strong><small>structured tools</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event media" href="https://openai.com/index/hello-gpt-4o/"><strong>GPT-4o</strong><small>real-time multimodal</small></a><a class="timeline-event model" href="https://openai.com/index/learning-to-reason-with-llms/"><strong>o1</strong><small>reasoning time</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event media" href="https://openai.com/index/introducing-4o-image-generation/"><strong>4o image</strong><small>native generation</small></a><a class="timeline-event product" href="https://openai.com/index/introducing-gpt-5/"><strong>GPT-5 system</strong><small>automatic routing</small></a></div>
+      </div>
+    </div>
+
+    <div class="timeline-row anthropic">
+      <div class="timeline-lab"><span class="lab-mark">A</span><strong>Anthropic</strong></div>
+      <div class="timeline-events">
+        <div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://www.anthropic.com/news/introducing-claude"><strong>Claude</strong><small>public launch</small></a><a class="timeline-event model" href="https://www.anthropic.com/news/claude-2"><strong>Claude 2</strong><small>longer context</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://www.anthropic.com/news/claude-3-family"><strong>Claude 3</strong><small>Opus · Sonnet · Haiku</small></a><a class="timeline-event model" href="https://www.anthropic.com/news/claude-3-5-sonnet"><strong>Claude 3.5</strong><small>coding + Artifacts</small></a><a class="timeline-event agent" href="https://www.anthropic.com/news/3-5-models-and-computer-use"><strong>Computer use</strong><small>GUI action</small></a><a class="timeline-event agent" href="https://www.anthropic.com/news/model-context-protocol"><strong>MCP</strong><small>tools and data</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://www.anthropic.com/news/claude-3-7-sonnet"><strong>Claude 3.7</strong><small>hybrid reasoning</small></a><a class="timeline-event agent" href="https://www.anthropic.com/news/claude-4"><strong>Claude Code</strong><small>coding agent</small></a><a class="timeline-event model" href="https://www.anthropic.com/news/claude-4"><strong>Claude 4</strong><small>agentic models</small></a></div>
+      </div>
+    </div>
+
+    <div class="timeline-row google">
+      <div class="timeline-lab"><span class="lab-mark">G</span><strong>Google</strong></div>
+      <div class="timeline-events">
+        <div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div>
+        <div class="timeline-cell"><a class="timeline-event product" href="https://blog.google/innovation-and-ai/technology/ai/bard-google-ai-search-updates/"><strong>Bard</strong><small>chat product</small></a><a class="timeline-event model" href="https://blog.google/innovation-and-ai/technology/ai/google-gemini-ai/"><strong>Gemini 1.0</strong><small>model family</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://blog.google/innovation-and-ai/products/google-gemini-next-generation-model-february-2024/"><strong>Gemini 1.5</strong><small>long context</small></a><a class="timeline-event media" href="https://blog.google/innovation-and-ai/products/google-generative-ai-veo-imagen-3/"><strong>Veo</strong><small>video model</small></a><a class="timeline-event agent" href="https://blog.google/innovation-and-ai/models-and-research/google-deepmind/google-gemini-ai-update-december-2024/"><strong>Gemini 2.0</strong><small>agentic era</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://blog.google/innovation-and-ai/models-and-research/google-deepmind/gemini-model-thinking-updates-march-2025/"><strong>Gemini 2.5</strong><small>thinking model</small></a><a class="timeline-event media" href="https://blog.google/innovation-and-ai/products/generative-media-models-io-2025/"><strong>Veo 3</strong><small>video + audio</small></a></div>
+      </div>
+    </div>
+
+    <div class="timeline-row meta">
+      <div class="timeline-lab"><span class="lab-mark">M</span><strong>Meta</strong></div>
+      <div class="timeline-events">
+        <div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://ai.meta.com/blog/large-language-model-llama-meta-ai/"><strong>LLaMA</strong><small>research release</small></a><a class="timeline-event model" href="https://ai.meta.com/blog/llama-2/"><strong>Llama 2</strong><small>commercial open weights</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://ai.meta.com/blog/meta-llama-3/"><strong>Llama 3</strong><small>stronger open weights</small></a><a class="timeline-event model" href="https://ai.meta.com/blog/meta-llama-3-1/"><strong>Llama 3.1</strong><small>405B</small></a><a class="timeline-event media" href="https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/"><strong>Llama 3.2</strong><small>vision + edge</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event media" href="https://ai.meta.com/blog/llama-4-multimodal-intelligence/"><strong>Llama 4</strong><small>multimodal MoE</small></a></div>
+      </div>
+    </div>
+
+    <div class="timeline-row xai">
+      <div class="timeline-lab"><span class="lab-mark">x</span><strong>xAI</strong></div>
+      <div class="timeline-events">
+        <div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://x.ai/news/grok"><strong>Grok</strong><small>first release</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://x.ai/news/grok-2"><strong>Grok 2</strong><small>second generation</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://x.ai/news/grok-3"><strong>Grok 3</strong><small>reasoning</small></a><a class="timeline-event model" href="https://x.ai/news/grok-4"><strong>Grok 4</strong><small>next generation</small></a></div>
+      </div>
+    </div>
+
+    <div class="timeline-row deepseek">
+      <div class="timeline-lab"><span class="lab-mark">D</span><strong>DeepSeek</strong></div>
+      <div class="timeline-events">
+        <div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://api-docs.deepseek.com/news/news1226"><strong>DeepSeek-V3</strong><small>efficient MoE</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://api-docs.deepseek.com/news/news250120/"><strong>DeepSeek-R1</strong><small>open reasoning weights</small></a></div>
+      </div>
+    </div>
+
+    <div class="timeline-row qwen">
+      <div class="timeline-lab"><span class="lab-mark">Q</span><strong>Alibaba · Qwen</strong></div>
+      <div class="timeline-events">
+        <div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://github.com/QwenLM/Qwen"><strong>Qwen-7B</strong><small>open weights</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://qwenlm.github.io/blog/qwen2/"><strong>Qwen2</strong><small>family expansion</small></a><a class="timeline-event model" href="https://qwenlm.github.io/blog/qwen2.5/"><strong>Qwen2.5</strong><small>multilingual + code</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://qwenlm.github.io/blog/qwen3/"><strong>Qwen3</strong><small>hybrid thinking</small></a></div>
+      </div>
+    </div>
+
+    <div class="timeline-row china-other">
+      <div class="timeline-lab"><span class="lab-mark">中</span><strong>Other China</strong></div>
+      <div class="timeline-events">
+        <div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div>
+        <div class="timeline-cell"><a class="timeline-event product" href="https://agents.baidu.com/docs/develop/model/ERNIE_bot_introduce/"><strong>ERNIE Bot</strong><small>Baidu</small></a></div>
+        <div class="timeline-cell"></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://arxiv.org/abs/2501.12599"><strong>Kimi k1.5</strong><small>Moonshot</small></a><a class="timeline-event agent" href="https://github.com/MoonshotAI/Kimi-K2"><strong>Kimi K2</strong><small>agentic MoE</small></a><a class="timeline-event model" href="https://z.ai/blog/glm-4.5"><strong>GLM-4.5</strong><small>hybrid reasoning</small></a></div>
+      </div>
+    </div>
+
+    <div class="timeline-row mistral">
+      <div class="timeline-lab"><span class="lab-mark">Mi</span><strong>Europe · Mistral</strong></div>
+      <div class="timeline-events">
+        <div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div><div class="timeline-cell"></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://mistral.ai/news/announcing-mistral-7b"><strong>Mistral 7B</strong><small>open weights</small></a><a class="timeline-event model" href="https://mistral.ai/news/mixtral-of-experts"><strong>Mixtral</strong><small>mixture of experts</small></a></div>
+        <div class="timeline-cell"><a class="timeline-event model" href="https://mistral.ai/news/mistral-large-2407/"><strong>Mistral Large 2</strong><small>flagship model</small></a></div>
+        <div class="timeline-cell"></div>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+::: {.chart-caption .hidden}
+Colored lab marks identify the developer; marker styles identify the kind of release. “Open weights” means model parameters are downloadable under a license. It does not automatically mean that the data, training code, or license satisfies every definition of open source.
+:::
+
+Release names are not directly comparable across companies: a “minor” version can be a large capability change, while a new product name may route across several checkpoints. The reliable visual claim is about tempo. Releases that once appeared roughly once or twice a year now arrive as model families, previews, specialist variants, and point updates separated by weeks or days.
+
+## The foundational moments
+
+A model release earns the name “moment” when it changes a user interface, an engineering workflow, the economics of deployment, or the direction of research—not merely when it moves one leaderboard by a point.
+
+```{=html}
+<div class="moment-list">
+  <div class="moment"><time class="moment-date" datetime="2022-11-30">Nov 2022</time><div class="moment-copy"><strong>The ChatGPT moment</strong><p>Instruction following, RLHF, and a frictionless chat product brought general-purpose language models to a mass audience.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2023-02-24">Feb 2023</time><div class="moment-copy"><strong>The LLaMA open-weight moment</strong><p><a href="https://ai.meta.com/blog/large-language-model-llama-meta-ai/">LLaMA</a> was not the first downloadable language model—GPT-J, OPT, and BLOOM came earlier—but its compact research checkpoints catalyzed local fine-tuning and a large family of derivatives.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2023-06-13">Jun 2023</time><div class="moment-copy"><strong>The structured tool-use moment</strong><p><a href="https://openai.com/index/function-calling-and-other-api-updates/">Function calling</a> gave applications a dependable JSON interface between a language model and external tools. Earlier systems had already experimented with browsing and acting; this release made the pattern easy to ship through an API.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2023-07-18">Jul 2023</time><div class="moment-copy"><strong>The Llama 2 distribution moment</strong><p><a href="https://ai.meta.com/blog/llama-2/">Llama 2</a> made pretrained and chat-tuned weights available for research and many commercial uses. Its significance was distribution and adaptation—not being the first tool-using model.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2024-02">Feb 2024</time><div class="moment-copy"><strong>The long-context moment</strong><p>Gemini 1.5 made a million-token context window a headline capability and shifted attention toward retrieval, memory, and long inputs.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2024-05-13">May 2024</time><div class="moment-copy"><strong>The GPT-4o moment</strong><p>Low-latency speech, vision, and text made multimodality feel like one conversation rather than a chain of separate models.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2024-09-12">Sep 2024</time><div class="moment-copy"><strong>The o1 moment</strong><p>Inference-time reasoning became a visible product choice: spend more computation after the prompt to improve difficult answers.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2024-11-24">Nov 2024</time><div class="moment-copy"><strong>The Cursor moment</strong><p>Composer gained agentic search and terminal use, moving coding assistance from autocomplete toward delegated software work.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2025-01-20">Jan 2025</time><div class="moment-copy"><strong>The DeepSeek moment</strong><p><a href="https://api-docs.deepseek.com/news/news250120/">DeepSeek-R1</a> made open-weight reasoning, reinforcement learning, efficient training, and a broader geography of frontier competition impossible to ignore.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2025-02-24">Feb 2025</time><div class="moment-copy"><strong>The Claude Code moment</strong><p>A terminal-native coding agent entered research preview, making long-running tool use part of everyday software development.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2025-03-25">Mar 2025</time><div class="moment-copy"><strong>The native image moment</strong><p>GPT-4o image generation moved image creation from a separate DALL·E-style model boundary into the conversational model experience.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2025-05-20">May 2025</time><div class="moment-copy"><strong>The Veo 3 moment</strong><p>Generated video arrived with native audio, making scene, motion, dialogue, and sound one generation problem.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2025-08-07">Aug 2025</time><div class="moment-copy"><strong>The GPT-5 routing moment</strong><p>Users received one interface that automatically chose between a fast model and a deeper reasoning model. The launch system was a router over models—not yet one monolithic network.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2026-02-05">Feb 2026</time><div class="moment-copy"><strong>The Opus 4.6 coding-agent moment</strong><p><a href="https://www.anthropic.com/news/claude-opus-4-6">Claude Opus 4.6</a> made longer-running coding tasks and teams of agents headline capabilities. Around the same period, Claude Code creator Boris Cherny <a href="https://fortune.com/2026/01/29/100-percent-of-code-at-anthropic-and-openai-is-now-ai-written-boris-cherny-roon/">said he had not written code by hand since November</a>, and Spotify’s co-CEO <a href="https://techcrunch.com/2026/02/12/spotify-says-its-best-developers-havent-written-a-line-of-code-since-december-thanks-to-ai/">made a similar claim about its best developers</a>. Both accounts describe Claude Code with Opus 4.5, not an effect unique to 4.6; the moment is the workflow shift from typing code to directing and reviewing agents.</p></div></div>
+  <div class="moment"><time class="moment-date" datetime="2026-04-07">Apr 2026</time><div class="moment-copy"><strong>The restricted-release moment</strong><p>Anthropic offered <a href="https://www.anthropic.com/glasswing">Claude Mythos Preview</a> only to selected cyber-defense partners and said that preview was not planned for general availability. It was not the first withheld model—the GPT-2 episode came years earlier—but it made model access itself a visible capability-dependent product decision.</p></div></div>
+</div>
+```
+
+The [DeepSeek-R1 report](https://arxiv.org/abs/2501.12948) [@guo2025deepseekr1] documents the model family’s reinforcement-learning recipe and released distillations.
+
+Together, these moments trace a progression: **conversation → tools → reasoning → agents → media → automatic orchestration → capability-dependent access**.
+
+## The market follows the bottleneck
+
+The clearest financial signal of the LLM era was Nvidia. Its GPUs became the scarce general-purpose compute behind both training and inference. The five-year chart below is not a reconstruction: it is the comparison Nvidia filed in its fiscal 2026 Form 10-K, using FactSet data. It assumes $100 invested in each series on 31 January 2021 with dividends reinvested.
+
+```{=html}
+<figure class="filed-market-figure">
+  <a href="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/0001045810-26-000021-index.htm"><img src="lecture-1/nvidia-five-year-total-return.jpg" alt="Nvidia's filed five-year cumulative total-return chart. One hundred dollars invested in January 2021 becomes 1,448.75 dollars in Nvidia, 200.33 dollars in the S and P 500, and 206.01 dollars in the Nasdaq 100 by January 2026."></a>
+  <figcaption>Nvidia, S&amp;P 500, and Nasdaq-100 cumulative total return, 31 January 2021–25 January 2026. The endpoints are $1,448.75, $200.33, and $206.01 respectively. Source: <a href="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/0001045810-26-000021-index.htm">Nvidia fiscal 2026 Form 10-K</a>, filed with the SEC; underlying data from FactSet.</figcaption>
+</figure>
+
+<div class="market-event-strip" aria-label="Three dates to read against the five-year market chart">
+  <section><time datetime="2022-11-30">30 Nov 2022</time><strong>ChatGPT launches</strong><p>This is the product marker. It is not a clean one-day stock experiment: Jerome Powell also signaled slower rate increases that day.</p></section>
+  <section><time datetime="2023-05-24">24–25 May 2023</time><strong>AI demand enters guidance</strong><p>Nvidia forecast $11 billion of quarterly revenue and named generative AI; its shares rose 24.4% the next day.</p></section>
+  <section><time datetime="2025-01-27">27 Jan 2025</time><strong>The DeepSeek shock</strong><p>One week after R1 launched, Nvidia fell 16.97%, S&amp;P 500 IT fell 5.58%, and the S&amp;P 500 fell 1.48%.</p></section>
+</div>
+```
+
+The filed graph uses annual endpoints, so it cannot display the one-day DeepSeek fall. The exact shock figures come from S&P Dow Jones Indices’ [January 2025 U.S. market report](https://www.spglobal.com/spdji/en/documents/commentary/market-attributes-us-equities-202501.pdf), which also estimated that Nvidia lost about $594 billion of market value that day. The different reactions matter: the event repriced the expected economics of AI infrastructure much more sharply than the broad market.
+
+### Two other hardware trajectories
+
+```{=html}
+<div class="filed-market-grid">
+  <figure class="filed-market-figure">
+    <a href="https://www.sec.gov/Archives/edgar/data/50863/000005086326000011/intc-20251227.htm"><img src="lecture-1/intel-five-year-total-return.jpg" alt="Intel's filed five-year total-return comparison through December 2025. Intel ends below its starting value while four comparison indexes end above two hundred dollars."></a>
+    <figcaption>Intel versus four broad and semiconductor indexes, 2020–2025. This records the long decline that made a later turnaround noteworthy; it does not yet include the 2026 agentic-workload rally. Source: <a href="https://www.sec.gov/Archives/edgar/data/50863/000005086326000011/intc-20251227.htm">Intel 2025 Form 10-K</a>.</figcaption>
+  </figure>
+  <figure class="filed-market-figure">
+    <a href="https://www.sec.gov/Archives/edgar/data/723125/000072312525000028/mu-20250828.htm"><img src="lecture-1/micron-five-year-total-return.jpg" alt="Micron's filed five-year total-return comparison through August 2025. One hundred dollars becomes about 268 dollars in Micron, 266 dollars in the Philadelphia Semiconductor Index, and 199 dollars in the S and P 500."></a>
+    <figcaption>Micron, the Philadelphia Semiconductor Index, and the S&amp;P 500, 2020–2025. The chart captures memory’s participation in the AI hardware cycle. Source: <a href="https://www.sec.gov/Archives/edgar/data/723125/000072312525000028/mu-20250828.htm">Micron 2025 Form 10-K</a>.</figcaption>
+  </figure>
+</div>
+```
+
+Three episodes explain the shape without pretending that they are the only causes:
+
+1. **GPU repricing.** On 25 May 2023, Nvidia shares [rose 24%](https://www.investing.com/news/stock-market-news/nvidia-close-to-becoming-first-trilliondollar-chip-firm-after-stellar-forecast-3090653) after an extraordinary data-center forecast. Its fiscal 2024 data-center revenue later reached $47.5 billion, up 217%, according to its [annual filing](https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm).
+2. **The DeepSeek shock.** [DeepSeek-R1 launched](https://api-docs.deepseek.com/news/news250120/) on 20 January 2025. A week later, fear that more efficient models would require less hardware helped drive a [16.9% one-day Nvidia decline](https://apnews.com/article/52c54e361616509280bd2775674b6b4b). That was a change in investor expectations, not proof that compute demand had disappeared. Nvidia later recovered and [reached a $4 trillion market value](https://www.investing.com/news/stock-market-news/nvidia-becomes-first-company-to-clinch-4-trillion-in-market-value-4128409) in July 2025.
+3. **The bottleneck expands.** AI systems need more than accelerators. High-bandwidth memory feeds model weights and activations to GPUs; CPUs coordinate storage, networking, retrieval, tool calls, and high-volume inference.
+
+| Hardware layer | What changed | Evidence and caveat |
+|---|---|---|
+| Accelerators | Training and inference demand concentrated around Nvidia GPUs and their software ecosystem. | The revenue surge is stronger evidence than a stock chart alone. |
+| HBM and memory | Larger models and faster accelerators increased demand for memory bandwidth. [Micron said](https://www.investing.com/news/stock-market-news/micron-set-for-record-high-after-ai-demand-steers-strong-forecast-surprise-profit-3347470) its 2024 HBM capacity was sold out, and [SK hynix reported](https://news.skhynix.com/en/sk-hynix-announces-4q24-financial-results/) that HBM exceeded 40% of Q4 2024 DRAM revenue. | This was an HBM and server-memory boom, not an identical gain for every memory producer. |
+| CPUs and infrastructure | Agentic workloads create many planning, retrieval, tool, and orchestration steps around each accelerator call. By July 2026, [Intel reported](https://newsroom.intel.com/corporate/intel-reports-second-quarter-2026-financial-results) stronger demand while [industry reporting](https://www.investing.com/news/stock-market-news/intel-sales-profit-forecast-beat-estimates-boosts-spending-plans-on-ai-boom-4809863) linked part of the CPU shortage to agentic workloads. | Agent demand helped a nascent turnaround; it did not single-handedly “revive Intel.” Manufacturing, partnerships, capital, and execution also mattered. |
+
+The economic lesson is that markets repeatedly try to identify the next scarce input. The technical lesson is similar: optimize the bottleneck that limits the whole system, not the component with the loudest story.
+
+## Beyond text: VLMs, multimodality, and action
+
+“Multimodal” covers several distinct model interfaces.
+
+```{=html}
+<div class="concept-grid">
+  <section class="concept-item"><strong>LLM</strong><span>text tokens → text tokens</span><p>Language understanding and generation through a token sequence.</p></section>
+  <section class="concept-item"><strong>VLM</strong><span>image or video + text → language</span><p>A vision-language model can describe, answer, ground, or reason about visual input.</p></section>
+  <section class="concept-item"><strong>Multimodal model</strong><span>several media → several media</span><p>Text, audio, images, or video may share one interaction loop and sometimes one learned representation.</p></section>
+  <section class="concept-item"><strong>VLA</strong><span>vision + instruction → actions</span><p>A vision-language-action model maps perception and language to robot-control tokens or commands.</p></section>
+</div>
+```
+
+A VLA extends the prediction target. Instead of ending with a sentence, the system must produce an action that changes the physical world:
+
+$$
+(\text{camera frames},\ \text{instruction},\ \text{robot state})
+\longrightarrow
+(a_1,a_2,\ldots,a_T).
+$$
+
+[RT-2](https://deepmind.google/blog/rt-2-new-model-translates-vision-and-language-into-action/) [@zitkovich2023rt2] showed how web-scale vision-language knowledge could transfer into robotic control. [OpenVLA](https://github.com/openvla/openvla) [@kim2024openvla] later released a 7B open vision-language-action model trained on robot demonstrations. The promise is transfer: an instruction such as “move the can near the matching color” can draw on concepts learned outside a narrow robot dataset. The difficulty is that wrong physical actions have costs that wrong sentences do not.
+
+### Specialization is another axis of progress
+
+The same adaptation recipe used for Armenian can target a historical language such as Old English:
+
+1. inspect whether the tokenizer fragments the language excessively;
+2. assemble and document a clean, licensed corpus;
+3. continue pre-training a suitable base model;
+4. instruction-tune on translation, morphology, retrieval, or annotation tasks; and
+5. evaluate on held-out texts with domain experts, not only with an automatic modern-language metric.
+
+The research question is not “Can a giant model produce something that looks old?” It is whether the model preserves morphology, meaning, uncertainty, and source evidence on material it did not memorize. Recent [low-resource language-model research](https://aclanthology.org/2025.loreslm-1.21/) explores this continued-training route for historical languages.
+
+## What to remember
+
+1. **ChatGPT changed the interface more than the underlying definition of NLP.** Many tasks became instructions inside one dialogue system.
+2. **RLHF learns preferences, not truth.** Demonstrations, rankings, a reward model, and policy optimization can improve behavior while introducing new failure modes.
+3. **A benchmark score belongs to a protocol.** Checkpoint identity, prompts, tools, graders, and uncertainty matter as much as the headline number.
+4. **The Llama 4 controversy was a reproducibility lesson.** An experimental chat variant and the public checkpoint were not interchangeable; that does not imply every result was fake.
+5. **The model frontier is global but uneven.** The United States and China lead frontier-scale development, while regional ecosystems create value through sovereignty, deployment, openness, and language coverage.
+6. **The important moments changed behavior and economics.** Chat, reasoning, agents, native media, and routing each changed how models were used.
+7. **The endpoint is no longer only text.** VLMs connect language to perception; VLAs connect perception and language to action.
+
+## References

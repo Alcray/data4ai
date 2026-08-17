@@ -1,0 +1,305 @@
+---
+title: "Introduction: From Recurrent Networks to Transformers"
+order: 1
+description: "How sequence modeling moved from recurrent networks to the Transformer, and why the architecture split into encoder-only, decoder-only, and encoder-decoder families."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+Modern language models did not appear in a single leap. They emerged from a sequence of ideas about how a neural network should read, remember, and generate a sequence. Recurrent neural networks introduced a persistent hidden state. Long short-term memory networks made that state easier to train over long distances. Attention let a decoder look back at the most relevant parts of an input. Although the attention mechanism predates Transformers, [*Attention Is All You Need*](https://papers.neurips.cc/paper/7181-attention-is-all-you-need.pdf) [@vaswani2017attention] made attention—not recurrence—the main computational primitive of the Transformer architecture.
+
+::: {.callout-note}
+## From recurrence to attention
+
+The progression was gradual rather than a single jump. Simple recurrent cells came first, then gated recurrent cells such as LSTMs and GRUs. Attention moved into recurrent encoder–decoder systems next, letting a decoder look back over all encoder states. Transformers then removed recurrence from the core sequence model and made attention the main primitive.
+:::
+
+## Learning objectives
+
+By the end of this lecture, you should be able to:
+
+1. explain why recurrent sequence models were difficult to scale;
+2. describe the encoder–decoder Transformer used for translation;
+3. explain shifted targets, causal masking, and teacher forcing;
+4. distinguish encoder-only, decoder-only, and encoder–decoder Transformers; and
+5. match each architecture family to the tasks it naturally supports.
+
+## Before Transformers: recurrence and memory
+
+A basic RNN reads a sequence one token at a time. At position $t$, it combines the current input $x_t$ with the previous hidden state $h_{t-1}$:
+
+$$
+h_t = f(x_t, h_{t-1}).
+$$
+
+This recurrence gives the model a memory, but it also creates two problems. First, information and gradients must travel through many sequential steps, which makes long-range dependencies difficult to learn. Second, token $t+1$ cannot be processed until token $t$ is complete, limiting parallelism during training.
+
+[Long short-term memory](https://doi.org/10.1162/neco.1997.9.8.1735) [@hochreiter1997lstm] introduced gated memory cells to improve gradient flow and preserve useful information across longer time spans. LSTMs became a standard building block for sequence modeling, including machine translation.
+
+### The recurrent encoder–decoder
+
+In early neural machine translation, an encoder LSTM read the source sentence and compressed it into a fixed-dimensional representation. A decoder LSTM then generated the target sentence one token at a time. The influential [sequence-to-sequence model](https://proceedings.neurips.cc/paper_files/paper/2014/hash/5a18e133cbf9f257297f410bb7eca942-Abstract.html) [@sutskever2014seq2seq] used a deep LSTM encoder and a deep LSTM decoder, reaching 34.8 [BLEU](https://aclanthology.org/P02-1040/) [@papineni2002bleu] on its WMT 2014 English-to-French setup.
+
+::: {.paper-author-note}
+\* [Ilya Sutskever on X/Twitter (\@ilyasut)](https://x.com/ilyasut)
+:::
+
+Compressing an entire sentence into one fixed vector created an information bottleneck, especially for long sequences. [Bahdanau attention](https://arxiv.org/abs/1409.0473) [@bahdanau2015attention] changed this: at each output step, the decoder could compute a weighted combination of all encoder states rather than relying on only one final vector.
+
+Attention was initially an addition to recurrence. The next step was to ask whether recurrence was needed at all.
+
+## Attention becomes the architecture
+
+The 2017 paper [*Attention Is All You Need*](https://papers.neurips.cc/paper/7181-attention-is-all-you-need.pdf) [@vaswani2017attention] introduced the Transformer for sequence transduction, evaluated primarily on machine translation. Its key move was to replace recurrent and convolutional sequence layers with stacked attention and feed-forward layers.
+
+Because all source positions can be processed together during training, the Transformer is substantially more parallelizable than an RNN. Self-attention also gives every token a short path to every other token: a token can directly attend to a distant token instead of passing information through every intermediate recurrent step.
+
+### What did the benchmark gain look like?
+
+:::: {.benchmark-chart}
+<div class="benchmark-plot" role="img" aria-label="BLEU scores on WMT 2014 English to German: the recurrent LSTM-based GNMT plus reinforcement learning system 24.6, ConvS2S 25.16, Transformer base 27.3, and Transformer big 28.4. The chart axis begins at 20 BLEU.">
+  <div class="chart-scale"><span>20 BLEU</span><span>30 BLEU</span></div>
+  <div class="chart-row"><span class="chart-label">GNMT (LSTM) + RL</span><span class="chart-track"><span class="chart-bar recurrent" style="width:46%"></span></span><strong>24.6</strong></div>
+  <div class="chart-row"><span class="chart-label">ConvS2S</span><span class="chart-track"><span class="chart-bar convolutional" style="width:51.6%"></span></span><strong>25.16</strong></div>
+  <div class="chart-row"><span class="chart-label">Transformer base</span><span class="chart-track"><span class="chart-bar transformer" style="width:73%"></span></span><strong>27.3</strong></div>
+  <div class="chart-row"><span class="chart-label">Transformer big</span><span class="chart-track"><span class="chart-bar transformer-strong" style="width:84%"></span></span><strong>28.4</strong></div>
+</div>
+
+::: {.chart-caption}
+Selected single-model results from Table 2 of [*Attention Is All You Need*](https://papers.neurips.cc/paper/7181-attention-is-all-you-need.pdf) [@vaswani2017attention] on the WMT 2014 English-to-German `newstest2014` test set. BLEU measures translation quality; higher is better. [Google's Neural Machine Translation System](https://arxiv.org/abs/1609.08144) [@wu2016gnmt] is the recurrent, LSTM-based comparison in the source table; a plain RNN baseline was not reported. The paper estimates training costs of $2.3 \times 10^{19}$ FLOPs for GNMT + RL, $9.6 \times 10^{18}$ for ConvS2S, $3.3 \times 10^{18}$ for Transformer base, and $2.3 \times 10^{19}$ for Transformer big.
+:::
+::::
+
+## How the original Transformer translates
+
+The original Transformer is an **encoder–decoder** model. Unlike the earlier [sequence-to-sequence LSTM](https://proceedings.neurips.cc/paper_files/paper/2014/hash/5a18e133cbf9f257297f410bb7eca942-Abstract.html) [@sutskever2014seq2seq], which passed a single fixed-size encoded state to the decoder, the Transformer encoder produces a **sequence of contextual vectors—one per source token**. Stacked together, these vectors form a matrix often called the encoder memory. At every output step, the decoder uses cross-attention to read across that entire memory.
+
+:::: {.transformer-visual}
+<div class="transformer-flow" role="img" aria-label="The source tokens je, suis, and étudiant flow into the encoder. The encoder outputs one contextual vector for each token. Cross-attention carries all contextual vectors into a decoder that combines them with the target prefix beginning-of-sequence, I, am, a, and predicts student.">
+<div class="flow-stage flow-source">
+<span class="flow-kicker">Source sentence</span>
+<div class="flow-tokens"><span>je</span><span>suis</span><span>étudiant</span></div>
+</div>
+<div class="flow-rail flow-source-rail" aria-hidden="true"><i></i></div>
+<div class="flow-module flow-encoder"><span class="flow-kicker">Encoder</span><strong>Self-attention</strong><small>reads every source position</small></div>
+<div class="flow-rail flow-memory-rail" aria-hidden="true"><i></i></div>
+<div class="flow-stage flow-memory"><span class="flow-kicker">Encoder output</span><div class="context-vectors"><span class="context-vector"><b>z₁</b><i></i><i></i><i></i></span><span class="context-vector"><b>z₂</b><i></i><i></i><i></i></span><span class="context-vector"><b>z₃</b><i></i><i></i><i></i></span></div><small>one contextual vector per token</small></div>
+<div class="flow-attention" aria-hidden="true"><span>cross-attention reads all vectors</span><i></i></div>
+<div class="flow-stage flow-prefix">
+<span class="flow-kicker">Shifted target prefix</span>
+<div class="flow-tokens"><span>&lt;BOS&gt;</span><span>I</span><span>am</span><span>a</span></div>
+</div>
+<div class="flow-rail flow-prefix-rail" aria-hidden="true"><i></i></div>
+<div class="flow-module flow-decoder">
+<span class="flow-kicker">Decoder</span>
+<strong>Predicts next token</strong>
+<div class="flow-prediction"><span>student</span></div>
+</div>
+</div>
+
+::: {.transformer-caption}
+The encoder returns a matrix of contextual vectors—not one sentence vector. The decoder combines that full encoder memory with the target prefix to predict the next token.
+:::
+::::
+
+### 1. The encoder reads the source
+
+The source sentence is tokenized. Token embeddings are combined with positional information, then passed through a stack of encoder blocks. Each block uses bidirectional self-attention: every source position may attend to every other source position. The output is a sequence of context-sensitive vectors.
+
+### 2. The decoder reads a shifted target prefix
+
+The decoder starts with a beginning-of-sequence token. During training, it receives the correct target sentence shifted one position to the right:
+
+<pre class="sequence-example" aria-label="The decoder input is beginning-of-sequence, I, am, a. The prediction and training target end with student."><code>Decoder input:    &lt;BOS&gt;  I      am       a
+Prediction:        I     am     a        <mark>student</mark>
+Training target:   I     am     a        student</code></pre>
+
+At each position, cross-entropy uses the probability assigned to the correct target. If the model predicts **human** instead of **student**, the same idea looks like this:
+
+<pre class="sequence-example" aria-label="At position t, the model predicts human instead of the correct target student, and cross-entropy uses the probability assigned to student. At position t plus one, teacher forcing supplies the correct decoder input and the model predicts today."><code><span class="sequence-label">Position t</span>
+Decoder input:     &lt;BOS&gt; I am a
+Top prediction:    <mark class="wrong-word">human</mark>
+Correct target:    <mark>student</mark>
+p(student):        0.08
+Cross-entropy:     −ln(0.08) = 2.53
+
+<span class="sequence-label">Position t + 1</span>
+Decoder input:     &lt;BOS&gt; I am a student
+Top prediction:    today
+Correct target:    today
+p(today):          0.71
+Cross-entropy:     −ln(0.71) = 0.34</code></pre>
+
+This is **teacher forcing**: the decoder input at position $t+1$ is built from the correct target prefix. Training therefore supplies `<BOS> I am a student`, even though the model predicted **human** at position $t$. The model then predicts **today** from that correct prefix.
+
+### 3. A causal mask prevents cheating
+
+The decoder's self-attention is causally masked. When predicting position $i$, it may attend only to target positions before $i$. It cannot inspect the token it is supposed to predict or any later target token.
+
+### 4. Cross-attention connects decoder and encoder
+
+In each decoder block, cross-attention uses the decoder state as a query and the encoder outputs as keys and values. This lets the decoder focus on the relevant source positions for each generated target token.
+
+### 5. Training and inference feed the decoder differently
+
+Both modes receive the same source sentence and keep its encoder memory available to the decoder. The only difference is where the decoder prefix comes from:
+
+<pre class="sequence-example" aria-label="During both training and inference, the source sentence is encoded into the same encoder memory. The table compares decoder inputs and predictions for training and inference."><code><span class="sequence-label">Both modes</span>
+Source:           je suis étudiant
+Encoder memory:   z₁  z₂  z₃
+
+<span class="sequence-label">Training — decoder input comes from the target</span>
+Decoder input                       Predicts
+&lt;BOS&gt; I am a student                I am a student today
+
+<span class="sequence-label">Inference — decoder input comes from the model</span>
+                  Decoder input      Predicts
+Step 1:           &lt;BOS&gt;              I
+Step 2:           &lt;BOS&gt; I            am
+Step 3:           &lt;BOS&gt; I am         a
+Step 4:           &lt;BOS&gt; I am a       student</code></pre>
+
+## Three Transformer families
+
+After the original translation model, researchers specialized the architecture by keeping only the encoder, keeping only the decoder, or retaining both.
+
+```{=html}
+<div class="family-architectures" role="group" aria-label="Transformer family architectures. Encoder components are blue, decoder components are orange, and cross-attention is purple.">
+  <div class="family-architecture" role="figure" aria-label="Encoder-only architecture">
+    <div class="family-caption"><strong>Encoder-only</strong><span>BERT · RoBERTa</span></div>
+    <div class="family-diagram" role="img" aria-label="The encoder is active in blue and the unused decoder is faded.">
+      <div class="architecture-branch encoder-branch active-branch">
+        <div class="architecture-node">Context vectors</div>
+        <div class="architecture-stack">
+          <span class="architecture-repeat">N× encoder</span>
+          <span class="architecture-layer">Feed-forward</span>
+          <span class="architecture-layer">Self-attention</span>
+        </div>
+        <div class="architecture-node">Input + position</div>
+      </div>
+      <div class="architecture-branch decoder-branch inactive-branch">
+        <div class="architecture-node">Linear + softmax</div>
+        <div class="architecture-stack">
+          <span class="architecture-repeat">N× decoder</span>
+          <span class="architecture-layer">Feed-forward</span>
+          <span class="architecture-layer">Cross-attention</span>
+          <span class="architecture-layer">Masked attention</span>
+        </div>
+        <div class="architecture-node">Output + position</div>
+      </div>
+      <span class="architecture-cross-link inactive-link" aria-hidden="true"></span>
+    </div>
+  </div>
+  <div class="family-architecture" role="figure" aria-label="Decoder-only architecture">
+    <div class="family-caption"><strong>Decoder-only</strong><span>GPT-1 · GPT-2 · GPT-3</span></div>
+    <div class="family-diagram" role="img" aria-label="The decoder is active in orange; the unused encoder and cross-attention are faded.">
+      <div class="architecture-branch encoder-branch inactive-branch">
+        <div class="architecture-node">Context vectors</div>
+        <div class="architecture-stack">
+          <span class="architecture-repeat">N× encoder</span>
+          <span class="architecture-layer">Feed-forward</span>
+          <span class="architecture-layer">Self-attention</span>
+        </div>
+        <div class="architecture-node">Input + position</div>
+      </div>
+      <div class="architecture-branch decoder-branch active-branch">
+        <div class="architecture-node">Linear + softmax</div>
+        <div class="architecture-stack">
+          <span class="architecture-repeat">N× decoder</span>
+          <span class="architecture-layer">Feed-forward</span>
+          <span class="architecture-layer inactive-layer">Cross-attention</span>
+          <span class="architecture-layer">Masked attention</span>
+        </div>
+        <div class="architecture-node">Tokens + position</div>
+      </div>
+      <span class="architecture-cross-link inactive-link" aria-hidden="true"></span>
+    </div>
+  </div>
+  <div class="family-architecture" role="figure" aria-label="Encoder-decoder architecture">
+    <div class="family-caption"><strong>Encoder–decoder</strong><span>Transformer · BART · T5</span></div>
+    <div class="family-diagram" role="img" aria-label="The encoder is blue, the decoder is orange, and their cross-attention connection is purple.">
+      <div class="architecture-branch encoder-branch active-branch">
+        <div class="architecture-node">Context vectors</div>
+        <div class="architecture-stack">
+          <span class="architecture-repeat">N× encoder</span>
+          <span class="architecture-layer">Feed-forward</span>
+          <span class="architecture-layer">Self-attention</span>
+        </div>
+        <div class="architecture-node">Input + position</div>
+      </div>
+      <div class="architecture-branch decoder-branch active-branch">
+        <div class="architecture-node">Linear + softmax</div>
+        <div class="architecture-stack">
+          <span class="architecture-repeat">N× decoder</span>
+          <span class="architecture-layer">Feed-forward</span>
+          <span class="architecture-layer cross-attention-layer">Cross-attention</span>
+          <span class="architecture-layer">Masked attention</span>
+        </div>
+        <div class="architecture-node">Output + position</div>
+      </div>
+      <span class="architecture-cross-link active-link" aria-hidden="true"></span>
+    </div>
+  </div>
+</div>
+```
+
+### Encoder-only: BERT and RoBERTa
+
+[BERT](https://aclanthology.org/N19-1423/) [@devlin2019bert] pre-trains a bidirectional Transformer encoder with a masked-language-model objective: selected input tokens are hidden and the model predicts them using context from both sides. [RoBERTa](https://arxiv.org/abs/1907.11692) [@liu2019roberta] retains the encoder-only structure while revising BERT's training recipe, data, and masking strategy.
+
+Encoder-only models are natural choices for tasks that require understanding or labeling an existing input:
+
+- document or sentence classification, such as sentiment or topic classification;
+- token classification, such as named-entity recognition;
+- extractive question answering, where the answer is a span in a passage;
+- natural-language inference and semantic similarity;
+- retrieval and embedding-based similarity, usually with task-specific training; and
+- filling masked tokens during pre-training.
+
+They are not naturally designed for long, autoregressive free-form generation because they do not contain a causal generation decoder.
+
+### Decoder-only: GPT-1, GPT-2, and GPT-3
+
+[GPT-1](https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf) [@radford2018gpt], [GPT-2](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) [@radford2019gpt2], and [GPT-3](https://proceedings.neurips.cc/paper/2020/hash/1457c0d6bfcb4967418bfb8ac142f64a-Abstract.html) [@brown2020gpt3] use a causal Transformer decoder trained to predict the next token.
+
+Decoder-only models naturally support:
+
+- text completion and open-ended generation;
+- conditional generation from a textual prompt;
+- summarization, translation, and question answering when expressed as prompted generation;
+- zero-shot, one-shot, and few-shot task learning;
+- classification or structured prediction when formulated through prompting or fine-tuning.
+
+Classification is possible, but **generation is the native training interface**: the model always predicts what token comes next.
+
+### Encoder–decoder: BART and T5
+
+[BART](https://aclanthology.org/2020.acl-main.703/) [@lewis2020bart] and [T5](https://jmlr.org/papers/v21/20-074.html) [@raffel2020t5] are encoder–decoder models, like the original Transformer. BART learns to reconstruct clean text from corrupted input; T5 casts many NLP problems into a unified text-to-text format.
+
+Encoder–decoder models are especially natural for tasks where a distinct input is transformed into a distinct output:
+
+- machine translation;
+- abstractive summarization;
+- generative question answering;
+- paraphrasing and grammatical correction;
+- data-to-text generation; and
+- other conditional sequence-to-sequence tasks.
+
+## What to remember
+
+1. **LSTM is an RNN architecture.** Gating helped recurrent models learn longer dependencies, but computation remained sequential.
+2. **Attention weakened the fixed-vector bottleneck.** A decoder could access all encoder states dynamically.
+3. **The Transformer removed recurrence from the core architecture.** This improved parallelism and performed strongly on translation.
+4. **Training the decoder uses shifted targets and a causal mask.** The correct prefix is visible; the current and future answers are not.
+5. **Architecture determines the natural interface.** Encoders represent inputs, decoders generate continuations, and encoder–decoders transform one sequence into another.
+
+## References
