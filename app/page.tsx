@@ -167,7 +167,23 @@ export default function Home() {
           aria-label={`${active} content`}
           onClick={() => setSearchOpen(false)}
         >
-          {active === "Introduction" ? (
+          {active === "Home" ? (
+            <article className="main-content lecture-content">
+              <h1>Data for AI</h1>
+              <p>
+                Data for AI is a graduate course that will be taught at
+                Russian-Armenian University in Fall 2026.
+              </p>
+              <p>
+                The course examines how modern large language models are
+                trained, what data they use, and how that data is collected,
+                curated, and evaluated. By the end of the course, students
+                should be prepared to contribute across the LLM training
+                lifecycle, including pretraining, post-training, and
+                reinforcement learning.
+              </p>
+            </article>
+          ) : active === "Introduction" ? (
             <article
               className="main-content lecture-content"
               dangerouslySetInnerHTML={{ __html: introductionHtml }}
@@ -177,6 +193,14 @@ export default function Home() {
               className="main-content lecture-content"
               dangerouslySetInnerHTML={{ __html: lecture1Html }}
             />
+          ) : active === "Calendar" ||
+            active === "Paper reviews" ||
+            active === "Paper discussions" ||
+            active === "Projects" ? (
+            <article className="main-content lecture-content">
+              <h1>{active}</h1>
+              <p>To be announced soon.</p>
+            </article>
           ) : (
             <div className="main-content" aria-hidden="true" />
           )}
