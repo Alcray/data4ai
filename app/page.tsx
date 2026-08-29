@@ -3,63 +3,22 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { AiMarketMoments } from "./AiMarketMoments";
-import { PaperDiscussionsPage, PaperReviewsPage, ProjectsPage } from "./CoursePages";
-import { InteractiveLearning } from "./InteractiveLearning";
 import { curriculumHtml } from "./generated/curriculum";
 import { introductionHtml } from "./generated/introduction";
 import { lecture1Html } from "./generated/lecture-1";
-import { lecture2Html } from "./generated/lecture-2";
-import { lecture3Html } from "./generated/lecture-3";
-import { lecture4Html } from "./generated/lecture-4";
-import { lecture5Html } from "./generated/lecture-5";
-import { lecture6Html } from "./generated/lecture-6";
-import { lecture7Html } from "./generated/lecture-7";
-import { lecture8Html } from "./generated/lecture-8";
-import { lecture9Html } from "./generated/lecture-9";
-import { lecture10Html } from "./generated/lecture-10";
-import { lecture11Html } from "./generated/lecture-11";
-import { lecture12Html } from "./generated/lecture-12";
-import { lecture13Html } from "./generated/lecture-13";
-import { lecture14Html } from "./generated/lecture-14";
-import { lecture15Html } from "./generated/lecture-15";
-import { lecture16Html } from "./generated/lecture-16";
 
 const navigation = [
   "Home",
-  "Calendar",
   "Lectures",
-  "Paper reviews",
-  "Paper discussions",
-  "Projects",
 ] as const;
 
 const lecturePages = [
   { name: "Introduction", html: introductionHtml },
   { name: "Lecture 1: Model lifecycle", html: lecture1Html },
-  { name: "Lecture 2 (draft): Transformer from scratch", html: lecture2Html },
-  { name: "Lecture 3 (draft): Corpus acquisition", html: lecture3Html },
-  { name: "Lecture 4 (draft): Extraction and filtering", html: lecture4Html },
-  { name: "Lecture 5 (draft): Deduplication and privacy", html: lecture5Html },
-  { name: "Lecture 6 (draft): Mixtures and scaling", html: lecture6Html },
-  { name: "Lecture 7 (draft): Multilingual pretraining", html: lecture7Html },
-  { name: "Lecture 8 (draft): Training systems", html: lecture8Html },
-  { name: "Lecture 9 (draft): Evaluation", html: lecture9Html },
-  { name: "Lecture 10 (draft): CPT and SFT", html: lecture10Html },
-  { name: "Lecture 11 (draft): Preference alignment", html: lecture11Html },
-  { name: "Lecture 12 (draft): Reasoning supervision", html: lecture12Html },
-  { name: "Lecture 13 (draft): Long reasoning and RLVR", html: lecture13Html },
-  { name: "Lecture 14 (draft): Synthetic data", html: lecture14Html },
-  { name: "Lecture 15 (draft): Distillation", html: lecture15Html },
-  { name: "Lecture 16 (draft): Capstone and release", html: lecture16Html },
 ] as const;
 
 const lectureFamilies = [
-  { name: "Foundations", lectures: lecturePages.slice(1, 3) },
-  { name: "Corpus engineering", lectures: lecturePages.slice(3, 6) },
-  { name: "Pretraining at scale", lectures: lecturePages.slice(6, 9) },
-  { name: "Evaluation and adaptation", lectures: lecturePages.slice(9, 12) },
-  { name: "Reasoning and experience", lectures: lecturePages.slice(12, 15) },
-  { name: "Transfer and release", lectures: lecturePages.slice(15, 17) },
+  { name: "Foundations", lectures: lecturePages.slice(1, 2) },
 ] as const;
 
 type LectureName = (typeof lecturePages)[number]["name"];
@@ -501,9 +460,6 @@ export default function Home() {
   const [searchOpen, setSearchOpen] = useState(false);
   const lecture1Ref = useRef<HTMLElement>(null);
   const activeLecture = lecturePages.find((lecture) => lecture.name === active);
-  const activeLectureNumber = lecturePages.findIndex(
-    (lecture) => lecture.name === active,
-  );
 
   const results = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -711,29 +667,10 @@ export default function Home() {
               <ReleaseCadencePopover rootRef={lecture1Ref} />
             </>
           ) : activeLecture ? (
-            <>
-              <article
-                className="main-content lecture-content"
-                dangerouslySetInnerHTML={{ __html: activeLecture.html }}
-              />
-              {activeLectureNumber > 0 && (
-                <InteractiveLearning
-                  key={activeLectureNumber}
-                  lectureNumber={activeLectureNumber}
-                />
-              )}
-            </>
-          ) : active === "Paper reviews" ? (
-            <PaperReviewsPage />
-          ) : active === "Paper discussions" ? (
-            <PaperDiscussionsPage />
-          ) : active === "Projects" ? (
-            <ProjectsPage />
-          ) : active === "Calendar" ? (
-            <article className="main-content lecture-content">
-              <h1>{active}</h1>
-              <p>To be announced soon.</p>
-            </article>
+            <article
+              className="main-content lecture-content"
+              dangerouslySetInnerHTML={{ __html: activeLecture.html }}
+            />
           ) : (
             <div className="main-content" aria-hidden="true" />
           )}

@@ -1,6 +1,6 @@
 ---
-title: "Lectures: Draft curriculum"
-description: "Sixteen 90-minute sessions that build a language-model training stack from data and architecture through post-training, reasoning, and release."
+title: "Lectures"
+description: "Published course material for Data for AI."
 format:
   html:
     minimal: true
@@ -11,94 +11,10 @@ execute:
   enabled: false
 ---
 
-The course follows one language model through its complete lifecycle. Students do not only study finished systems: they implement the core model, construct and audit data, run controlled training experiments, build an evaluation harness, perform a post-training intervention, and defend a release package.
+The published course material begins with the architectural background and then follows the modern language-model lifecycle from data to release.
 
-The introduction supplies background from recurrent networks to Transformers. It is a preparatory chapter and does not count toward the sixteen taught sessions. The main course assumes that background and begins with the modern language-model lifecycle.
+## Published material
 
-## The course at a glance
+**Introduction.** Recurrent neural networks, LSTMs, attention, the original Transformer, and the encoder-only, decoder-only, and encoder–decoder families.
 
-<div class="rlhf-flow" role="img" aria-label="Six course families in order: foundations in lectures 1 and 2; corpus engineering in lectures 3 to 5; pretraining at scale in lectures 6 to 8; evaluation and adaptation in lectures 9 to 11; reasoning and experience in lectures 12 to 14; and transfer and release in lectures 15 and 16.">
-  <div class="rlhf-step"><span>01–02</span><strong>Foundations</strong><small>Lifecycle and decoder-only Transformer</small></div>
-  <div class="rlhf-arrow" aria-hidden="true">→</div>
-  <div class="rlhf-step"><span>03–05</span><strong>Corpus engineering</strong><small>Sources, extraction, filtering, deduplication</small></div>
-  <div class="rlhf-arrow" aria-hidden="true">→</div>
-  <div class="rlhf-step"><span>06–08</span><strong>Pretraining at scale</strong><small>Mixtures, multilingual data, training systems</small></div>
-  <div class="rlhf-arrow" aria-hidden="true">→</div>
-  <div class="rlhf-step"><span>09–11</span><strong>Evaluation and adaptation</strong><small>Benchmarks, CPT, SFT, preferences</small></div>
-  <div class="rlhf-arrow" aria-hidden="true">→</div>
-  <div class="rlhf-step"><span>12–14</span><strong>Reasoning and experience</strong><small>Process signals, RLVR, synthetic data</small></div>
-  <div class="rlhf-arrow" aria-hidden="true">→</div>
-  <div class="rlhf-step"><span>15–16</span><strong>Transfer and release</strong><small>Distillation, capstone, reproducibility</small></div>
-</div>
-
-The boundaries organize the calendar; they do not isolate concerns. Evaluation starts before training. Provenance, licensing, multilingual coverage, privacy, compute accounting, and reproducibility remain active across the entire pipeline.
-
-## Session format
-
-Each meeting lasts 90 minutes. A typical session uses approximately 50 minutes for derivation and technical explanation, 15 minutes for an interactive decision checkpoint, 20 minutes for an implementation or design review connected to the shared model, and 5 minutes to record the resulting project decision.
-
-Paper reviews and paper discussions are separate course components with their own navigation, submissions, roles, and meeting protocol. They support the lectures without consuming the technical and practical spine of each 90-minute session.
-
-## Sixteen taught sessions
-
-### Foundations
-
-**Lecture 1: The frontier language-model lifecycle.** Historical transitions are used to distinguish architecture, pretraining, continued pretraining, supervised fine-tuning, preference optimization, reinforcement learning, and inference-time scaling. The studio reconstructs the lineage of an open model and separates documented facts from product hypotheses.
-
-**Lecture 2 (draft): The decoder-only Transformer from scratch.** Token IDs, embeddings, causal self-attention, multi-head attention, residual streams, normalization, SwiGLU, RoPE, cross-entropy, generation, parameter counts, FLOPs, and memory. Students implement and test a minimal GPT block and make it overfit a tiny sample.
-
-### Corpus engineering
-
-**Lecture 3 (draft): Corpus acquisition, licensing, and provenance.** Web, books, code, mathematics, science, conversation, licensed, and first-party data become a source manifest and provenance graph with deletion and evaluation boundaries.
-
-**Lecture 4 (draft): Extraction, language identification, and quality filtering.** HTML, PDF, and code extraction; boilerplate removal; Unicode normalization; segmentation; multilingual language identification; heuristic and learned filters; toxicity and PII policies; false-positive analysis.
-
-**Lecture 5 (draft): Deduplication, contamination, memorization, and privacy.** Exact, substring, MinHash/LSH near-duplicate, and semantic methods; benchmark decontamination; memorization, extraction, membership, and canary tests. Students implement a contamination-aware deduplication experiment.
-
-### Pretraining at scale
-
-**Lecture 6 (draft): Data mixtures, curriculum, and scaling laws.** Sampling temperature, domain balance, transfer and interference, DoReMi, DSIR, DCLM, staged pretraining, Kaplan-style and compute-optimal scaling, and proxy-model selection. Students compare three mixtures at fixed compute.
-
-**Lecture 7 (draft): Multilingual pretraining and language fairness.** Tokenizer fertility and byte fallback, high- and low-resource sampling, script coverage, code-switching, translated versus native data, cross-lingual transfer, and evaluation by language and dialect.
-
-**Lecture 8 (draft): Training systems and efficient pretraining.** AdamW, schedules, batch and gradient noise, mixed precision, activation checkpointing, FlashAttention, data/model/tensor/pipeline parallelism, ZeRO/FSDP, mixture of experts, checkpoint recovery, and compute accounting.
-
-### Evaluation and adaptation
-
-**Lecture 9 (draft): Evaluation from perplexity to real tasks.** Intrinsic and extrinsic evaluation; knowledge, mathematics, code, long-context, multilingual, preference, and agentic tasks; pass@$k$; uncertainty; saturation; contamination; judge bias; Goodhart effects; and cost-normalized comparison.
-
-**Lecture 10 (draft): Continued pretraining, SFT, and instruction data.** Domain adaptation, instruction diversity, chat templates, packing, loss masking, response quality, catastrophic forgetting, and the distinction between changing knowledge and changing behavior.
-
-**Lecture 11 (draft): Preference data, reward models, and alignment.** Pairwise comparisons, annotator agreement, reward modeling, rejection sampling, PPO-style RLHF, DPO-family methods, RLAIF and Constitutional AI, calibration, reward hacking, and distribution shift.
-
-### Reasoning and experience
-
-**Lecture 12 (draft): Reasoning traces, verifiers, and test-time compute.** Chain-of-thought, self-consistency, STaR, outcome and process supervision, process reward models, verifier reranking, faithfulness, search, and the cost–accuracy frontier.
-
-**Lecture 13 (draft): Long reasoning, RLVR, and environments.** Verifiable rewards, exploration, GRPO-style optimization, cold-start data, curricula, reward gaming, long-to-short transfer, and gym design. OpenAI o1, DeepSeekMath/R1, Kimi, Qwen, and Seed reports are compared by published evidence and unknowns.
-
-**Lecture 14 (draft): Synthetic data at scale.** Teacher and student generation, Self-Instruct and evolutionary prompting, executable and symbolic verification, diversity and difficulty controls, synthetic–real mixtures, feedback loops, and recursive model-collapse risk.
-
-### Transfer and release
-
-**Lecture 15 (draft): Distillation and model families.** Logit, sequence, explanation, and trajectory distillation; teacher ensembles; rejection sampling; self-distillation; long-to-short transfer; latency and memory trade-offs; and the limits of the student ceiling.
-
-**Lecture 16 (draft): End-to-end capstone and release.** Dataset and model cards, lineage, reproducibility, red teaming, rollback, incident response, limitations, and falsifiable research communication. Teams defend the entire chain from raw source to released artifact.
-
-## Cumulative implementation spine
-
-The course uses five cumulative artifacts rather than sixteen disconnected exercises.
-
-| Milestone | Lectures | Required evidence |
-|---|---:|---|
-| **LM core** | 1–2 | Tested tokenizer boundary, decoder-only model, optimizer, generation, parameter/FLOP accounting, tiny-data overfit |
-| **Corpus pipeline** | 3–5 | Source manifest, extraction, language ID, filtering, MinHash/LSH deduplication, contamination and privacy audit |
-| **Training and scaling** | 6–8 | Mixture proxy experiment, multilingual report, compute/memory model, profiled and restartable training run |
-| **Evaluation and post-training** | 9–13 | Versioned evaluation harness, CPT/SFT baseline, one preference or reasoning intervention, verifier audit, cost analysis |
-| **Research release** | 14–16 | Synthetic or distilled data ablation, end-to-end report, dataset/model cards, reproducibility bundle, limitations and defense |
-
-The practical spine is one cohort-built Armenian-focused model. Small 10–150M runs establish correctness and compare tokenizers, filters, mixtures, and schedules. After the artifacts and distributed system pass explicit promotion gates, the cohort may scale the selected recipe to one shared 0.8–1.1B pretraining run, then carry the checkpoint through continued pretraining where justified, SFT, preference optimization, RLVR, evaluation, and release. If the required cluster and retry budget are not secured, the same evidence chain ends in a smaller from-scratch model plus continued pretraining of an open 0.5–1.5B base model.
-
-## What makes the course research-level
-
-Code completion is necessary but insufficient. Every experiment starts with a hypothesis, immutable data and code versions, a compute budget, a baseline, a metric, and an acceptance criterion. Every reported gain includes uncertainty and at least one alternative explanation. Students retain unsuccessful runs and analyze them. A polished score without lineage, controls, or failure analysis does not satisfy the course standard.
+**Lecture 1: The frontier language-model lifecycle.** The historical transitions that changed model interfaces, training, evaluation, inference-time computation, multimodality, and the economics of AI infrastructure.
