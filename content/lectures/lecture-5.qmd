@@ -1,0 +1,98 @@
+---
+title: "Lecture 5 (draft): Deduplication, contamination, memorization, and privacy"
+order: 6
+description: "How repeated and leaked data are detected, removed, measured, and connected to memorization and privacy risk."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+Repeated text changes the effective training distribution. A document copied one hundred times receives far more optimization weight than a unique document with the same intended sampling weight. When the repeated material contains an evaluation answer, a private string, or a rare sequence, the problem becomes contamination, memorization, or privacy leakage.
+
+## Learning objectives
+
+By the end of this lecture, you should be able to:
+
+1. distinguish exact, substring, near-duplicate, and semantic similarity;
+2. explain how MinHash and locality-sensitive hashing approximate Jaccard similarity;
+3. design train–evaluation decontamination before model training;
+4. connect duplication frequency to memorization and extraction risk; and
+5. evaluate retained tokens, diversity, leakage, and downstream quality together.
+
+## Four notions of duplication
+
+**Exact duplication** identifies identical raw or normalized documents using a cryptographic or fast content hash. **Substring duplication** finds long shared spans inside otherwise different documents. **Near duplication** represents a document by word or character shingles and searches for highly overlapping sets. **Semantic similarity** uses learned representations or judges to detect paraphrases and equivalent tasks.
+
+These methods answer different questions. Exact matching is cheap and precise but misses a copied article with one changed footer. Semantic matching can find rephrased benchmark questions but may remove genuinely different explanations of the same concept.
+
+## MinHash and LSH
+
+For shingle sets $A$ and $B$, Jaccard similarity is
+
+$$
+J(A,B)=\frac{|A\cap B|}{|A\cup B|}.
+$$
+
+Comparing every document pair is quadratic. MinHash produces a compact signature whose collision probability estimates Jaccard similarity. Locality-sensitive hashing, or LSH, groups signatures into candidate buckets so expensive comparisons are limited to likely matches.
+
+The shingle size, number of hash functions, banding scheme, and similarity threshold determine recall and precision. Threshold selection must use labeled duplicate and non-duplicate pairs from the actual corpus, including multilingual and templated sources.
+
+## Which copy survives?
+
+A duplicate cluster still needs a canonical representative. Keeping the first-seen copy makes the result depend on ingestion order. Keeping the highest-quality copy depends on a filter that may prefer one language or style. Source priority may preserve licensed or better-documented material.
+
+The cluster record should retain every member, the similarity evidence, the canonical-selection rule, and the removed token count. This makes the decision reversible and allows source-level audits after deduplication.
+
+[*Deduplicating Training Data Makes Language Models Better*](https://aclanthology.org/2022.acl-long.577/) [@lee2022dedup] connects deduplication with reduced memorization and improved language-model training efficiency in its experimental setting. The course treats this as a testable intervention: improvements must be re-established for the selected corpus and model budget.
+
+## Benchmark contamination
+
+Evaluation material can enter training as the original question, a worked solution, a translated copy, a repository fixture, or a generated paraphrase. A robust audit proceeds in layers:
+
+1. register benchmark versions and protected splits;
+2. search raw and normalized data for exact or long substring matches;
+3. search shingle signatures for near duplicates;
+4. inspect semantically similar candidates; and
+5. record every removed cluster and threshold.
+
+Decontamination should occur before training. Checking only after a strong score is observed cannot recover an uncontaminated checkpoint.
+
+## Memorization and extraction
+
+Memorization is not identical to duplication, but repeated rare sequences can be easier to reproduce. [Extracting Training Data from Large Language Models](https://www.usenix.org/conference/usenixsecurity21/presentation/carlini-extracting) [@carlini2021extracting] demonstrates that generated text can expose verbatim training examples, including sensitive information, under particular attack and model conditions.
+
+Privacy evaluation can include canary insertion, exposure measurement, membership-inference probes, and targeted extraction attempts. These tests require strict handling rules: a privacy audit must not create a new uncontrolled store of the sensitive material it seeks to detect.
+
+## Studio: controlled deduplication ablation
+
+Implement exact hashing and a MinHash/LSH near-duplicate pipeline for a small corpus. Protect a versioned evaluation set and add known duplicate families, paraphrases, boilerplate, and synthetic canaries.
+
+Compare at least three thresholds using:
+
+- documents and tokens retained;
+- duplicate-pair precision and recall;
+- cluster sizes by source and language;
+- benchmark overlap remaining;
+- canary or repeated-span exposure; and
+- held-out loss or a fixed-compute proxy model.
+
+The decision rule must be written before the final comparison. A threshold is not justified merely because it removes more data.
+
+## What to remember
+
+1. Exact, substring, near, and semantic duplication solve different problems.
+2. MinHash/LSH makes candidate search scalable but introduces measurable approximation choices.
+3. Canonical-copy selection changes the retained distribution.
+4. Benchmark decontamination must protect exact, derived, translated, and paraphrased forms.
+5. Duplication can increase memorization risk, but privacy requires direct attack-oriented evaluation.
+6. The useful deduplication threshold is chosen through labeled pairs and downstream ablation.
+
+## References

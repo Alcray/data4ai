@@ -1,0 +1,84 @@
+---
+title: "Lecture 3 (draft): Corpus acquisition, licensing, and provenance"
+order: 4
+description: "How heterogeneous sources become a versioned corpus manifest with rights, provenance, deletion, and evaluation boundaries."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+A pretraining corpus is not a single dataset. It is a portfolio of web snapshots, books, code, mathematical and scientific material, conversations, licensed collections, and first-party data acquired under different technical, legal, and social conditions. Before filtering begins, the project must know what it acquired, when it acquired it, how it may be used, and which downstream risks follow from keeping it.
+
+## Learning objectives
+
+By the end of this lecture, you should be able to:
+
+1. separate acquisition, storage, curation, and sampling;
+2. classify web, code, long-form, scientific, conversational, licensed, and first-party sources by their strengths and risks;
+3. design a provenance record for every corpus component;
+4. define exclusion and deletion procedures; and
+5. protect evaluation data from the training pipeline.
+
+## A source portfolio
+
+| Source family | What it contributes | Questions to resolve before use |
+|---|---|---|
+| Web pages | Breadth, current language, many domains | Crawl terms, duplication, PII, spam, jurisdiction |
+| Books and long-form text | Long-range coherence and edited prose | Copyright, editions, public-domain status |
+| Code | Executable structure and software knowledge | Repository license, generated files, secrets |
+| Scientific material | Technical terminology and evidence | Access rights, formulas, citation structure |
+| Forums and dialogue | Interaction patterns and informal language | Consent, identity, toxicity, deleted content |
+| Curated multilingual sources | Coverage outside dominant web languages | Representativeness, translation artifacts, community context |
+
+Public accessibility is not the same as permission, and a license is not a substitute for privacy review. Acquisition policy must combine the relevant legal analysis with a technical record of how each object entered the corpus.
+
+## Manifests and the provenance graph
+
+Every source should have a stable identifier and enough metadata to reproduce a decision later. A minimal source manifest records:
+
+```text
+source_id       acquisition_time     origin
+license_basis   allowed_uses         content_hash
+language_hint   deletion_status      pipeline_version
+```
+
+The content hash helps detect repeated acquisitions. The pipeline version identifies which transformations were applied. A deletion status allows a later request or policy change to propagate into derived datasets rather than being handled as an informal exception.
+
+A manifest becomes a **provenance graph** when every derived shard records the input objects and transformations that produced it. That graph should answer both directions of an audit: “Which sources influenced this training shard?” and “Which derived artifacts must change if this source is removed?”
+
+## License triage is source-specific
+
+License review should preserve the license expression, copyright holder when known, access terms, allowed uses, attribution requirements, redistribution constraints, and the decision made for the intended model release. Repository-level code licenses may not cover embedded data, generated artifacts, or copied dependencies. A web page may contain text with a different rights status from the site's software.
+
+The course does not replace legal advice. It trains the engineering discipline required to make counsel's decision executable: every inclusion or exclusion rule must resolve to stable source records and derived artifacts.
+
+## Train, validation, and evaluation boundaries
+
+Evaluation sets should be registered before broad ingestion whenever possible. Exact questions, close paraphrases, answer explanations, and repository mirrors may all leak into a crawl. A denylist catches known identifiers, while later semantic checks search for less direct overlap.
+
+The boundary must also work in the other direction: validation data used repeatedly for model selection is no longer an untouched estimate of final performance. A project needs a private final evaluation or a rotating set of tests.
+
+## An inspectable corpus
+
+[*Dolma: an Open Corpus of Three Trillion Tokens for Language Model Pretraining Research*](https://arxiv.org/abs/2402.00159) [@soldaini2024dolma] provides a useful example of a corpus whose sources, processing decisions, and released artifacts can be inspected. The relevant distinction is between facts about acquired sources, normative choices made by curators, and transformations another team can reproduce from the published record.
+
+## Practical checkpoint
+
+Choose at least four source families for a hypothetical multilingual 1B-parameter model. Produce a source manifest, license-triage table, provenance graph, inclusion and exclusion rules, deletion mechanism, and evaluation-data boundary. Another team should be able to reproduce which snapshots were admitted without relying on filenames or oral history.
+
+## What to remember
+
+1. Acquisition creates obligations before it creates training examples.
+2. Every source needs provenance, a rights basis, and a deletion path.
+3. A corpus should preserve source distinctions long enough to support later filtering and mixture experiments.
+4. Known evaluation data must be isolated before training data is assembled.
+5. Documentation is part of the pipeline because later decisions depend on it.
+
+## References

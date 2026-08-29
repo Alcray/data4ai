@@ -1,0 +1,99 @@
+---
+title: "Lecture 8 (draft): Training systems and efficient pretraining"
+order: 9
+description: "How optimization, GPU memory, efficient kernels, parallelism, mixture-of-experts routing, checkpoints, and fault recovery make pretraining executable."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+A correct Transformer can still be impossible to train. Model parameters, optimizer states, activations, attention intermediates, communication, storage, and failures all compete for a finite systems budget. Training systems make the mathematical experiment executable without changing which scientific comparison is being claimed.
+
+## Learning objectives
+
+By the end of this lecture, you should be able to:
+
+1. calculate parameter, gradient, optimizer-state, activation, and attention memory;
+2. explain AdamW, warmup, decay, global batch size, and gradient accumulation;
+3. distinguish data, tensor, pipeline, and fully sharded parallelism;
+4. explain the systems purpose of FlashAttention, activation checkpointing, ZeRO/FSDP, and mixture of experts; and
+5. design a restartable run with throughput, numerical, data, and fault diagnostics.
+
+## Optimizer and schedule
+
+AdamW maintains moving averages of first and second moments in addition to parameters and gradients. In mixed precision, a training system may also retain higher-precision master weights. Optimizer memory can therefore exceed model-weight memory several times over.
+
+Warmup limits unstable early updates before the optimizer statistics and activations settle. A decay schedule controls later step size. The **global batch** combines microbatches across devices and gradient-accumulation steps before one optimizer update. Changing it changes the optimization regime, not only throughput.
+
+The run manifest records optimizer hyperparameters, schedule in tokens or steps, gradient clipping, weight decay exclusions, numerical precision, loss scaling, and the exact number of target tokens processed.
+
+## Memory accounting
+
+Separate at least five categories:
+
+1. parameters;
+2. gradients;
+3. optimizer states and master weights;
+4. saved activations for backward; and
+5. temporary kernel and communication buffers.
+
+Activation memory grows with batch, sequence length, model width, and layers. A naive attention implementation additionally materializes a $T\times T$ score matrix per head. A model can fit at sequence length 2,048 and fail at 8,192 even when its parameter count is unchanged.
+
+**Activation checkpointing** stores selected activations and recomputes the rest during backward, trading additional FLOPs for lower memory. The trade should be measured in peak memory and tokens per second rather than described only qualitatively.
+
+## Kernels and arithmetic intensity
+
+GPU time depends on data movement as well as floating-point operations. A sequence of individually simple operations may be slow if each writes and rereads large tensors from high-bandwidth memory.
+
+[FlashAttention-2](https://arxiv.org/abs/2307.08691) [@dao2023flashattention2] reorganizes exact attention computation to reduce memory traffic and improve work partitioning without materializing the full attention matrix. It does not change the attention objective. Correctness tests compare outputs and gradients with a trusted reference across shapes, masks, dtypes, and edge cases.
+
+## Parallelism
+
+**Data parallelism** replicates the model and gives each replica different examples; gradients are aggregated. **Tensor parallelism** shards large matrix operations within a layer. **Pipeline parallelism** partitions layers and schedules microbatches through stages. **Fully sharded data parallelism** shards parameters, gradients, and optimizer states while gathering what each operation needs.
+
+[Megatron-LM](https://arxiv.org/abs/1909.08053) [@shoeybi2019megatron] is a primary reference for model parallelism in large Transformers. [ZeRO](https://arxiv.org/abs/1910.02054) [@rajbhandari2020zero] formalizes staged partitioning of optimizer states, gradients, and parameters.
+
+No strategy is universally best. The topology, model dimensions, sequence length, device memory, network bandwidth, and failure model determine whether communication or computation dominates.
+
+## Mixture of experts
+
+A mixture-of-experts layer routes each token to a subset of feed-forward experts. This increases total parameter capacity without activating every parameter for every token. It introduces router computation, expert load balance, all-to-all communication, capacity limits, and dropped or rerouted tokens.
+
+The data mixture affects routing because different languages and domains may concentrate on different experts. A systems report should include expert utilization and overflow by data slice, not only average throughput.
+
+## Checkpointing and fault tolerance
+
+A restartable checkpoint includes model weights, optimizer and scheduler state, random-number generator states, data-loader position, tokenizer and mixture versions, and the token count. Saving only weights resumes from a different experiment.
+
+Checkpoint intervals trade storage and pause cost against lost work. Test recovery deliberately: interrupt a small run, resume it, and compare the next losses and sample order with an uninterrupted control.
+
+## Studio: profile and recover mini-GPT
+
+Profile the model from Lecture 2 at two sequence lengths and two precisions. Measure peak memory, tokens per second, model FLOP utilization when available, and time spent in attention, MLP, optimizer, and data loading.
+
+Then add activation checkpointing or an efficient attention implementation, save a complete checkpoint, terminate the process, resume, and verify the continuation. Submit:
+
+- a predicted versus measured memory table;
+- a throughput profile;
+- correctness tests for the optimization;
+- a compute and storage budget; and
+- a recovery runbook with one demonstrated failure.
+
+## What to remember
+
+1. Optimizer and activation memory can exceed parameter memory.
+2. Global batch size changes optimization as well as throughput.
+3. Efficient kernels reduce data movement while preserving the mathematical operation.
+4. Parallelism strategies shard different resources and introduce different communication.
+5. MoE capacity includes a routing and load-balance problem tied to the data distribution.
+6. A checkpoint is complete only when the same experiment can continue from it.
+
+## References

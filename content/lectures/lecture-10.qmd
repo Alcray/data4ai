@@ -1,0 +1,102 @@
+---
+title: "Lecture 10 (draft): Continued pretraining, SFT, and instruction data"
+order: 11
+description: "How unlabeled domain adaptation and supervised instruction examples change different properties of the same base checkpoint."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+One pretrained checkpoint can support several specialized models. Continued pretraining changes the model through token prediction on a new distribution. Supervised fine-tuning defines desired responses to instructions. Combining them without separating their effects makes it difficult to know whether a gain came from new knowledge, a new interface, or both.
+
+## Learning objectives
+
+By the end of this lecture, you should be able to:
+
+1. distinguish continued pretraining, domain adaptation, and SFT objectives;
+2. design replay mixtures that reduce unwanted forgetting;
+3. specify chat templates, packing, response-only loss masks, and task mixtures;
+4. compare instruction quantity, quality, diversity, and teacher provenance; and
+5. evaluate base, CPT, and SFT checkpoints on capability and behavior separately.
+
+## Continued pretraining
+
+Continued pretraining applies a causal language-model objective to a new domain, language, time period, or context distribution. [Don't Stop Pretraining](https://aclanthology.org/2020.acl-main.740/) [@gururangan2020dontstop] distinguishes domain-adaptive pretraining from task-adaptive pretraining and provides a useful experimental vocabulary even though modern models and scales differ.
+
+Three common designs are:
+
+1. **Pure target continuation:** concentrate on the new distribution and accept greater forgetting risk.
+2. **Replay mixture:** mix target data with data from the original distribution.
+3. **Scheduled transition:** change the target-to-replay ratio across training.
+
+Evaluation compares target-domain gain with general held-out loss, old capability slices, multilingual regressions, and calibration. A lower target-domain loss does not prove better instruction following.
+
+## Supervised fine-tuning
+
+SFT trains on an explicit input–output contract. A conversational example may serialize roles as
+
+```text
+<system>You are a careful data assistant.</system>
+<user>Compare exact and near deduplication.</user>
+<assistant>Exact deduplication removes identical items ...</assistant>
+```
+
+The chat template determines boundary tokens and role semantics. With response-only loss, user and system tokens provide context but only assistant tokens become prediction targets. With full-sequence loss, the model is also trained to predict prompts and control tokens.
+
+Packing several conversations into one sequence requires explicit attention and loss-boundary rules. A misplaced mask can train the model on padding, leak future turns, or teach it to imitate the user.
+
+## What SFT data teaches
+
+Instruction data can teach task formats, tool-call schemas, domain terminology, refusal patterns, and styles. It can also elicit capabilities already latent in the base checkpoint. Exact-match gains may reflect answer formatting rather than new reasoning.
+
+[InstructGPT](https://arxiv.org/abs/2203.02155) [@ouyang2022instructgpt] used demonstrations to establish a behavior distribution before preference modeling and reinforcement learning. [Self-Instruct](https://aclanthology.org/2023.acl-long.754/) [@wang2023selfinstruct] bootstraps instructions and responses from a model, while [LIMA](https://arxiv.org/abs/2305.11206) [@zhou2023lima] argues—within its setup—that a small curated demonstration set can strongly shape response behavior.
+
+These findings test different hypotheses and are not contradictory slogans. Quantity, quality, diversity, base-model strength, evaluation distribution, and contamination all differ.
+
+## Task mixture and provenance
+
+Count semantic task families, not only prompt strings. Thousands of template variants from one seed may provide less coverage than a smaller set of independently sourced tasks. The manifest records seed source, generator, prompt, model version, verifier or reviewer, revisions, and duplicate family.
+
+Generated responses inherit the teacher's knowledge, style, and errors. Human review is most valuable when directed toward uncertain slices, difficult tasks, and recurring failure modes rather than only polished easy examples.
+
+## Separating knowledge and behavior
+
+Compare at least three checkpoints:
+
+- the original base model;
+- a CPT checkpoint trained on target-domain documents; and
+- an SFT checkpoint trained from the base or CPT checkpoint.
+
+Evaluate held-out loss, target knowledge, instruction following, formatting, general capabilities, and regressions. A factorial design with `base/CPT × no-SFT/SFT` is stronger than a single chain because it separates the two interventions.
+
+## Studio: CPT and SFT ablation
+
+Prepare a small target-domain corpus and a 200-example instruction set. Define:
+
+- CPT target and replay mixture;
+- instruction taxonomy and source lineage;
+- chat template, packing, and loss mask;
+- fixed token or compute budgets;
+- capability and behavior metrics; and
+- the rejection criterion for forgetting.
+
+Run at least the base, CPT, and SFT comparisons. If compute permits, run SFT from both the base and CPT checkpoints. Report invalid-output rate separately from substantive accuracy and include failure examples.
+
+## What to remember
+
+1. CPT changes a model through unlabeled token prediction on a new distribution.
+2. SFT defines desired behavior through serialized demonstrations.
+3. Templates, packing, and loss masks are part of the data specification.
+4. Instruction diversity is not measured by prompt count alone.
+5. Generated examples carry teacher provenance and correlated errors.
+6. Factorial comparisons separate knowledge adaptation from behavior elicitation.
+
+## References

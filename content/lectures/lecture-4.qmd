@@ -1,0 +1,86 @@
+---
+title: "Lecture 4 (draft): Extraction, language identification, and quality filtering"
+order: 5
+description: "How HTML, PDF, and code sources become normalized documents with measured language, quality, safety, and privacy decisions."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+An acquired object is not yet a training document. HTML contains navigation and templates, PDFs encode layout rather than reading order, repositories contain generated files and vendored dependencies, and Unicode permits several representations of visually similar text. Extraction determines which of these structures become model input.
+
+## Learning objectives
+
+By the end of this lecture, you should be able to:
+
+1. design separate extraction paths for web, PDF, and code sources;
+2. normalize text without silently destroying meaningful structure;
+3. evaluate language identification on multilingual and code-switched data;
+4. compare heuristic, classifier-based, safety, and PII filters; and
+5. measure the precision, recall, retention, and distribution shift produced by a filter.
+
+## Extraction is a model-facing decision
+
+A web extractor should distinguish main content from menus, cookie notices, related links, comments, and repeated headers. A PDF extractor must reconstruct reading order, headings, tables, equations, and page boundaries. A code extractor needs repository metadata, language, file paths, license boundaries, and rules for generated or minified content.
+
+The output should preserve both text and structure:
+
+```text
+document_id       source_id        extractor_version
+content           content_type     language_scores
+segments          structural_tags  quality_features
+source_offsets    warnings         transformation_log
+```
+
+Source offsets make it possible to inspect the original object when a filter fails. Warnings preserve uncertainty rather than converting every parse into apparently clean text.
+
+## Unicode normalization and segmentation
+
+Normalization can standardize whitespace, line endings, and canonically equivalent Unicode sequences. It should not transliterate scripts, erase mathematical notation, merge code indentation, or remove diacritics without a task-specific reason. Store raw content separately from normalized derivatives so the decision remains reversible.
+
+Document segmentation defines the unit used for filtering, deduplication, packing, and lineage. One very long page may become several coherent documents; one forum thread may retain a structured sequence of turns. Fixed-length chunks created only for model context should not replace the semantic document record.
+
+## Language identification
+
+A language identifier returns a score or distribution, not ground truth. Short strings, named entities, transliterated text, related languages, dialects, and code-switching are common failure cases. An `unknown` or multilingual label can be more honest than forcing every document into one language.
+
+Evaluation uses a manually labeled hard-case set and reports a confusion matrix, precision, recall, and abstention by language. Aggregate accuracy can hide a system that performs well on English and poorly on Armenian. The intended sampling policy determines whether false positives or false negatives are more costly.
+
+## Quality filtering
+
+Heuristic features may include document length, symbol ratios, line repetition, sentence structure, stopword patterns, or the fraction of boilerplate. A learned filter predicts quality from labeled examples or similarity to a reference distribution. [DataComp-LM](https://arxiv.org/abs/2406.11794) [@li2024datacomplm] provides controlled comparisons of extraction, deduplication, filtering, and mixing choices, including a strong model-based filtering baseline. Its result is evidence for that experimental setting, not a universal proof that one score defines high-quality text.
+
+A filter changes the distribution twice: it removes documents, and it changes which sources and languages remain available for later sampling. Report:
+
+- documents and tokens retained globally and by subgroup;
+- precision and recall on manually labeled decisions;
+- examples near the threshold;
+- changes in length, language, domain, and time distributions; and
+- a fixed-compute downstream ablation.
+
+## Safety and privacy policies
+
+Toxicity and PII detectors can remove a document, redact a span, or attach metadata for later sampling. The correct action depends on the threat model and release policy. Span replacement preserves surrounding text but introduces a synthetic token pattern. Whole-document removal avoids that pattern but may disproportionately remove some sources. Silent deletion without counts makes both effects impossible to audit.
+
+## Studio: build and audit the pipeline
+
+Implement `ingest → extract → normalize → segment → language ID → quality score → policy action` for a small English–Russian–Armenian collection containing web pages, PDFs, and code. Manually label at least 30 hard cases before choosing thresholds.
+
+The report includes the confusion matrix, retention by language and source type, false-positive and false-negative examples, and one downstream proxy measurement. A successful pipeline is not the one that deletes the most; it is the one whose trade-offs are explicit and reproducible.
+
+## What to remember
+
+1. Extraction determines which source structures become training evidence.
+2. Raw and normalized objects should remain separately recoverable.
+3. Language identification needs multilingual hard cases and an abstention policy.
+4. Quality, safety, and privacy filters encode different objectives.
+5. Every threshold needs subgroup retention, error analysis, and a downstream ablation.
+
+## References

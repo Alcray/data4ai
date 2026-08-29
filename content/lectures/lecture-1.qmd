@@ -1,7 +1,7 @@
 ---
-title: "Lecture 1: The evolution of large language models"
+title: "Lecture 1: The frontier language-model lifecycle"
 order: 2
-description: "How instruction tuning, human feedback, benchmarks, open weights, reasoning, agents, and multimodality changed the language-model landscape after the Transformer."
+description: "How data, pretraining, evaluation, post-training, inference-time computation, and product design combine to create a modern language-model system."
 bibliography: ../references.bib
 citeproc: true
 format:
@@ -17,18 +17,35 @@ execute:
 
 The Transformer supplied the architecture. The next wave of progress changed almost everything around it: the training objective, the interface, the evaluation protocol, the amount of computation used at inference time, and eventually the kinds of input and output a model could handle.
 
-This lecture follows those changes through a set of **moments**—releases that changed what people expected from models, how researchers measured progress, or where money and engineering effort moved next.
+This lecture follows those changes through a set of **moments**—releases that changed what people expected from models, how researchers measured progress, or where money and engineering effort moved next. The timeline is also a map of the training lifecycle: each apparent product jump can be traced to a change in data, optimization, evaluation, inference, or system design.
 
 ## Learning objectives
 
 By the end of this lecture, you should be able to:
 
-1. explain why ChatGPT felt like a discontinuity even though its ingredients had predecessors;
-2. describe the demonstration–ranking–reward-model pipeline used in RLHF;
-3. interpret a benchmark result by connecting its score to the checkpoint, evaluation protocol, and uncertainty;
-4. identify the major United States, Chinese, European, and regional model ecosystems;
-5. place reasoning models, coding agents, native media generation, unified model routing on one timeline;
-6. distinguish language models, vision-language models, multimodal models, and vision-language-action models.
+1. reconstruct the stages from acquired data to a released language-model system;
+2. explain why ChatGPT felt like a discontinuity even though its ingredients had predecessors;
+3. describe the demonstration–ranking–reward-model pipeline used in RLHF;
+4. interpret a benchmark result by connecting its score to the checkpoint, evaluation protocol, and uncertainty;
+5. place reasoning models, coding agents, native media generation, and unified model routing on one timeline; and
+6. distinguish published evidence about a model from hypotheses about its private training lineage.
+
+## The lifecycle behind the moments
+
+A model release compresses many artifacts into one name. The underlying project usually contains at least six linked stages:
+
+1. **Corpus construction:** acquire, document, extract, filter, deduplicate, and mix data.
+2. **Representation and architecture:** train or select a tokenizer and define the model, objective, and context representation.
+3. **Pretraining:** optimize a base checkpoint under explicit data, token, compute, and systems budgets.
+4. **Evaluation:** measure loss, capabilities, costs, risks, and regressions using versioned protocols.
+5. **Post-training:** continue pretraining or apply supervised, preference, reasoning, or reinforcement-learning signals.
+6. **Release:** connect the selected checkpoint to inference infrastructure, model behavior, documentation, monitoring, and rollback.
+
+These stages form a graph rather than a one-way assembly line. Evaluation changes the next data mixture. Post-training failures create new demonstrations or environments. A release incident can require a new filter, a new reward, or a new checkpoint. The course project records these connections as lineage rather than treating the final weights as the whole system.
+
+### Studio: reconstruct a model lineage
+
+Choose an open model with a technical report, training-data description, evaluation table, and model card. Build an evidence table with one row for each lifecycle stage. Mark every field as **published**, **derived**, or **unknown**. The result is successful when another reader can trace each published claim to its source and identify what cannot be inferred.
 
 ## The ChatGPT moment
 
@@ -407,128 +424,193 @@ HyGPT is important precisely because it illustrates a different research objecti
 
 A benchmark score cannot put every provider on one durable capability axis: evaluations change, modalities differ, and several products are routers rather than single checkpoints. A release-cadence chart answers a different historical question cleanly. The **y-axis is the provider**, the **x-axis is calendar time**, and every dot is a dated public model or model-family release.
 
-The labels name major checkpoints; adjacent minor dots record closely spaced updates. In 2023, a provider might publish a new generation after many months. By 2026, OpenAI shipped GPT-5.3 Codex and Codex Spark one week apart, while Qwen published three Qwen 3.6 variants on 15, 18, and 21 April.
+The chart begins with ChatGPT, the product release that made general-purpose language models visible to a mass audience. The overview labels only major generations and the latest endpoint; the 2024, 2025, and 2026 views expand one year at a time and label every selected release without introducing horizontal scrolling. Hover a point—or focus it with the keyboard—to see the full release name, date, family relationship, a short explanation, and its primary source.
 
 ```{=html}
 <figure class="release-cadence-figure">
-  <svg class="release-cadence-plot" viewBox="0 0 760 525" role="img" aria-labelledby="cadence-title cadence-description">
-    <title id="cadence-title">Selected model releases by provider and date, January 2023 through August 2026</title>
-    <desc id="cadence-description">Eight horizontal lanes represent OpenAI, Anthropic, Google, Meta, xAI, DeepSeek, Qwen, and Mistral. Time runs from 2023 to August 2026. Release dots become much more closely spaced during 2025 and 2026.</desc>
+  <div class="release-cadence-controls" aria-label="Timeline detail level">
+    <span>View</span>
+    <button type="button" data-cadence-range="overview" aria-pressed="true">Overall</button>
+    <button type="button" data-cadence-range="2024" aria-pressed="false">2024</button>
+    <button type="button" data-cadence-range="2025" aria-pressed="false">2025</button>
+    <button type="button" data-cadence-range="2026" aria-pressed="false">2026</button>
+  </div>
+  <svg class="release-cadence-plot" viewBox="0 0 880 750" role="img" aria-labelledby="cadence-title cadence-description">
+    <title id="cadence-title">Selected model releases by provider and date, November 2022 through 14 August 2026</title>
+    <desc id="cadence-description">Ten horizontal lanes represent OpenAI, Anthropic, Google, Meta, xAI, DeepSeek, Moonshot AI, Qwen, Z.ai, and Mistral. Time begins with ChatGPT in November 2022 and runs to 14 August 2026. Every release dot is centered on its provider's lane. Large dots mark major generations; smaller dots mark point, specialist, or closely spaced updates. Controls switch between an overall timeline and full-year views for 2024, 2025, and 2026. Hover, focus, or tap a release for details and a primary-source link.</desc>
 
     <g class="cadence-grid" aria-hidden="true">
-      <line x1="138" y1="45" x2="138" y2="490"></line><line x1="301" y1="45" x2="301" y2="490"></line><line x1="465" y1="45" x2="465" y2="490"></line><line x1="628" y1="45" x2="628" y2="490"></line><line x1="730" y1="45" x2="730" y2="490"></line>
-      <line x1="138" y1="80" x2="730" y2="80"></line><line x1="138" y1="135" x2="730" y2="135"></line><line x1="138" y1="190" x2="730" y2="190"></line><line x1="138" y1="245" x2="730" y2="245"></line><line x1="138" y1="300" x2="730" y2="300"></line><line x1="138" y1="355" x2="730" y2="355"></line><line x1="138" y1="410" x2="730" y2="410"></line><line x1="138" y1="465" x2="730" y2="465"></line>
+      <line data-cadence-grid-date="2022-11-30" data-cadence-scopes="overview" x1="140" y1="48" x2="140" y2="712"></line><line data-cadence-grid-date="2023-01-01" data-cadence-scopes="overview" x1="156" y1="48" x2="156" y2="712"></line><line data-cadence-grid-date="2024-01-01" data-cadence-scopes="overview 2024" x1="344" y1="48" x2="344" y2="712"></line><line data-cadence-grid-date="2024-04-01" data-cadence-scopes="2024" x1="521" y1="48" x2="521" y2="712"></line><line data-cadence-grid-date="2024-07-01" data-cadence-scopes="2024" x1="699" y1="48" x2="699" y2="712"></line><line data-cadence-grid-date="2024-10-01" data-cadence-scopes="2024" x1="850" y1="48" x2="850" y2="712"></line><line data-cadence-grid-date="2025-01-01" data-cadence-scopes="overview 2025" x1="533" y1="48" x2="533" y2="712"></line><line data-cadence-grid-date="2025-04-01" data-cadence-scopes="2025" x1="521" y1="48" x2="521" y2="712"></line><line data-cadence-grid-date="2025-07-01" data-cadence-scopes="2025" x1="699" y1="48" x2="699" y2="712"></line><line data-cadence-grid-date="2025-10-01" data-cadence-scopes="2025" x1="850" y1="48" x2="850" y2="712"></line><line data-cadence-grid-date="2026-01-01" data-cadence-scopes="overview 2026" x1="721" y1="48" x2="721" y2="712"></line><line data-cadence-grid-date="2026-04-01" data-cadence-scopes="2026" x1="521" y1="48" x2="521" y2="712"></line><line data-cadence-grid-date="2026-07-01" data-cadence-scopes="2026" x1="699" y1="48" x2="699" y2="712"></line><line data-cadence-grid-date="2026-08-14" data-cadence-scopes="overview 2026" x1="850" y1="48" x2="850" y2="712"></line>
+      <line x1="140" y1="86" x2="850" y2="86"></line><line x1="140" y1="152" x2="850" y2="152"></line><line x1="140" y1="218" x2="850" y2="218"></line><line x1="140" y1="284" x2="850" y2="284"></line><line x1="140" y1="350" x2="850" y2="350"></line><line x1="140" y1="416" x2="850" y2="416"></line><line x1="140" y1="482" x2="850" y2="482"></line><line x1="140" y1="548" x2="850" y2="548"></line><line x1="140" y1="614" x2="850" y2="614"></line><line x1="140" y1="680" x2="850" y2="680"></line>
     </g>
 
     <g class="cadence-axis" aria-hidden="true">
-      <text x="138" y="510" text-anchor="start">2023</text><text x="301" y="510" text-anchor="middle">2024</text><text x="465" y="510" text-anchor="middle">2025</text><text x="628" y="510" text-anchor="middle">2026</text><text x="730" y="510" text-anchor="end">Aug</text>
+      <text data-cadence-label-date="2023-07-01" data-cadence-scopes="overview" x="250" y="733" text-anchor="middle">2023</text><text data-cadence-label-date="2024-07-01" data-cadence-scopes="overview" x="438" y="733" text-anchor="middle">2024</text><text data-cadence-label-date="2025-07-01" data-cadence-scopes="overview" x="627" y="733" text-anchor="middle">2025</text><text data-cadence-label-date="2026-04-15" data-cadence-scopes="overview" x="786" y="733" text-anchor="middle">2026</text>
+      <text data-cadence-label-date="2024-01-01" data-cadence-scopes="2024" x="140" y="733" text-anchor="start">Jan</text><text data-cadence-label-date="2024-04-01" data-cadence-scopes="2024" x="318" y="733" text-anchor="middle">Apr</text><text data-cadence-label-date="2024-07-01" data-cadence-scopes="2024" x="495" y="733" text-anchor="middle">Jul</text><text data-cadence-label-date="2024-10-01" data-cadence-scopes="2024" x="674" y="733" text-anchor="middle">Oct</text>
+      <text data-cadence-label-date="2025-01-01" data-cadence-scopes="2025" x="140" y="733" text-anchor="start">Jan</text><text data-cadence-label-date="2025-04-01" data-cadence-scopes="2025" x="315" y="733" text-anchor="middle">Apr</text><text data-cadence-label-date="2025-07-01" data-cadence-scopes="2025" x="493" y="733" text-anchor="middle">Jul</text><text data-cadence-label-date="2025-10-01" data-cadence-scopes="2025" x="672" y="733" text-anchor="middle">Oct</text>
+      <text data-cadence-label-date="2026-01-01" data-cadence-scopes="2026" x="140" y="733" text-anchor="start">Jan</text><text data-cadence-label-date="2026-04-01" data-cadence-scopes="2026" x="424" y="733" text-anchor="middle">Apr</text><text data-cadence-label-date="2026-07-01" data-cadence-scopes="2026" x="709" y="733" text-anchor="middle">Jul</text><text data-cadence-label-date="2026-08-14" data-cadence-scopes="2026" x="850" y="733" text-anchor="end">14 Aug</text>
     </g>
 
     <g class="cadence-providers">
-      <image href="lecture-1/logos/openai.svg" x="18" y="68" width="24" height="24"></image><text x="50" y="84">OpenAI</text>
-      <image href="lecture-1/logos/anthropic.svg" x="18" y="123" width="24" height="24"></image><text x="50" y="139">Anthropic</text>
-      <image href="lecture-1/logos/google.svg" x="18" y="178" width="24" height="24"></image><text x="50" y="194">Google</text>
-      <image href="lecture-1/logos/meta.svg" x="18" y="233" width="24" height="24"></image><text x="50" y="249">Meta</text>
-      <image href="lecture-1/logos/xai.svg" x="18" y="288" width="24" height="24"></image><text x="50" y="304">xAI</text>
-      <image href="lecture-1/logos/deepseek.svg" x="18" y="343" width="24" height="24"></image><text x="50" y="359">DeepSeek</text>
-      <image href="lecture-1/logos/qwen.svg" x="18" y="398" width="24" height="24"></image><text x="50" y="414">Qwen</text>
-      <image href="lecture-1/logos/mistral.svg" x="18" y="453" width="24" height="24"></image><text x="50" y="469">Mistral</text>
+      <image href="lecture-1/logos/openai.svg" x="18" y="74" width="24" height="24"></image><text x="50" y="90">OpenAI</text>
+      <image href="lecture-1/logos/anthropic.svg" x="18" y="140" width="24" height="24"></image><text x="50" y="156">Anthropic</text>
+      <image href="lecture-1/logos/google.svg" x="18" y="206" width="24" height="24"></image><text x="50" y="222">Google</text>
+      <image href="lecture-1/logos/meta.svg" x="18" y="272" width="24" height="24"></image><text x="50" y="288">Meta</text>
+      <image href="lecture-1/logos/xai.svg" x="18" y="338" width="24" height="24"></image><text x="50" y="354">xAI</text>
+      <image href="lecture-1/logos/deepseek.svg" x="18" y="404" width="24" height="24"></image><text x="50" y="420">DeepSeek</text>
+      <image href="lecture-1/logos/kimi.svg" x="18" y="470" width="24" height="24"></image><text x="50" y="486">Moonshot</text>
+      <image href="lecture-1/logos/qwen.svg" x="18" y="536" width="24" height="24"></image><text x="50" y="552">Qwen</text>
+      <g class="cadence-pronunciation" transform="translate(94 540)" role="button" tabindex="0" data-pronounce-audio="lecture-1/audio/qwen-pronunciation-v2.mp3" aria-label="Hear Qwen pronounced in Mandarin">
+        <title>Play the Qwen pronunciation from Dr. Franz Lang's guide</title>
+        <circle class="cadence-pronunciation-hit" cx="8" cy="8" r="16"></circle>
+        <circle class="cadence-pronunciation-surface" cx="8" cy="8" r="8"></circle>
+        <path class="cadence-pronunciation-speaker" d="M3.7 6.4h2.5L9.4 4v8L6.2 9.6H3.7Z"></path>
+        <path class="cadence-pronunciation-wave cadence-pronunciation-wave--near" d="M11 6.1c1 .9 1 2.9 0 3.8"></path>
+        <path class="cadence-pronunciation-wave cadence-pronunciation-wave--far" d="M13 4.6c2 1.8 2 5 0 6.8"></path>
+      </g>
+      <image href="lecture-1/logos/zai.svg" x="18" y="602" width="24" height="24"></image><text x="50" y="618">Z.ai</text>
+      <image href="lecture-1/logos/mistral.svg" x="18" y="668" width="24" height="24"></image><text x="50" y="684">Mistral</text>
     </g>
 
     <g class="cadence-series openai">
-      <a href="https://openai.com/index/gpt-4-research/"><circle cx="170" cy="80" r="4"></circle><text x="170" y="69" text-anchor="middle">GPT-4</text></a>
-      <a href="https://openai.com/index/hello-gpt-4o/"><circle cx="361" cy="80" r="4"></circle><text x="361" y="96" text-anchor="middle">GPT-4o</text></a>
-      <a href="https://openai.com/index/learning-to-reason-with-llms/"><circle cx="415" cy="80" r="4"></circle><text x="415" y="69" text-anchor="middle">o1</text></a>
-      <a href="https://openai.com/index/introducing-gpt-4-5/"><circle cx="491" cy="80" r="3"></circle><text x="491" y="96" text-anchor="middle">4.5</text></a>
-      <a href="https://openai.com/index/introducing-o3-and-o4-mini/"><circle cx="512" cy="80" r="3"></circle><text x="512" y="69" text-anchor="middle">o3</text></a>
-      <a href="https://openai.com/index/introducing-gpt-5/"><circle cx="563" cy="80" r="4"></circle><text x="563" y="96" text-anchor="middle">GPT-5</text></a>
-      <a href="https://openai.com/index/introducing-gpt-5-2/"><circle cx="606" cy="80" r="2.7"><title>GPT-5.1 · 12 November 2025</title></circle><circle cx="619" cy="80" r="3"></circle><text x="613" y="69" text-anchor="middle">5.1 / 5.2</text></a>
-      <a href="https://openai.com/index/introducing-gpt-5-3-codex/"><circle cx="644" cy="80" r="3"></circle><circle cx="647" cy="80" r="2.4"><title>GPT-5.3 Codex Spark · 12 February 2026</title></circle><text x="645" y="96" text-anchor="middle">5.3</text></a>
-      <a href="https://openai.com/index/introducing-gpt-5-4/"><circle cx="657" cy="80" r="3"></circle><circle cx="662" cy="80" r="2.4"><title>GPT-5.4 mini and nano · 17 March 2026</title></circle><text x="659" y="69" text-anchor="middle">5.4</text></a>
-      <a href="https://openai.com/index/introducing-gpt-5-5/"><circle cx="679" cy="80" r="3"></circle><text x="679" y="96" text-anchor="middle">5.5</text></a>
-      <a href="https://openai.com/index/gpt-5-6/"><circle cx="707" cy="80" r="2.4"><title>GPT-5.6 limited preview · 26 June 2026</title></circle><circle cx="713" cy="80" r="4"></circle><text x="711" y="69" text-anchor="middle">GPT-5.6</text></a>
+      <a href="https://openai.com/index/chatgpt/" data-release-name="ChatGPT (GPT-3.5)" data-release-date="30 November 2022" data-release-note="The research preview put an instruction-tuned GPT-3.5 model behind a conversational interface and brought follow-up dialogue to a mass audience." data-source-label="OpenAI announcement"><circle cx="236" cy="86" r="4"></circle><text x="236" y="73" text-anchor="middle">ChatGPT</text></a>
+      <a href="https://openai.com/index/gpt-4-research/" data-release-name="GPT-4" data-release-date="14 March 2023" data-release-note="A more capable multimodal successor to GPT-3.5; the launch report emphasized stronger reliability and broad benchmark gains." data-source-label="OpenAI report"><circle cx="293" cy="86" r="4"></circle><text x="293" y="102" text-anchor="middle">GPT-4</text></a>
+      <a href="https://openai.com/index/hello-gpt-4o/" data-release-name="GPT-4o" data-release-date="13 May 2024" data-release-note="A single omni model handled text, vision, and audio with much lower conversational latency." data-source-label="OpenAI announcement"><circle cx="488" cy="86" r="4"></circle><text x="488" y="73" text-anchor="middle">GPT-4o</text></a>
+      <a href="https://openai.com/index/learning-to-reason-with-llms/" data-release-name="OpenAI o1" data-release-date="12 September 2024" data-release-note="The o-series made extra inference-time reasoning a product feature, trading latency for stronger performance on difficult problems." data-source-label="OpenAI research post"><circle cx="543" cy="86" r="4"></circle><text x="543" y="102" text-anchor="middle">o1</text></a>
+      <a href="https://openai.com/index/introducing-gpt-4-5/" data-release-name="GPT-4.5" data-release-date="27 February 2025" data-release-note="A large general-purpose research preview focused on broad knowledge, natural interaction, and scaled unsupervised learning rather than a new reasoning series." data-source-label="OpenAI announcement"><circle cx="617" cy="86" r="3"></circle><text x="617" y="73" text-anchor="middle">GPT-4.5</text></a>
+      <a href="https://openai.com/index/introducing-o3-and-o4-mini/" data-release-name="o3 and o4-mini" data-release-date="16 April 2025" data-release-note="Released together as reasoning models able to use ChatGPT tools within their chains of thought; o4-mini targeted lower cost." data-source-label="OpenAI announcement"><circle cx="638" cy="86" r="3"></circle><text x="638" y="102" text-anchor="middle">o3 / o4-mini</text></a>
+      <a href="https://openai.com/index/introducing-gpt-5/" data-release-name="GPT-5" data-release-date="7 August 2025" data-release-note="The ChatGPT launch combined a fast model, a deeper reasoning model, and a real-time router behind one default system." data-source-label="OpenAI announcement"><circle cx="689" cy="86" r="4"></circle><text x="689" y="73" text-anchor="middle">GPT-5</text></a>
+      <a href="https://openai.com/index/introducing-gpt-5-2/" data-release-name="GPT-5.1" data-release-label="GPT-5.1" data-release-date="12 November 2025" data-release-note="A point update to the GPT-5 family focused on warmer conversation and more adaptive reasoning." data-source-label="OpenAI announcement"><circle cx="732" cy="82" r="2.6"></circle></a>
+      <a href="https://openai.com/index/introducing-gpt-5-2/" data-release-name="GPT-5.2" data-release-date="11 December 2025" data-release-note="A separately launched GPT-5 family update aimed at professional knowledge work and longer agentic tasks." data-source-label="OpenAI announcement"><circle cx="745" cy="90" r="3"></circle><text x="739" y="71" text-anchor="middle">GPT-5.2</text></a>
+      <a href="https://openai.com/index/introducing-gpt-5-3-codex/" data-release-name="GPT-5.3 Codex" data-release-label="5.3 Codex" data-release-date="5 February 2026" data-release-note="A coding-focused GPT-5 generation for longer-running software-engineering agents." data-source-label="OpenAI announcement"><circle cx="771" cy="82" r="3"></circle></a>
+      <a href="https://openai.com/index/introducing-gpt-5-3-codex/" data-release-name="GPT-5.3 Codex Spark" data-release-date="12 February 2026" data-release-family="GPT-5.3 family; launched one week after GPT-5.3 Codex." data-release-note="A smaller, faster coding model designed for low-latency interactive work." data-source-label="OpenAI announcement"><circle cx="774" cy="92" r="2.4"></circle><text x="772" y="108" text-anchor="middle">5.3 Spark</text></a>
+      <a href="https://openai.com/index/introducing-gpt-5-4/" data-release-name="GPT-5.4" data-release-label="GPT-5.4" data-release-date="5 March 2026" data-release-note="A new flagship update emphasizing professional work and computer-use tasks." data-source-label="OpenAI announcement"><circle cx="783" cy="80" r="3"></circle></a>
+      <a href="https://openai.com/index/introducing-gpt-5-4/" data-release-name="GPT-5.4 mini and nano" data-release-date="17 March 2026" data-release-family="GPT-5.4 family; smaller variants launched twelve days after the flagship." data-release-note="Smaller efficiency tiers extended the family to high-volume and on-device-style workloads." data-source-label="OpenAI announcement"><circle cx="788" cy="94" r="2.4"></circle><text x="786" y="68" text-anchor="middle">5.4 mini / nano</text></a>
+      <a href="https://openai.com/index/introducing-gpt-5-5/" data-release-name="GPT-5.5" data-release-label="GPT-5.5" data-release-date="29 April 2026" data-release-note="A point-generation update in the fast-moving GPT-5 line." data-source-label="OpenAI announcement"><circle cx="807" cy="86" r="3"></circle></a>
+      <a href="https://openai.com/index/previewing-gpt-5-6-sol/" data-release-name="GPT-5.6 limited preview" data-release-label="5.6 preview" data-release-date="26 June 2026" data-release-family="GPT-5.6 family; limited preview preceded general availability on 9 July." data-release-note="A limited preview gave selected users early access before general release." data-source-label="OpenAI announcement"><circle cx="824" cy="86" r="2.4"></circle></a>
+      <a href="https://openai.com/index/gpt-5-6/" data-release-name="GPT-5.6" data-release-date="9 July 2026" data-release-family="GPT-5.6 family; general availability followed a limited preview that began on 26 June." data-release-note="The GPT-5.6 family became generally available across ChatGPT, Codex, and the OpenAI API." data-source-label="OpenAI announcement"><circle cx="831" cy="86" r="4"></circle><text x="831" y="68" text-anchor="middle">GPT-5.6</text></a>
     </g>
 
     <g class="cadence-series anthropic">
-      <a href="https://www.anthropic.com/news/introducing-claude"><circle cx="170" cy="135" r="4"></circle><text x="170" y="124" text-anchor="middle">Claude</text></a>
-      <a href="https://www.anthropic.com/news/claude-2"><circle cx="224" cy="135" r="4"></circle><text x="224" y="151" text-anchor="middle">Claude 2</text></a>
-      <a href="https://www.anthropic.com/news/claude-3-family"><circle cx="330" cy="135" r="4"></circle><text x="330" y="124" text-anchor="middle">Claude 3</text></a>
-      <a href="https://www.anthropic.com/news/claude-3-5-sonnet"><circle cx="378" cy="135" r="4"></circle><text x="378" y="151" text-anchor="middle">3.5</text></a>
-      <a href="https://www.anthropic.com/news/claude-3-7-sonnet"><circle cx="489" cy="135" r="4"></circle><text x="489" y="124" text-anchor="middle">3.7 + Code</text></a>
-      <a href="https://www.anthropic.com/news/claude-4"><circle cx="528" cy="135" r="4"></circle><text x="528" y="151" text-anchor="middle">Claude 4</text></a>
-      <a href="https://www.anthropic.com/news/claude-opus-4-5"><circle cx="586" cy="135" r="2.5"><title>Claude Sonnet 4.5 · 29 September 2025</title></circle><circle cx="611" cy="135" r="3"></circle><text x="599" y="124" text-anchor="middle">4.5 family</text></a>
-      <a href="https://www.anthropic.com/news/claude-opus-4-6"><circle cx="644" cy="135" r="4"></circle><text x="644" y="151" text-anchor="middle">Opus 4.6</text></a>
-      <a href="https://www.anthropic.com/glasswing"><circle class="restricted" cx="671" cy="135" r="4"></circle><text x="671" y="124" text-anchor="middle">Mythos</text></a>
-      <a href="https://www.anthropic.com/news/claude-fable-5-mythos-5"><circle cx="694" cy="135" r="3"><title>Claude Opus 4.8 · 28 May 2026</title></circle><circle cx="700" cy="135" r="4"></circle><text x="698" y="151" text-anchor="middle">4.8 / Fable 5</text></a>
+      <a href="https://www.anthropic.com/news/introducing-claude" data-release-name="Claude" data-release-date="14 March 2023" data-release-note="Anthropic's first public assistant emphasized helpful, honest, and harmless dialogue with a long context window for its time." data-source-label="Anthropic announcement"><circle cx="293" cy="152" r="4"></circle><text x="293" y="139" text-anchor="middle">Claude</text></a>
+      <a href="https://www.anthropic.com/news/claude-2" data-release-name="Claude 2" data-release-date="11 July 2023" data-release-note="A new generation improved coding, reasoning, and safety while expanding access through a public chat product." data-source-label="Anthropic announcement"><circle cx="346" cy="152" r="4"></circle><text x="346" y="168" text-anchor="middle">Claude 2</text></a>
+      <a href="https://www.anthropic.com/news/claude-3-family" data-release-name="Claude 3 family" data-release-date="4 March 2024" data-release-family="Haiku, Sonnet, and Opus were announced as one family." data-release-note="Anthropic introduced three capability and cost tiers with vision input and stronger multilingual performance." data-source-label="Anthropic announcement"><circle cx="456" cy="152" r="4"></circle><text x="456" y="139" text-anchor="middle">Claude 3</text></a>
+      <a href="https://www.anthropic.com/news/claude-3-5-sonnet" data-release-name="Claude 3.5 Sonnet" data-release-date="20 June 2024" data-release-note="A mid-generation model that paired stronger coding and visual reasoning with the speed and price of the earlier Sonnet tier." data-source-label="Anthropic announcement"><circle cx="505" cy="152" r="4"></circle><text x="505" y="168" text-anchor="middle">3.5 Sonnet</text></a>
+      <a href="https://www.anthropic.com/news/claude-3-7-sonnet" data-release-name="Claude 3.7 Sonnet and Claude Code" data-release-date="24 February 2025" data-release-family="Claude 3.7 Sonnet and the Claude Code research preview launched together." data-release-note="Claude 3.7 combined quick answers and extended thinking; Claude Code put the model into an agentic terminal workflow." data-source-label="Anthropic announcement"><circle cx="616" cy="152" r="4"></circle><text x="616" y="139" text-anchor="middle">3.7 + Code</text></a>
+      <a href="https://www.anthropic.com/news/claude-4" data-release-name="Claude 4 family" data-release-date="22 May 2025" data-release-family="Claude Opus 4 and Sonnet 4 launched together." data-release-note="The family focused on coding, tool use, and sustained agentic work, with Opus and Sonnet tiers." data-source-label="Anthropic announcement"><circle cx="654" cy="152" r="4"></circle><text x="654" y="168" text-anchor="middle">Claude 4</text></a>
+      <a href="https://www.anthropic.com/news/claude-sonnet-4-5" data-release-name="Claude Sonnet 4.5" data-release-date="29 September 2025" data-release-note="A separately launched Sonnet update centered on coding agents, computer use, and long-running tasks." data-source-label="Anthropic announcement"><circle cx="712" cy="148" r="2.6"></circle><text x="712" y="135" text-anchor="middle">Sonnet 4.5</text></a>
+      <a href="https://www.anthropic.com/news/claude-opus-4-5" data-release-name="Claude Opus 4.5" data-release-date="24 November 2025" data-release-family="Claude 4.5 family; launched after Sonnet 4.5." data-release-note="The higher-capability Opus tier emphasized software engineering and complex agentic workflows." data-source-label="Anthropic announcement"><circle cx="737" cy="156" r="3"></circle><text x="737" y="172" text-anchor="middle">Opus 4.5</text></a>
+      <a href="https://www.anthropic.com/news/claude-opus-4-6" data-release-name="Claude Opus 4.6" data-release-date="5 February 2026" data-release-note="A flagship update designed for longer-running coding tasks and teams of cooperating agents." data-source-label="Anthropic announcement"><circle cx="771" cy="152" r="4"></circle><text x="771" y="137" text-anchor="middle">Opus 4.6</text></a>
+      <a href="https://www.anthropic.com/glasswing" data-release-name="Claude Mythos Preview" data-release-date="7 April 2026" data-release-note="A cyber-defense model made available only to selected partners rather than through general release." data-source-label="Anthropic announcement"><circle class="restricted" cx="797" cy="152" r="4"></circle><text x="797" y="168" text-anchor="middle">Mythos</text></a>
+      <a href="https://www.anthropic.com/news/claude-fable-5-mythos-5" data-release-name="Claude Opus 4.8" data-release-label="Opus 4.8" data-release-date="28 May 2026" data-release-note="A later Opus point release in Anthropic's flagship line." data-source-label="Anthropic announcement"><circle cx="821" cy="148" r="3"></circle></a>
+      <a href="https://www.anthropic.com/news/claude-fable-5-mythos-5" data-release-name="Claude Fable 5 and Mythos 5" data-release-date="11 June 2026" data-release-family="Two specialist Claude 5 models announced together." data-release-note="Fable targeted creative work while Mythos extended Anthropic's controlled-access cyber model line." data-source-label="Anthropic announcement"><circle cx="827" cy="157" r="4"></circle><text x="827" y="137" text-anchor="middle">Fable 5 / Mythos 5</text></a>
     </g>
 
     <g class="cadence-series google">
-      <a href="https://blog.google/innovation-and-ai/technology/ai/google-gemini-ai/"><circle cx="290" cy="190" r="4"></circle><text x="290" y="179" text-anchor="middle">Gemini 1</text></a>
-      <a href="https://blog.google/innovation-and-ai/products/google-gemini-next-generation-model-february-2024/"><circle cx="322" cy="190" r="4"></circle><text x="322" y="206" text-anchor="middle">1.5</text></a>
-      <a href="https://blog.google/innovation-and-ai/models-and-research/google-deepmind/google-gemini-ai-update-december-2024/"><circle cx="456" cy="190" r="4"></circle><text x="456" y="179" text-anchor="middle">2.0</text></a>
-      <a href="https://blog.google/innovation-and-ai/models-and-research/google-deepmind/gemini-model-thinking-updates-march-2025/"><circle cx="502" cy="190" r="4"></circle><text x="502" y="206" text-anchor="middle">2.5 Pro</text></a>
-      <a href="https://blog.google/products-and-platforms/products/gemini/gemini-3-collection/"><circle cx="609" cy="190" r="4"></circle><text x="609" y="179" text-anchor="middle">Gemini 3</text></a>
-      <a href="https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-pro/"><circle cx="650" cy="190" r="4"></circle><text x="650" y="206" text-anchor="middle">3.1</text></a>
-      <a href="https://blog.google/innovation-and-ai/technology/developers-tools/google-io-2026-collection/"><circle cx="690" cy="190" r="4"></circle><text x="690" y="179" text-anchor="middle">3.5</text></a>
-      <a href="https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/"><circle cx="718" cy="190" r="4"></circle><text x="718" y="206" text-anchor="middle">3.6</text></a>
+      <a href="https://blog.google/innovation-and-ai/technology/ai/google-gemini-ai/" data-release-name="Gemini 1.0" data-release-date="6 December 2023" data-release-family="Ultra, Pro, and Nano were announced as one natively multimodal family." data-release-note="Google's new model family was designed across text, images, audio, and video and replaced PaLM as its flagship line." data-source-label="Google announcement"><circle cx="414" cy="218" r="4"></circle><text x="414" y="205" text-anchor="middle">Gemini 1.0</text></a>
+      <a href="https://blog.google/innovation-and-ai/products/google-gemini-next-generation-model-february-2024/" data-release-name="Gemini 1.5 Pro" data-release-date="15 February 2024" data-release-note="A mixture-of-experts model that made a one-million-token context window a headline capability." data-source-label="Google announcement"><circle cx="448" cy="218" r="4"></circle><text x="448" y="234" text-anchor="middle">1.5 Pro</text></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/google-deepmind/google-gemini-ai-update-december-2024/" data-release-name="Gemini 2.0 Flash" data-release-date="11 December 2024" data-release-note="The first Gemini 2.0 release framed the family around native tool use, multimodal output, and the agentic era." data-source-label="Google announcement"><circle cx="584" cy="218" r="4"></circle><text x="584" y="205" text-anchor="middle">2.0 Flash</text></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/google-deepmind/gemini-model-thinking-updates-march-2025/" data-release-name="Gemini 2.5 Pro" data-release-date="25 March 2025" data-release-note="A thinking model that made deliberate reasoning part of Google's default flagship behavior." data-source-label="Google announcement"><circle cx="628" cy="218" r="4"></circle><text x="628" y="234" text-anchor="middle">2.5 Pro</text></a>
+      <a href="https://blog.google/products-and-platforms/products/gemini/gemini-3-collection/" data-release-name="Gemini 3 family" data-release-date="18 November 2025" data-release-note="A new Gemini generation centered on stronger reasoning, multimodal understanding, and agentic coding." data-source-label="Google announcement"><circle cx="735" cy="218" r="4"></circle><text x="735" y="203" text-anchor="middle">Gemini 3</text></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-pro/" data-release-name="Gemini 3.1 Pro" data-release-label="3.1 Pro" data-release-date="19 February 2026" data-release-family="Gemini 3.1 family; the Pro release came first." data-release-note="The flagship 3.1 model upgraded core reasoning for complex synthesis and agentic work." data-source-label="Google announcement"><circle cx="777" cy="211" r="4"></circle></a>
+      <a href="https://blog.google/innovation-and-ai/technology/developers-tools/build-with-nano-banana-2/" data-release-name="Gemini 3.1 Flash Image (Nano Banana 2)" data-release-label="3.1 Image" data-release-date="26 February 2026" data-release-family="Gemini 3.1 family; launched seven days after 3.1 Pro." data-release-note="An image-generation and editing variant emphasizing speed, fidelity, text rendering, and localization." data-source-label="Google announcement"><circle cx="780" cy="222" r="2.5"></circle></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-lite/" data-release-name="Gemini 3.1 Flash-Lite" data-release-date="3 March 2026" data-release-family="Gemini 3.1 family; launched after Pro and Flash Image." data-release-note="The low-cost, high-throughput tier added configurable thinking levels for large-volume workloads." data-source-label="Google announcement"><circle cx="782" cy="231" r="2.5"></circle><text x="783" y="247" text-anchor="middle">3.1 Flash-Lite</text></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-live/" data-release-name="Gemini 3.1 Flash Live" data-release-label="3.1 Live" data-release-date="26 March 2026" data-release-family="Gemini 3.1 family; launched separately from Pro, Flash Image, and Flash-Lite." data-release-note="A real-time audio model for more natural, lower-latency voice agents and dialogue." data-source-label="Google announcement"><circle cx="792" cy="216" r="2.5"></circle></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-5/" data-release-name="Gemini 3.5 Flash" data-release-date="19 May 2026" data-release-note="The first 3.5 model paired frontier-level coding and agentic capability with the speed of the Flash tier." data-source-label="Google announcement"><circle cx="817" cy="218" r="4"></circle><text x="817" y="203" text-anchor="middle">3.5 Flash</text></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/" data-release-name="Gemini 3.6 Flash" data-release-label="3.6 Flash" data-release-date="21 July 2026" data-release-family="Released the same day as Gemini 3.5 Flash-Lite and 3.5 Flash Cyber." data-release-note="The workhorse Flash update reduced token use and improved coding, knowledge work, and multimodal performance." data-source-label="Google announcement"><circle cx="846" cy="207" r="4"></circle></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/" data-release-name="Gemini 3.5 Flash-Lite" data-release-label="3.5 Flash-Lite" data-release-date="21 July 2026" data-release-family="Released the same day as Gemini 3.6 Flash and 3.5 Flash Cyber." data-release-note="The fastest 3.5-class model targeted low-latency, high-throughput agentic search and document processing." data-source-label="Google announcement"><circle cx="846" cy="218" r="2.7"></circle></a>
+      <a href="https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/" data-release-name="Gemini 3.5 Flash Cyber" data-release-date="21 July 2026" data-release-family="Released the same day as Gemini 3.6 Flash and 3.5 Flash-Lite." data-release-note="A specialist cyber model paired with CodeMender and limited to governments and trusted partners." data-source-label="Google announcement"><circle class="restricted" cx="846" cy="229" r="2.7"></circle><text x="850" y="247" text-anchor="end">3.5 Cyber</text></a>
     </g>
 
     <g class="cadence-series meta">
-      <a href="https://ai.meta.com/blog/large-language-model-llama-meta-ai/"><circle cx="162" cy="245" r="4"></circle><text x="162" y="234" text-anchor="middle">LLaMA</text></a>
-      <a href="https://ai.meta.com/blog/llama-2/"><circle cx="227" cy="245" r="4"></circle><text x="227" y="261" text-anchor="middle">Llama 2</text></a>
-      <a href="https://ai.meta.com/blog/meta-llama-3/"><circle cx="350" cy="245" r="4"></circle><text x="350" y="234" text-anchor="middle">Llama 3</text></a>
-      <a href="https://ai.meta.com/blog/meta-llama-3-1/"><circle cx="393" cy="245" r="4"></circle><text x="393" y="261" text-anchor="middle">3.1</text></a>
-      <a href="https://ai.meta.com/blog/llama-4-multimodal-intelligence/"><circle cx="507" cy="245" r="4"></circle><text x="507" y="234" text-anchor="middle">Llama 4</text></a>
-      <a href="https://ai.meta.com/blog/introducing-muse-spark-msl/"><circle cx="672" cy="245" r="4"></circle><text x="672" y="261" text-anchor="middle">Muse Spark</text></a>
-      <a href="https://ai.meta.com/blog/introducing-muse-spark-meta-model-api/"><circle cx="713" cy="245" r="3"></circle><text x="710" y="234" text-anchor="end">1.1</text></a>
-      <a href="https://research.meta.ai/blog/introducing-muse-code-and-muse-spark-1-2"><circle cx="725" cy="245" r="4"></circle><text x="725" y="261" text-anchor="end">1.2</text></a>
+      <a href="https://ai.meta.com/blog/large-language-model-llama-meta-ai/" data-release-name="LLaMA" data-release-date="24 February 2023" data-release-note="Meta released research weights for a compact family whose smaller checkpoints helped catalyze local fine-tuning." data-source-label="Meta research announcement"><circle cx="286" cy="284" r="4"></circle><text x="286" y="271" text-anchor="middle">LLaMA</text></a>
+      <a href="https://ai.meta.com/blog/llama-2/" data-release-name="Llama 2" data-release-date="18 July 2023" data-release-note="A new open-weight family released for research and commercial use, with pretrained and chat-tuned checkpoints." data-source-label="Meta announcement"><circle cx="349" cy="284" r="4"></circle><text x="349" y="300" text-anchor="middle">Llama 2</text></a>
+      <a href="https://ai.meta.com/blog/meta-llama-3/" data-release-name="Llama 3" data-release-date="18 April 2024" data-release-note="An 8B and 70B open-weight generation with substantially expanded pretraining data and stronger instruction tuning." data-source-label="Meta announcement"><circle cx="477" cy="284" r="4"></circle><text x="477" y="271" text-anchor="middle">Llama 3</text></a>
+      <a href="https://ai.meta.com/blog/meta-llama-3-1/" data-release-name="Llama 3.1" data-release-date="23 July 2024" data-release-note="The family added a 405B flagship, longer context, multilingual support, and stronger tool use." data-source-label="Meta announcement"><circle cx="520" cy="284" r="4"></circle><text x="520" y="300" text-anchor="middle">Llama 3.1</text></a>
+      <a href="https://ai.meta.com/blog/llama-4-multimodal-intelligence/" data-release-name="Llama 4" data-release-date="5 April 2025" data-release-family="Scout and Maverick launched together as mixture-of-experts models." data-release-note="Meta's first natively multimodal Llama generation used mixture-of-experts routing." data-source-label="Meta announcement"><circle cx="633" cy="284" r="4"></circle><text x="633" y="271" text-anchor="middle">Llama 4</text></a>
+      <a href="https://ai.meta.com/blog/introducing-muse-spark-msl/" data-release-name="Muse Spark" data-release-date="9 March 2026" data-release-note="A compact open model for fast, controllable media and multimodal generation workflows." data-source-label="Meta announcement"><circle cx="785" cy="284" r="4"></circle><text x="785" y="300" text-anchor="middle">Muse Spark</text></a>
+      <a href="https://ai.meta.com/blog/introducing-muse-spark-meta-model-api/" data-release-name="Muse Spark 1.1" data-release-label="Spark 1.1" data-release-date="14 July 2026" data-release-note="A point update to the Muse Spark line, also exposed through Meta's model API." data-source-label="Meta announcement"><circle cx="843" cy="279" r="2.7"></circle></a>
+      <a href="https://research.meta.ai/blog/introducing-muse-code-and-muse-spark-1-2" data-release-name="Muse Spark 1.2 and Muse Code" data-release-date="12 August 2026" data-release-family="Muse Spark 1.2 and the specialist Muse Code model launched together." data-release-note="The update extended the family with a coding specialist while advancing the general Spark checkpoint." data-source-label="Meta research announcement"><circle cx="848" cy="289" r="4"></circle><text x="850" y="271" text-anchor="end">Spark 1.2</text></a>
     </g>
 
     <g class="cadence-series xai">
-      <a href="https://x.ai/news/grok"><circle cx="275" cy="300" r="4"></circle><text x="275" y="289" text-anchor="middle">Grok</text></a>
-      <a href="https://x.ai/news/grok-1.5"><circle cx="340" cy="300" r="3"></circle><text x="340" y="316" text-anchor="middle">1.5</text></a>
-      <a href="https://x.ai/news/grok-2"><circle cx="402" cy="300" r="4"></circle><text x="402" y="289" text-anchor="middle">Grok 2</text></a>
-      <a href="https://x.ai/news/grok-3"><circle cx="487" cy="300" r="4"></circle><text x="487" y="316" text-anchor="middle">3</text></a>
-      <a href="https://x.ai/news/grok-4"><circle cx="550" cy="300" r="4"></circle><text x="550" y="289" text-anchor="middle">Grok 4</text></a>
-      <a href="https://x.ai/news/grok-4-1"><circle cx="608" cy="300" r="3"></circle><text x="608" y="316" text-anchor="middle">4.1</text></a>
-      <a href="https://data.x.ai/2026-04-07-grok-4-20-model-card.pdf"><circle cx="659" cy="300" r="3"></circle><text x="659" y="289" text-anchor="middle">4.20</text></a>
-      <a href="https://x.ai/news/grok-4-5"><circle cx="703" cy="300" r="2.5"><title>Grok 4.3 · 17 June 2026</title></circle><circle cx="716" cy="300" r="4"></circle><text x="711" y="316" text-anchor="middle">4.3 / 4.5</text></a>
+      <a href="https://x.ai/news/grok" data-release-name="Grok" data-release-date="3 November 2023" data-release-note="xAI's first conversational model launched through X with a deliberately irreverent product style." data-source-label="xAI announcement"><circle cx="400" cy="350" r="4"></circle><text x="400" y="337" text-anchor="middle">Grok</text></a>
+      <a href="https://x.ai/news/grok-1.5" data-release-name="Grok-1.5" data-release-date="28 March 2024" data-release-note="A point release with a 128K context window and stronger reasoning and coding results." data-source-label="xAI announcement"><circle cx="467" cy="350" r="3"></circle><text x="467" y="366" text-anchor="middle">1.5</text></a>
+      <a href="https://x.ai/news/grok-2" data-release-name="Grok 2" data-release-date="13 August 2024" data-release-note="A new generation released in beta on X, alongside the smaller Grok-2 mini." data-source-label="xAI announcement"><circle cx="529" cy="350" r="4"></circle><text x="529" y="337" text-anchor="middle">Grok 2</text></a>
+      <a href="https://x.ai/news/grok-3" data-release-name="Grok 3" data-release-date="17 February 2025" data-release-note="A new generation trained with substantially more compute and released with DeepSearch and reasoning modes." data-source-label="xAI announcement"><circle cx="613" cy="350" r="4"></circle><text x="613" y="366" text-anchor="middle">Grok 3</text></a>
+      <a href="https://x.ai/news/grok-4" data-release-name="Grok 4" data-release-date="9 July 2025" data-release-note="A reasoning-focused flagship with native tool use and real-time search access." data-source-label="xAI announcement"><circle cx="676" cy="350" r="4"></circle><text x="676" y="337" text-anchor="middle">Grok 4</text></a>
+      <a href="https://x.ai/news/grok-4-1" data-release-name="Grok 4.1" data-release-date="17 November 2025" data-release-note="A point-generation update focused on conversational quality and creative and emotional interactions." data-source-label="xAI announcement"><circle cx="734" cy="350" r="3"></circle><text x="734" y="366" text-anchor="middle">4.1</text></a>
+      <a href="https://data.x.ai/2026-04-07-grok-4-20-model-card.pdf" data-release-name="Grok 4.20" data-release-date="7 April 2026" data-release-note="A model-card release documenting a specialist update in the Grok 4 family." data-source-label="xAI model card"><circle cx="797" cy="350" r="3"></circle><text x="797" y="337" text-anchor="middle">4.20</text></a>
+      <a href="https://x.ai/news/grok-4-5" data-release-name="Grok 4.3" data-release-label="Grok 4.3" data-release-date="17 June 2026" data-release-family="Grok 4 family; released before Grok 4.5." data-release-note="A smaller point update in the rapidly iterating Grok 4 line." data-source-label="xAI announcement"><circle cx="830" cy="346" r="2.5"></circle></a>
+      <a href="https://x.ai/news/grok-4-5" data-release-name="Grok 4.5" data-release-date="6 August 2026" data-release-family="Grok 4 family; launched separately after Grok 4.3." data-release-note="A later flagship update in the Grok 4 family." data-source-label="xAI announcement"><circle cx="846" cy="354" r="4"></circle><text x="850" y="370" text-anchor="end">Grok 4.5</text></a>
     </g>
 
     <g class="cadence-series deepseek">
-      <a href="https://api-docs.deepseek.com/news/news1226"><circle cx="462" cy="355" r="4"></circle><text x="462" y="344" text-anchor="middle">V3</text></a>
-      <a href="https://api-docs.deepseek.com/news/news250120/"><circle cx="474" cy="355" r="4"></circle><text x="474" y="371" text-anchor="middle">R1</text></a>
-      <a href="https://api-docs.deepseek.com/news/news250325/"><circle cx="502" cy="355" r="2.5"><title>V3-0324 · 25 March 2025</title></circle><text x="502" y="344" text-anchor="middle">V3 update</text></a>
-      <circle cx="531" cy="355" r="2.5"><title>R1-0528 · 28 May 2025</title></circle>
-      <a href="https://api-docs.deepseek.com/news/news250821"><circle cx="569" cy="355" r="4"></circle><text x="569" y="371" text-anchor="middle">V3.1</text></a>
-      <circle cx="615" cy="355" r="4"><title>DeepSeek V3.2 · 1 December 2025</title></circle><text x="615" y="344" text-anchor="middle">V3.2</text>
-      <a href="https://api-docs.deepseek.com/news/news260424/"><circle cx="679" cy="355" r="4"></circle><text x="679" y="371" text-anchor="middle">V4</text></a>
+      <a href="https://api-docs.deepseek.com/news/news1226" data-release-name="DeepSeek-V3" data-release-date="26 December 2024" data-release-note="A mixture-of-experts open-weight model that emphasized training efficiency and strong general capability." data-source-label="DeepSeek announcement"><circle cx="589" cy="416" r="4"></circle><text x="589" y="403" text-anchor="middle">V3</text></a>
+      <a href="https://api-docs.deepseek.com/news/news250120/" data-release-name="DeepSeek-R1" data-release-date="20 January 2025" data-release-note="An open-weight reasoning model trained with reinforcement learning, accompanied by six distilled smaller models." data-source-label="DeepSeek announcement and paper"><circle cx="600" cy="416" r="4"></circle><text x="600" y="432" text-anchor="middle">R1</text></a>
+      <a href="https://api-docs.deepseek.com/news/news250325/" data-release-name="DeepSeek-V3-0324" data-release-date="25 March 2025" data-release-family="A point update to DeepSeek-V3." data-release-note="A smaller update improved reasoning, coding, and Chinese writing without starting a new named generation." data-source-label="DeepSeek release note"><circle cx="628" cy="416" r="2.5"></circle><text x="628" y="403" text-anchor="middle">V3 update</text></a>
+      <a href="https://github.com/deepseek-ai/DeepSeek-R1" data-release-name="DeepSeek-R1-0528" data-release-label="R1-0528" data-release-date="28 May 2025" data-release-family="A point update to DeepSeek-R1." data-release-note="The refreshed reasoning checkpoint improved depth of reasoning and reduced hallucinations." data-source-label="DeepSeek model repository"><circle cx="657" cy="416" r="2.5"></circle></a>
+      <a href="https://api-docs.deepseek.com/news/news250821" data-release-name="DeepSeek-V3.1" data-release-date="21 August 2025" data-release-note="A hybrid model unified thinking and non-thinking modes and added stronger agent and tool-use support." data-source-label="DeepSeek release note"><circle cx="695" cy="416" r="4"></circle><text x="695" y="432" text-anchor="middle">V3.1</text></a>
+      <a href="https://github.com/deepseek-ai/DeepSeek-V3.2" data-release-name="DeepSeek-V3.2" data-release-date="1 December 2025" data-release-note="A later V3 generation improved efficiency and reasoning for agentic tasks." data-source-label="DeepSeek model repository"><circle cx="740" cy="416" r="4"></circle><text x="740" y="403" text-anchor="middle">V3.2</text></a>
+      <a href="https://api-docs.deepseek.com/news/news260424/" data-release-name="DeepSeek-V4" data-release-date="24 April 2026" data-release-note="A new flagship generation following the V3 and R1 lines." data-source-label="DeepSeek announcement"><circle cx="805" cy="416" r="4"></circle><text x="805" y="432" text-anchor="middle">V4</text></a>
+    </g>
+
+    <g class="cadence-series kimi">
+      <a href="https://github.com/MoonshotAI/Kimi-k1.5" data-release-name="Kimi k1.5" data-release-date="20 January 2025" data-release-note="A multimodal reasoning model whose report showed how Moonshot scaled reinforcement learning across both text and vision tasks." data-source-label="Kimi report and repository"><circle cx="600" cy="482" r="4"></circle><text x="600" y="469" text-anchor="middle">Kimi k1.5</text></a>
+      <a href="https://www.kimi.com/en/blog/kimi-k2" data-release-name="Kimi K2" data-release-date="11 July 2025" data-release-family="The K2 family began with Base and Instruct checkpoints." data-release-note="A one-trillion-parameter mixture-of-experts model with 32 billion active parameters, trained for coding and agentic tool use and released with open weights." data-source-label="Kimi technical blog"><circle cx="676" cy="482" r="4"></circle><text x="676" y="498" text-anchor="middle">Kimi K2</text></a>
+      <a href="https://www.kimi.com/en/blog/kimi-k2" data-release-name="Kimi K2 Instruct 0905" data-release-label="K2 0905" data-release-date="5 September 2025" data-release-family="A separately released update to the Kimi K2 family." data-release-note="The refreshed instruction checkpoint strengthened agentic coding and extended context support to 256K tokens." data-source-label="Kimi technical blog"><circle cx="705" cy="477" r="2.6"></circle></a>
+      <a href="https://www.kimi.com/en/blog/kimi-k2-thinking" data-release-name="Kimi K2 Thinking" data-release-date="6 November 2025" data-release-family="A separately launched reasoning member of the Kimi K2 family." data-release-note="A thinking agent trained to interleave reasoning with tool calls and sustain hundreds of sequential tool-use steps." data-source-label="Kimi technical blog"><circle cx="729" cy="488" r="3"></circle><text x="729" y="469" text-anchor="middle">K2 Thinking</text></a>
+      <a href="https://www.kimi.com/blog/kimi-k2-5" data-release-name="Kimi K2.5" data-release-date="27 January 2026" data-release-note="A native multimodal continuation of K2 that added coding with vision and a self-directed Agent Swarm research preview." data-source-label="Kimi technical blog"><circle cx="766" cy="482" r="4"></circle><text x="766" y="469" text-anchor="middle">K2.5</text></a>
+      <a href="https://www.kimi.com/blog/kimi-k2-6" data-release-name="Kimi K2.6" data-release-date="20 April 2026" data-release-note="An open-weight update focused on long-horizon coding and larger agent swarms coordinating up to 300 sub-agents." data-source-label="Kimi technical blog"><circle cx="803" cy="488" r="3"></circle><text x="803" y="504" text-anchor="middle">K2.6</text></a>
+      <a href="https://www.kimi.com/code/docs/en/kimi-code/whats-new.html" data-release-name="Kimi K2.7 Code" data-release-date="12 June 2026" data-release-note="A separately released open coding model that improved long-horizon agent performance while reducing reasoning-token use." data-source-label="Kimi Code release notes"><circle cx="828" cy="477" r="2.6"></circle><text x="828" y="464" text-anchor="middle">K2.7 Code</text></a>
+      <a href="https://www.kimi.com/en/blog/kimi-k3" data-release-name="Kimi K3" data-release-date="16 July 2026" data-release-note="A 2.8-trillion-parameter mixture-of-experts model with native vision, a one-million-token context window, and open weights." data-source-label="Kimi technical blog"><circle cx="844" cy="488" r="4"></circle><text x="850" y="505" text-anchor="end">Kimi K3</text></a>
     </g>
 
     <g class="cadence-series qwen">
-      <a href="https://qwenlm.github.io/blog/qwen/"><circle cx="234" cy="410" r="4"></circle><text x="234" y="399" text-anchor="middle">Qwen</text></a>
-      <a href="https://qwen.ai/blog?id=qwen1.5"><circle cx="317" cy="410" r="3"></circle><text x="317" y="426" text-anchor="middle">1.5</text></a>
-      <a href="https://qwenlm.github.io/blog/qwen2/"><circle cx="372" cy="410" r="4"></circle><text x="372" y="399" text-anchor="middle">Qwen 2</text></a>
-      <a href="https://qwenlm.github.io/blog/qwen2.5/"><circle cx="419" cy="410" r="4"></circle><text x="419" y="426" text-anchor="middle">2.5</text></a>
-      <a href="https://qwenlm.github.io/blog/qwen3/"><circle cx="518" cy="410" r="4"></circle><text x="518" y="399" text-anchor="middle">Qwen 3</text></a>
-      <a href="https://qwen.ai/blog?id=qwen3-max-thinking"><circle cx="639" cy="410" r="3"></circle><text x="639" y="426" text-anchor="middle">3 Max</text></a>
-      <a href="https://qwen.ai/blog?id=qwen3.5"><circle cx="649" cy="410" r="4"></circle><text x="649" y="399" text-anchor="middle">3.5</text></a>
-      <a href="https://qwen.ai/blog?id=qwen3.6-35b-a3b"><circle cx="675" cy="410" r="3"></circle><circle cx="676.5" cy="410" r="2.4"><title>Qwen 3.6 Max Preview · 18 April 2026</title></circle><circle cx="678" cy="410" r="2.4"><title>Qwen 3.6 27B · 21 April 2026</title></circle><text x="677" y="426" text-anchor="middle">3.6 · 15/18/21 Apr</text></a>
+      <a href="https://qwenlm.github.io/blog/qwen/" data-release-name="Qwen" data-release-date="3 August 2023" data-release-note="Alibaba's first public Qwen release established a multilingual open-weight model family." data-source-label="Qwen announcement"><circle cx="355" cy="548" r="4"></circle><text x="355" y="535" text-anchor="middle">Qwen</text></a>
+      <a href="https://qwen.ai/blog?id=qwen1.5" data-release-name="Qwen1.5" data-release-date="4 February 2024" data-release-note="A broad point-generation refresh expanded model sizes, context support, and multilingual capability." data-source-label="Qwen announcement"><circle cx="443" cy="548" r="3"></circle><text x="443" y="564" text-anchor="middle">1.5</text></a>
+      <a href="https://qwenlm.github.io/blog/qwen2/" data-release-name="Qwen2" data-release-date="6 June 2024" data-release-note="A new multilingual open-weight generation spanning small dense models through a large mixture-of-experts checkpoint." data-source-label="Qwen announcement"><circle cx="499" cy="548" r="4"></circle><text x="499" y="535" text-anchor="middle">Qwen2</text></a>
+      <a href="https://qwenlm.github.io/blog/qwen2.5/" data-release-name="Qwen2.5" data-release-date="19 September 2024" data-release-note="A major family update improved coding, mathematics, instruction following, and structured-data handling." data-source-label="Qwen announcement"><circle cx="546" cy="548" r="4"></circle><text x="546" y="564" text-anchor="middle">Qwen2.5</text></a>
+      <a href="https://qwenlm.github.io/blog/qwen3/" data-release-name="Qwen3" data-release-date="28 April 2025" data-release-note="The family combined thinking and non-thinking modes across dense and mixture-of-experts open-weight models." data-source-label="Qwen announcement"><circle cx="643" cy="548" r="4"></circle><text x="643" y="535" text-anchor="middle">Qwen3</text></a>
+      <a href="https://qwen.ai/blog?id=qwen3-max-thinking" data-release-name="Qwen3-Max-Thinking" data-release-date="26 January 2026" data-release-note="A reasoning-focused update to the high-capability Qwen3 Max tier." data-source-label="Qwen announcement"><circle cx="766" cy="552" r="3"></circle><text x="766" y="568" text-anchor="middle">3 Max</text></a>
+      <a href="https://qwen.ai/blog?id=qwen3.5" data-release-name="Qwen3.5" data-release-date="16 February 2026" data-release-note="A new open-weight generation designed for stronger reasoning, coding, and agent workflows." data-source-label="Qwen announcement"><circle cx="776" cy="544" r="4"></circle><text x="776" y="531" text-anchor="middle">3.5</text></a>
+      <a href="https://qwen.ai/blog?id=qwen3.6-35b-a3b" data-release-name="Qwen3.6-35B-A3B" data-release-label="3.6 35B-A3B" data-release-date="15 April 2026" data-release-family="Qwen3.6 family; followed by Max Preview on 18 April and 27B on 21 April." data-release-note="A sparse mixture-of-experts checkpoint opened the Qwen3.6 series." data-source-label="Qwen announcement"><circle cx="801" cy="539" r="3"></circle></a>
+      <a href="https://qwen.ai/blog?id=qwen3.6-35b-a3b" data-release-name="Qwen3.6 Max Preview" data-release-label="3.6 Max" data-release-date="18 April 2026" data-release-family="Qwen3.6 family; launched three days after 35B-A3B and three days before 27B." data-release-note="A preview of the family's larger capability tier." data-source-label="Qwen announcement"><circle cx="802" cy="548" r="2.4"></circle></a>
+      <a href="https://qwen.ai/blog?id=qwen3.6-35b-a3b" data-release-name="Qwen3.6 27B" data-release-date="21 April 2026" data-release-family="Qwen3.6 family; the third separately released checkpoint in one week." data-release-note="A dense 27B checkpoint rounded out the closely spaced April family launch." data-source-label="Qwen announcement"><circle cx="804" cy="557" r="2.4"></circle><text x="807" y="573" text-anchor="middle">3.6 27B</text></a>
+    </g>
+
+    <g class="cadence-series zai">
+      <a href="https://z.ai/company" data-release-name="ChatGLM" data-release-date="15 March 2023" data-release-note="Zhipu AI's conversational GLM model established the ChatGLM line; its smaller ChatGLM-6B companion was released with open weights." data-source-label="Z.ai company timeline"><circle cx="293" cy="614" r="4"></circle><text x="293" y="601" text-anchor="middle">ChatGLM</text></a>
+      <a href="https://z.ai/company" data-release-name="GLM-4" data-release-date="25 January 2024" data-release-note="A new foundation-model generation that expanded the GLM family beyond the earlier ChatGLM releases." data-source-label="Z.ai company timeline"><circle cx="439" cy="614" r="4"></circle><text x="439" y="630" text-anchor="middle">GLM-4</text></a>
+      <a href="https://github.com/zai-org/GLM-4" data-release-name="GLM-4-9B and GLM-4V-9B" data-release-label="GLM-4 9B / 4V" data-release-date="18 June 2024" data-release-family="The text and vision checkpoints were released together as open members of the GLM-4 family." data-release-note="The open release included a 128K chat checkpoint, a one-million-token variant, and a 9B vision-language model." data-source-label="GLM-4 repository"><circle cx="504" cy="608" r="3"></circle></a>
+      <a href="https://z.ai/company" data-release-name="GLM-4-Plus" data-release-date="12 August 2024" data-release-family="A separately released update to the GLM-4 family." data-release-note="A higher-capability foundation-model update accompanied a new real-time video-call experience in ChatGLM." data-source-label="Z.ai company timeline"><circle cx="528" cy="620" r="2.7"></circle><text x="528" y="636" text-anchor="middle">4-Plus</text></a>
+      <a href="https://z.ai/company" data-release-name="GLM-Zero-Preview" data-release-date="20 December 2024" data-release-note="Z.ai's first preview model centered explicitly on extended reasoning." data-source-label="Z.ai company timeline"><circle cx="586" cy="614" r="3"></circle><text x="586" y="601" text-anchor="middle">Zero Preview</text></a>
+      <a href="https://z.ai/blog/glm-4.5" data-release-name="GLM-4.5 and GLM-4.5-Air" data-release-date="28 July 2025" data-release-family="The flagship and smaller Air model launched together." data-release-note="Two open-weight hybrid-reasoning models unified coding, reasoning, and agentic tool use in one family." data-source-label="Z.ai technical blog"><circle cx="681" cy="614" r="4"></circle><text x="681" y="601" text-anchor="middle">GLM-4.5</text></a>
+      <a href="https://z.ai/blog/glm-4.6" data-release-name="GLM-4.6" data-release-date="30 September 2025" data-release-note="A point-generation update expanded context to 200K tokens and improved coding, reasoning, and agent workflows." data-source-label="Z.ai technical blog"><circle cx="712" cy="620" r="3"></circle><text x="712" y="636" text-anchor="middle">4.6</text></a>
+      <a href="https://z.ai/blog/glm-4.7" data-release-name="GLM-4.7" data-release-date="22 December 2025" data-release-note="A coding-focused update added more reliable interleaved and preserved thinking across long tool-use sessions." data-source-label="Z.ai technical blog"><circle cx="750" cy="608" r="3"></circle><text x="750" y="595" text-anchor="middle">4.7</text></a>
+      <a href="https://docs.z.ai/release-notes/new-released" data-release-name="GLM-4.7-Flash" data-release-label="4.7 Flash" data-release-date="19 January 2026" data-release-family="A lightweight, separately released member of the GLM-4.7 family." data-release-note="A free-tier efficiency model designed for low-latency coding, reasoning, and writing." data-source-label="Z.ai release notes"><circle cx="763" cy="620" r="2.5"></circle></a>
+      <a href="https://z.ai/blog/glm-5" data-release-name="GLM-5" data-release-date="12 February 2026" data-release-note="A 744-billion-parameter open-weight generation trained for complex systems engineering and long-horizon agentic work." data-source-label="Z.ai technical blog"><circle cx="774" cy="608" r="4"></circle><text x="774" y="595" text-anchor="middle">GLM-5</text></a>
+      <a href="https://docs.z.ai/release-notes/new-released" data-release-name="GLM-5-Turbo" data-release-date="15 March 2026" data-release-family="A separately released high-throughput member of the GLM-5 family." data-release-note="An efficiency tier for stable long-chain agent tasks and tool-heavy workflows." data-source-label="Z.ai release notes"><circle cx="788" cy="620" r="2.5"></circle><text x="788" y="636" text-anchor="middle">5-Turbo</text></a>
+      <a href="https://docs.z.ai/guides/llm/glm-5.1" data-release-name="GLM-5.1" data-release-date="7 April 2026" data-release-note="A long-horizon update trained to sustain planning, execution, testing, and refinement for hours." data-source-label="Z.ai model guide"><circle cx="798" cy="608" r="3"></circle><text x="798" y="595" text-anchor="middle">5.1</text></a>
+      <a href="https://z.ai/blog/glm-5.2" data-release-name="GLM-5.2" data-release-date="16 June 2026" data-release-note="A flagship update with a one-million-token context window and architecture changes for more efficient long-context work." data-source-label="Z.ai technical blog"><circle cx="830" cy="620" r="3"></circle><text x="830" y="636" text-anchor="middle">5.2</text></a>
+      <a href="https://z.ai/blog/glm-5.3" data-release-name="GLM-5.3" data-release-date="14 August 2026" data-release-family="It uses the same base model as GLM-5.2; the gains came from additional post-training." data-release-note="A post-training update focused on complex coding, long-horizon tasks, and newly observed cyber capabilities." data-source-label="Z.ai technical blog"><circle cx="849" cy="608" r="3"></circle><text x="850" y="595" text-anchor="end">5.3</text></a>
     </g>
 
     <g class="cadence-series mistral">
-      <a href="https://mistral.ai/news/announcing-mistral-7b/"><circle cx="258" cy="465" r="4"></circle><text x="258" y="454" text-anchor="middle">7B</text></a>
-      <a href="https://mistral.ai/news/mixtral-of-experts/"><circle cx="292" cy="465" r="4"></circle><text x="292" y="481" text-anchor="middle">Mixtral</text></a>
-      <a href="https://mistral.ai/news/mistral-large/"><circle cx="326" cy="465" r="4"></circle><text x="326" y="454" text-anchor="middle">Large</text></a>
-      <a href="https://mistral.ai/news/mixtral-8x22b"><circle cx="349" cy="465" r="3"><title>Mixtral 8x22B · 17 April 2024</title></circle></a>
-      <a href="https://mistral.ai/news/mistral-large-2407/"><circle cx="393" cy="465" r="4"></circle><text x="393" y="481" text-anchor="middle">Large 2</text></a>
-      <a href="https://mistral.ai/news/mistral-medium-3/"><circle cx="522" cy="465" r="4"></circle><text x="522" y="454" text-anchor="middle">Medium 3</text></a>
-      <a href="https://mistral.ai/news/mistral-3/"><circle cx="615" cy="465" r="4"></circle><circle cx="618" cy="465" r="2.5"><title>Devstral 2 · 9 December 2025</title></circle><text x="616" y="481" text-anchor="middle">Mistral 3</text></a>
-      <a href="https://mistral.ai/news/mistral-small-4/"><circle cx="662" cy="465" r="4"></circle><text x="662" y="454" text-anchor="middle">Small 4</text></a>
-      <a href="https://docs.mistral.ai/models/model-cards/mistral-medium-3-5-26-04"><circle cx="681" cy="465" r="4"></circle><text x="681" y="481" text-anchor="middle">Medium 3.5</text></a>
+      <a href="https://mistral.ai/news/announcing-mistral-7b/" data-release-name="Mistral 7B" data-release-date="27 September 2023" data-release-note="A compact open-weight model whose strong efficiency helped establish Mistral as a major European model lab." data-source-label="Mistral announcement"><circle cx="380" cy="680" r="4"></circle><text x="380" y="667" text-anchor="middle">Mistral 7B</text></a>
+      <a href="https://mistral.ai/news/mixtral-of-experts/" data-release-name="Mixtral 8x7B" data-release-date="11 December 2023" data-release-note="An open mixture-of-experts model activated only part of its parameters for each token." data-source-label="Mistral announcement"><circle cx="416" cy="680" r="4"></circle><text x="416" y="696" text-anchor="middle">Mixtral</text></a>
+      <a href="https://mistral.ai/news/mistral-large/" data-release-name="Mistral Large" data-release-date="26 February 2024" data-release-note="Mistral's first proprietary flagship targeted high-end reasoning and multilingual work." data-source-label="Mistral announcement"><circle cx="452" cy="680" r="4"></circle><text x="452" y="667" text-anchor="middle">Large</text></a>
+      <a href="https://mistral.ai/news/mixtral-8x22b" data-release-name="Mixtral 8x22B" data-release-label="Mixtral 8x22B" data-release-date="17 April 2024" data-release-note="A larger sparse mixture-of-experts checkpoint expanded the open Mixtral line." data-source-label="Mistral announcement"><circle cx="475" cy="680" r="3"></circle></a>
+      <a href="https://mistral.ai/news/mistral-large-2407/" data-release-name="Mistral Large 2" data-release-date="24 July 2024" data-release-note="A new flagship improved code generation, mathematics, reasoning, and multilingual support." data-source-label="Mistral announcement"><circle cx="520" cy="680" r="4"></circle><text x="520" y="696" text-anchor="middle">Large 2</text></a>
+      <a href="https://mistral.ai/news/mistral-medium-3/" data-release-name="Mistral Medium 3" data-release-date="7 May 2025" data-release-note="A lower-cost enterprise model aimed to approach frontier performance with easier deployment." data-source-label="Mistral announcement"><circle cx="647" cy="680" r="4"></circle><text x="647" y="667" text-anchor="middle">Medium 3</text></a>
+      <a href="https://mistral.ai/news/mistral-3/" data-release-name="Mistral 3 family" data-release-date="2 December 2025" data-release-family="Ministral 3 and Mistral Large 3 were announced as one family." data-release-note="A family spanning small edge-oriented models through a large sparse flagship." data-source-label="Mistral announcement"><circle cx="741" cy="676" r="4"></circle><text x="741" y="663" text-anchor="middle">Mistral 3</text></a>
+      <a href="https://mistral.ai/news/devstral-2-vibe-cli/" data-release-name="Devstral 2" data-release-label="Devstral 2" data-release-date="9 December 2025" data-release-family="Mistral 3-era specialist model; launched one week after the main family." data-release-note="A coding-agent model optimized for repository-scale software engineering." data-source-label="Mistral announcement"><circle cx="744" cy="686" r="2.5"></circle></a>
+      <a href="https://mistral.ai/news/mistral-small-4/" data-release-name="Mistral Small 4" data-release-date="16 March 2026" data-release-note="An open-weight hybrid model that unified chat, configurable reasoning, multimodal input, and agentic coding." data-source-label="Mistral announcement"><circle cx="788" cy="680" r="4"></circle><text x="788" y="667" text-anchor="middle">Small 4</text></a>
+      <a href="https://mistral.ai/news/vibe-remote-agents-mistral-medium-3-5/" data-release-name="Mistral Medium 3.5" data-release-date="22 May 2026" data-release-note="A 128B open-weight model for long-running coding and productivity agents, introduced with remote agents in Mistral Vibe." data-source-label="Mistral announcement"><circle cx="818" cy="684" r="3"></circle><text x="818" y="700" text-anchor="middle">Medium 3.5</text></a>
     </g>
   </svg>
-  <figcaption>Selected public releases from official provider announcements, 1 January 2023–16 August 2026. Points share one calendar scale; dense clusters are real, not evenly spaced decoration. A hollow Mythos marker denotes restricted partner access. This chart measures <em>release cadence</em>, not capability.</figcaption>
+  <p class="release-cadence-hint">Hover, focus, or tap a point for details. Switch to a year to reveal every selected release label for that year.</p>
+  <figcaption>Selected public releases from official provider announcements and model papers, 30 November 2022–14 August 2026. Points share one calendar scale within each view; every dot is centered on its provider's lane and positioned by release date. Large dots mark major generations, while smaller dots mark point, efficiency, or specialist updates. Hollow markers denote restricted access. This chart measures <em>release cadence</em>, not capability. The Qwen pronunciation is a brief excerpt from <a href="https://www.youtube.com/watch?v=gEc9GzWC_zs">Dr. Franz Lang's pronunciation guide</a>.</figcaption>
 </figure>
 ```
 
@@ -735,72 +817,100 @@ Together, these moments trace a progression: **conversation → tools → reason
 
 ## The market follows the bottleneck
 
-The clearest financial signal of the LLM era was Nvidia. Its GPUs became the scarce general-purpose compute behind both training and inference. The five-year chart below is not a reconstruction: it is the comparison Nvidia filed in its fiscal 2026 Form 10-K, using FactSet data. It assumes $100 invested in each series on 31 January 2021 with dividends reinvested.
+The clearest financial signal of the LLM era was Nvidia. Its GPUs became the scarce general-purpose compute behind both training and inference. Yet the AI trade did not remain a single “GPU stock” story: investor attention moved toward whichever hardware layer appeared scarce next. Use the event windows below to compare those price paths without confusing a quoted share price with company size.
 
 ```{=html}
-<figure class="filed-market-figure">
-  <a href="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/0001045810-26-000021-index.htm"><img src="lecture-1/nvidia-five-year-total-return.jpg" alt="Nvidia's filed five-year cumulative total-return chart. One hundred dollars invested in January 2021 becomes 1,448.75 dollars in Nvidia, 200.33 dollars in the S and P 500, and 206.01 dollars in the Nasdaq 100 by January 2026."></a>
-  <figcaption>Nvidia, S&amp;P 500, and Nasdaq-100 cumulative total return, 31 January 2021–25 January 2026. The endpoints are $1,448.75, $200.33, and $206.01 respectively. Source: <a href="https://www.sec.gov/Archives/edgar/data/1045810/000104581026000021/0001045810-26-000021-index.htm">Nvidia fiscal 2026 Form 10-K</a>, filed with the SEC; underlying data from FactSet.</figcaption>
-</figure>
-
-<div class="market-event-strip" aria-label="Three dates to read against the five-year market chart">
-  <section><time datetime="2022-11-30">30 Nov 2022</time><strong>ChatGPT launches</strong><p>This is the product marker. It is not a clean one-day stock experiment: Jerome Powell also signaled slower rate increases that day.</p></section>
-  <section><time datetime="2023-05-24">24–25 May 2023</time><strong>AI demand enters guidance</strong><p>Nvidia forecast $11 billion of quarterly revenue and named generative AI; its shares rose 24.4% the next day.</p></section>
-  <section><time datetime="2025-01-27">27 Jan 2025</time><strong>The DeepSeek shock</strong><p>One week after R1 launched, Nvidia fell 16.97%, S&amp;P 500 IT fell 5.58%, and the S&amp;P 500 fell 1.48%.</p></section>
-</div>
+<div data-ai-market-moments></div>
 ```
-
-The filed graph uses annual endpoints, so it cannot display the one-day DeepSeek fall. The exact shock figures come from S&P Dow Jones Indices’ [January 2025 U.S. market report](https://www.spglobal.com/spdji/en/documents/commentary/market-attributes-us-equities-202501.pdf), which also estimated that Nvidia lost about $594 billion of market value that day. The different reactions matter: the event repriced the expected economics of AI infrastructure much more sharply than the broad market.
-
-### Two other hardware trajectories
-
-```{=html}
-<div class="filed-market-grid">
-  <figure class="filed-market-figure">
-    <a href="https://www.sec.gov/Archives/edgar/data/50863/000005086326000011/intc-20251227.htm"><img src="lecture-1/intel-five-year-total-return.jpg" alt="Intel's filed five-year total-return comparison through December 2025. Intel ends below its starting value while four comparison indexes end above two hundred dollars."></a>
-    <figcaption>Intel versus four broad and semiconductor indexes, 2020–2025. This records the long decline that made a later turnaround noteworthy; it does not yet include the 2026 agentic-workload rally. Source: <a href="https://www.sec.gov/Archives/edgar/data/50863/000005086326000011/intc-20251227.htm">Intel 2025 Form 10-K</a>.</figcaption>
-  </figure>
-  <figure class="filed-market-figure">
-    <a href="https://www.sec.gov/Archives/edgar/data/723125/000072312525000028/mu-20250828.htm"><img src="lecture-1/micron-five-year-total-return.jpg" alt="Micron's filed five-year total-return comparison through August 2025. One hundred dollars becomes about 268 dollars in Micron, 266 dollars in the Philadelphia Semiconductor Index, and 199 dollars in the S and P 500."></a>
-    <figcaption>Micron, the Philadelphia Semiconductor Index, and the S&amp;P 500, 2020–2025. The chart captures memory’s participation in the AI hardware cycle. Source: <a href="https://www.sec.gov/Archives/edgar/data/723125/000072312525000028/mu-20250828.htm">Micron 2025 Form 10-K</a>.</figcaption>
-  </figure>
-</div>
-```
-
-Three episodes explain the shape without pretending that they are the only causes:
 
 1. **GPU repricing.** On 25 May 2023, Nvidia shares [rose 24%](https://www.investing.com/news/stock-market-news/nvidia-close-to-becoming-first-trilliondollar-chip-firm-after-stellar-forecast-3090653) after an extraordinary data-center forecast. Its fiscal 2024 data-center revenue later reached $47.5 billion, up 217%, according to its [annual filing](https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm).
 2. **The DeepSeek shock.** [DeepSeek-R1 launched](https://api-docs.deepseek.com/news/news250120/) on 20 January 2025. A week later, fear that more efficient models would require less hardware helped drive a [16.9% one-day Nvidia decline](https://apnews.com/article/52c54e361616509280bd2775674b6b4b). That was a change in investor expectations, not proof that compute demand had disappeared. Nvidia later recovered and [reached a $4 trillion market value](https://www.investing.com/news/stock-market-news/nvidia-becomes-first-company-to-clinch-4-trillion-in-market-value-4128409) in July 2025.
-3. **The bottleneck expands.** AI systems need more than accelerators. High-bandwidth memory feeds model weights and activations to GPUs; CPUs coordinate storage, networking, retrieval, tool calls, and high-volume inference.
-
-| Hardware layer | What changed | Evidence and caveat |
-|---|---|---|
-| Accelerators | Training and inference demand concentrated around Nvidia GPUs and their software ecosystem. | The revenue surge is stronger evidence than a stock chart alone. |
-| HBM and memory | Larger models and faster accelerators increased demand for memory bandwidth. [Micron said](https://www.investing.com/news/stock-market-news/micron-set-for-record-high-after-ai-demand-steers-strong-forecast-surprise-profit-3347470) its 2024 HBM capacity was sold out, and [SK hynix reported](https://news.skhynix.com/en/sk-hynix-announces-4q24-financial-results/) that HBM exceeded 40% of Q4 2024 DRAM revenue. | This was an HBM and server-memory boom, not an identical gain for every memory producer. |
-| CPUs and infrastructure | Agentic workloads create many planning, retrieval, tool, and orchestration steps around each accelerator call. By July 2026, [Intel reported](https://newsroom.intel.com/corporate/intel-reports-second-quarter-2026-financial-results) stronger demand while [industry reporting](https://www.investing.com/news/stock-market-news/intel-sales-profit-forecast-beat-estimates-boosts-spending-plans-on-ai-boom-4809863) linked part of the CPU shortage to agentic workloads. | Agent demand helped a nascent turnaround; it did not single-handedly “revive Intel.” Manufacturing, partnerships, capital, and execution also mattered. |
+3. **The bottleneck expands.** AI systems need more than accelerators. High-bandwidth memory feeds model weights and activations to GPUs; [Micron said](https://www.investing.com/news/stock-market-news/micron-set-for-record-high-after-ai-demand-steers-strong-forecast-surprise-profit-3347470) its 2024 HBM capacity was sold out, and [SK hynix reported](https://news.skhynix.com/en/sk-hynix-announces-4q24-financial-results/) that HBM exceeded 40% of Q4 2024 DRAM revenue. CPUs coordinate storage, networking, retrieval, tool calls, and high-volume inference. By July 2026, [Intel reported](https://newsroom.intel.com/corporate/intel-reports-second-quarter-2026-financial-results) stronger demand while [industry reporting](https://www.investing.com/news/stock-market-news/intel-sales-profit-forecast-beat-estimates-boosts-spending-plans-on-ai-boom-4809863) linked part of the CPU shortage to agentic workloads. These gains were specific to changing bottlenecks; they did not lift every hardware producer equally or prove that one workload single-handedly revived a company.
 
 The economic lesson is that markets repeatedly try to identify the next scarce input. The technical lesson is similar: optimize the bottleneck that limits the whole system, not the component with the loudest story.
 
 ## Beyond text: VLMs, multimodality, and action
 
-“Multimodal” covers several distinct model interfaces.
+The output distinguishes several model interfaces. An **LLM** maps text tokens to text tokens, as in the dialogue examples earlier in the lecture. Vision-language, multimodal, and action models extend that interface in different directions.
+
+### VLM: ground an image
+
+A **vision-language model (VLM)** can connect a text instruction to visual evidence. In the example below, the input is a street photograph plus the instruction “Locate the bus and people.” The output grounds those words in regions of the image rather than returning only a sentence.
 
 ```{=html}
-<div class="concept-grid">
-  <section class="concept-item"><strong>LLM</strong><span>text tokens → text tokens</span><p>Language understanding and generation through a token sequence.</p></section>
-  <section class="concept-item"><strong>VLM</strong><span>image or video + text → language</span><p>A vision-language model can describe, answer, ground, or reason about visual input.</p></section>
-  <section class="concept-item"><strong>Multimodal model</strong><span>several media → several media</span><p>Text, audio, images, or video may share one interaction loop and sometimes one learned representation.</p></section>
-  <section class="concept-item"><strong>VLA</strong><span>vision + instruction → actions</span><p>A vision-language-action model maps perception and language to robot-control tokens or commands.</p></section>
-</div>
+<figure class="model-example vision-grounding-example">
+  <div class="vision-grounding-grid">
+    <div class="vision-grounding-panel">
+      <strong>Image input</strong>
+      <img src="lecture-1/vlm-street-scene.jpg" alt="A city bus with several people walking in front of it on a street in Madrid.">
+    </div>
+    <div class="vision-grounding-panel">
+      <strong>Grounded output</strong>
+      <div class="vision-scene" role="img" aria-label="The same street photograph with one bounding box around the bus and three bounding boxes around people.">
+        <img src="lecture-1/vlm-street-scene.jpg" alt="">
+        <span class="vision-box vision-box--bus"><b>bus</b></span>
+        <span class="vision-box vision-box--person-a"><b>person</b></span>
+        <span class="vision-box vision-box--person-b"><b>person</b></span>
+        <span class="vision-box vision-box--person-c"><b>person</b></span>
+      </div>
+    </div>
+  </div>
+  <figcaption>Illustrative grounding output on a real street photograph from the <a href="https://github.com/ultralytics/assets/blob/main/im/bus.jpg">Ultralytics example assets</a>. Bounding boxes make the connection between a word and an image region explicit.</figcaption>
+</figure>
 ```
 
-A VLA extends the prediction target. Instead of ending with a sentence, the system must produce an action that changes the physical world:
+### Multimodal model: summarize a video
+
+A multimodal model can combine evidence across time and return another medium. Here the input is a five-second video; the example output is a text summary of the full sequence.
+
+```{=html}
+<figure class="model-example multimodal-video-example">
+  <div class="model-example-grid">
+    <div>
+      <strong class="model-example-label">Video input</strong>
+      <video autoplay muted loop playsinline controls preload="auto" poster="lecture-1/multimodal-flower-poster.jpg" aria-label="A close-up time-lapse video of a red flower opening from a bud.">
+        <source src="lecture-1/multimodal-flower.mp4" type="video/mp4">
+        Your browser does not support embedded video.
+      </video>
+    </div>
+    <div class="model-example-output">
+      <strong>Text output</strong>
+      <p>“A close-up time-lapse shows a red flower opening from a closed bud.”</p>
+      <small>The change is visible only across the sequence: the first frame shows the bud, while later frames show the open flower.</small>
+    </div>
+  </div>
+  <figcaption>Five-second CC0 sample video from <a href="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4">MDN Web Docs</a>. The clip autoplays muted and remains controllable.</figcaption>
+</figure>
+```
+
+### VLA: turn perception into action
+
+A **vision-language-action model (VLA)** extends the prediction target. Instead of ending with a sentence, the system must produce an action that changes the physical world:
 
 $$
 (\text{camera frames},\ \text{instruction},\ \text{robot state})
 \longrightarrow
 (a_1,a_2,\ldots,a_T).
 $$
+
+```{=html}
+<figure class="model-example vla-video-example">
+  <div class="model-example-grid">
+    <div>
+      <strong class="model-example-label">Camera input and task</strong>
+      <div class="video-embed">
+        <iframe src="https://www.youtube-nocookie.com/embed/7Q-FHj2r4NU?autoplay=1&amp;mute=1&amp;playsinline=1&amp;loop=1&amp;playlist=7Q-FHj2r4NU&amp;rel=0" title="Robohand autonomously throwing away trash" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+      </div>
+    </div>
+    <div class="model-example-output">
+      <strong>Action output</strong>
+      <p>The system turns camera observations and the disposal task into a sequence of robot commands that moves the hand, grasps the trash, and discards it.</p>
+      <small>Unlike a caption, the output changes the environment and must be evaluated for physical success and safety.</small>
+    </div>
+  </div>
+  <figcaption><a href="https://www.youtube.com/watch?v=7Q-FHj2r4NU">Robohand finally throwing away the trash autonomously</a>, a hackathon demonstration by Alexan Hayrapetyan.</figcaption>
+</figure>
+```
 
 [RT-2](https://deepmind.google/blog/rt-2-new-model-translates-vision-and-language-into-action/) [@zitkovich2023rt2] showed how web-scale vision-language knowledge could transfer into robotic control. [OpenVLA](https://github.com/openvla/openvla) [@kim2024openvla] later released a 7B open vision-language-action model trained on robot demonstrations. The promise is transfer: an instruction such as “move the can near the matching color” can draw on concepts learned outside a narrow robot dataset. The difficulty is that wrong physical actions have costs that wrong sentences do not.
 
@@ -823,7 +933,7 @@ The research question is not “Can a giant model produce something that looks o
 3. **A benchmark score belongs to a protocol.** Checkpoint identity, prompts, tools, graders, and uncertainty matter as much as the headline number.
 4. **The Llama 4 controversy was a reproducibility lesson.** An experimental chat variant and the public checkpoint were not interchangeable; that does not imply every result was fake.
 5. **The model frontier is global but uneven.** The United States and China lead frontier-scale development, while regional ecosystems create value through sovereignty, deployment, openness, and language coverage.
-6. **The important moments changed behavior and economics.** Chat, reasoning, agents, native media, and routing each changed how models were used.
-7. **The endpoint is no longer only text.** VLMs connect language to perception; VLAs connect perception and language to action.
+6. **Capability shifts move engineering and economic bottlenecks.** Chat, reasoning, agents, native media, and routing changed how models were used, while demand moved across accelerators, memory, and infrastructure.
+7. **Multimodal interfaces differ by their outputs.** VLMs can ground language in image regions, multimodal systems can interpret sequences such as video, and VLAs produce actions that change the physical world.
 
 ## References

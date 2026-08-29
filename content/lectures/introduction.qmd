@@ -1,7 +1,7 @@
 ---
-title: "Introduction: From Recurrent Networks to Transformers"
-order: 1
-description: "How sequence modeling moved from recurrent networks to the Transformer, and why the architecture split into encoder-only, decoder-only, and encoder-decoder families."
+title: "Introduction"
+order: 0
+description: "How sequence modeling moved from recurrent networks to the Transformer and then split into three architecture families."
 bibliography: ../references.bib
 citeproc: true
 format:
@@ -15,7 +15,7 @@ execute:
   enabled: false
 ---
 
-Modern language models did not appear in a single leap. They emerged from a sequence of ideas about how a neural network should read, remember, and generate a sequence. Recurrent neural networks introduced a persistent hidden state. Long short-term memory networks made that state easier to train over long distances. Attention let a decoder look back at the most relevant parts of an input. Although the attention mechanism predates Transformers, [*Attention Is All You Need*](https://papers.neurips.cc/paper/7181-attention-is-all-you-need.pdf) [@vaswani2017attention] made attention—not recurrence—the main computational primitive of the Transformer architecture.
+This introduction supplies the architectural background assumed by the main course. Modern language models did not appear in a single leap. They emerged from a sequence of ideas about how a neural network should read, remember, and generate a sequence. Recurrent neural networks introduced a persistent hidden state. Long short-term memory networks made that state easier to train over long distances. Attention let a decoder look back at the most relevant parts of an input. Although the attention mechanism predates Transformers, [*Attention Is All You Need*](https://papers.neurips.cc/paper/7181-attention-is-all-you-need.pdf) [@vaswani2017attention] made attention—not recurrence—the main computational primitive of the Transformer architecture.
 
 ::: {.callout-note}
 ## From recurrence to attention

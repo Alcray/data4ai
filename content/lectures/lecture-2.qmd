@@ -1,0 +1,130 @@
+---
+title: "Lecture 2 (draft): The decoder-only Transformer from scratch"
+order: 3
+description: "How token sequences pass through causal attention, residual blocks, normalization, feed-forward layers, and a next-token objective."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+A decoder-only language model is a probability distribution implemented as a stack of repeated tensor operations. Understanding those operations is necessary for interpreting every later decision about data, systems, scaling, and post-training.
+
+## Learning objectives
+
+By the end of this lecture, you should be able to:
+
+1. convert documents into packed input and target token sequences;
+2. derive the shapes and computation of causal multi-head self-attention;
+3. explain residual streams, normalization, RoPE, and gated feed-forward layers;
+4. calculate parameters, activation memory, attention memory, and approximate FLOPs; and
+5. implement and test a minimal GPT block in PyTorch.
+
+## The tokenizer–model boundary
+
+Raw text first becomes token IDs. Subword tokenization trades vocabulary size against sequence length: frequent strings receive compact representations while rare strings are composed from smaller units. [SentencePiece](https://aclanthology.org/D18-2012/) [@kudo2018sentencepiece] is one reproducible way to train such a vocabulary directly from raw sentences.
+
+For a packed sequence
+
+```text
+<BOS> data quality matters <EOS>
+```
+
+causal language modeling shifts the target by one position:
+
+```text
+Input:   <BOS> data    quality matters
+Target:  data  quality matters <EOS>
+```
+
+Document separators, padding, conversation-control tokens, and loss masks are therefore architectural inputs as well as data choices.
+
+## Embeddings and the residual stream
+
+Each token ID selects a vector from an embedding matrix. The resulting sequence has shape $X\in\mathbb{R}^{B\times T\times d}$ for batch size $B$, sequence length $T$, and model width $d$. Transformer sublayers do not replace this representation. They write updates into a **residual stream**:
+
+$$
+X' = X + \operatorname{Attention}(\operatorname{Norm}(X)),
+$$
+
+$$
+X'' = X' + \operatorname{MLP}(\operatorname{Norm}(X')).
+$$
+
+This pre-normalization form is common in modern decoder-only models. Exact normalization, activation, bias, and initialization choices belong to the model specification and affect training stability.
+
+## Causal self-attention
+
+For one attention head, learned projections produce queries, keys, and values:
+
+$$
+Q=XW_Q,\qquad K=XW_K,\qquad V=XW_V.
+$$
+
+Scaled dot-product attention is
+
+$$
+\operatorname{Attention}(Q,K,V)=\operatorname{softmax}\!\left(\frac{QK^\top}{\sqrt{d_h}}+M\right)V,
+$$
+
+where $d_h$ is the head dimension and $M$ contains $-\infty$ above the causal diagonal. The mask ensures that position $t$ cannot use target tokens at positions greater than $t$.
+
+Multi-head attention reshapes projections to $B\times H\times T\times d_h$, applies attention per head, concatenates the results, and uses an output projection to return to width $d$. [*Attention Is All You Need*](https://papers.neurips.cc/paper/7181-attention-is-all-you-need.pdf) [@vaswani2017attention] introduced the general mechanism; decoder-only GPT systems retain the causal self-attention portion.
+
+## Position and feed-forward computation
+
+Attention alone is permutation-equivariant, so the model needs position information. Rotary position embeddings, or [RoPE](https://arxiv.org/abs/2104.09864) [@su2021rope], rotate query and key coordinates according to token position, making relative offsets accessible to their dot products.
+
+The feed-forward sublayer applies the same nonlinear transformation at every position. A gated variant such as SwiGLU computes a product between an activated branch and a linear branch before projecting back to the residual width. [LLaMA](https://arxiv.org/abs/2302.13971) [@touvron2023llama] provides a useful open specification combining pre-normalization, RMSNorm, SwiGLU, and RoPE.
+
+## The language-model objective
+
+For tokens $x_1,\ldots,x_T$, the model factorizes
+
+$$
+p(x_1,\ldots,x_T)=\prod_{t=1}^{T}p(x_t\mid x_{<t}).
+$$
+
+Training minimizes mean negative log-likelihood over unmasked target positions:
+
+$$
+\mathcal{L}=-\frac{1}{N}\sum_{t=1}^{N}\log p_\theta(x_t\mid x_{<t}).
+$$
+
+At inference time, the same model samples or selects one token, appends it to the context, and repeats. Training processes many target positions in parallel; autoregressive generation is sequential across newly produced tokens.
+
+## Resource accounting
+
+Before running the model, estimate:
+
+- parameters in embeddings, attention projections, feed-forward layers, and output head;
+- parameter, gradient, and optimizer-state memory;
+- activation memory as a function of $B$, $T$, layers, and width;
+- the $T^2$ attention-score term; and
+- approximate training FLOPs per token and per step.
+
+An estimate should be close enough to explain an out-of-memory error or an implausible throughput claim. Lecture 8 will replace several naive operations with memory-efficient kernels and distributed execution.
+
+## Studio: implement the block
+
+Implement token embedding, RMSNorm, causal multi-head attention, a SwiGLU feed-forward layer, one Transformer block, and an output projection. The submission includes unit tests for tensor shapes, future-token masking, parameter sharing, deterministic generation, and checkpoint save/load.
+
+Finally, overfit one short batch. Failure to drive the loss near zero is a diagnostic: the bug may be in target shifting, the causal mask, normalization, the optimizer, or generation—not in insufficient data.
+
+## What to remember
+
+1. Tokenization and packing determine the sequences the architecture receives.
+2. Causal attention mixes information only from the current and previous positions.
+3. Residual blocks repeatedly add attention and feed-forward updates to one stream.
+4. RoPE, normalization, and gated MLPs are explicit, testable model choices.
+5. Parameter, memory, and FLOP estimates should be written before the training run.
+6. A tiny-data overfit test is the first end-to-end correctness check.
+
+## References
