@@ -1,8 +1,10 @@
-name: Deploy to GitHub Pages
+name: Deploy production to GitHub Pages
 
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["Validate production"]
+    types: [completed]
+    branches: [production]
   workflow_dispatch:
 
 permissions:
@@ -16,10 +18,13 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out production
         uses: actions/checkout@v6
+        with:
+          ref: production
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -29,6 +34,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install Quarto
+        run: npm run setup:quarto
+
+      - name: Render lecture content
+        run: npm run content:render
 
       - name: Build static site
         run: npm run build
