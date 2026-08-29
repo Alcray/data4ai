@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: production-validation
@@ -36,3 +37,8 @@ jobs:
 
       - name: Build static site
         run: npm run build
+
+      - name: Request GitHub Pages deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main
