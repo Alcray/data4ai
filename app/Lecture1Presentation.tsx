@@ -1192,7 +1192,8 @@ export default function Lecture1Presentation({
 
         <SlideFrame
           kicker="LECTURE 1 · FOUNDATIONAL MOMENTS"
-          notes="The next seven moments are also copied from the article's chronology. DeepSeek-R1 made open-weight reasoning and a wider geography of frontier competition visible; Claude Code made long-running tool use part of daily software work; native image and Veo 3 integrated new media. GPT-5 routing automated a product-level model choice, Opus 4.6 foregrounded teams of coding agents, and Mythos made restricted access a capability-dependent release decision."
+          notes="The next eight moments are copied from the article's chronology. DeepSeek-R1 widened frontier competition; Claude Code made long-running tool use part of daily software work; native image and Veo 3 integrated new media; and GPT-5 routing automated a product-level model choice. OpenClaw was not a new foundation model: its self-hosted, persistent personal-agent harness joined messaging, workspace memory, tools, and background work, making permissions and security boundaries part of the product. Opus 4.6 foregrounded teams of coding agents, while Mythos made restricted access a capability-dependent release decision."
+          source={<><a href="https://docs.openclaw.ai/start/lore">OpenClaw project history</a> · <a href="https://docs.openclaw.ai/concepts/main-session">personal-agent architecture</a></>}
           title="Foundational moments · 2025–2026"
         >
           <MomentGrid moments={visuals.moments.slice(8)} />
