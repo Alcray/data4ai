@@ -2,42 +2,108 @@
 
 import { useMemo, useState } from "react";
 
-const paperSequence = [
+const readingClubSchedule = [
   {
-    session: "P1",
-    frame: "Corpus construction",
-    papers: "Dolma and DataComp-LM",
-    question: "Which curation decision has causal downstream evidence?",
+    theme: "Architecture",
+    foundation: {
+      date: "12 September",
+      dateTime: "2026-09-12",
+      title: "Attention Is All You Need",
+      authors: "Vaswani et al., 2017",
+      href: "https://papers.neurips.cc/paper/7181-attention-is-all-you-need.pdf",
+    },
+    frontier: {
+      date: "24 October",
+      dateTime: "2026-10-24",
+      title: "Gated Attention for Large Language Models",
+      authors: "Qiu et al., NeurIPS 2025",
+      href: "https://proceedings.neurips.cc/paper_files/paper/2025/hash/904e89bb4e632e75fb47f093b620b257-Abstract-Conference.html",
+    },
   },
   {
-    session: "P2",
-    frame: "Mixture optimization",
-    papers: "DoReMi, DSIR, and DataComp-LM",
-    question: "What does the proxy model preserve—and what can it mis-rank?",
+    theme: "Learning from missing text",
+    foundation: {
+      date: "19 September",
+      dateTime: "2026-09-19",
+      title: "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+      authors: "Devlin et al., NAACL 2019",
+      href: "https://aclanthology.org/N19-1423/",
+    },
+    frontier: {
+      date: "31 October",
+      dateTime: "2026-10-31",
+      title: "Large Language Diffusion Models (LLaDA)",
+      authors: "Nie et al., NeurIPS 2025",
+      href: "https://arxiv.org/abs/2502.09992",
+    },
   },
   {
-    session: "P3",
-    frame: "Evaluation validity",
-    papers: "HELM, LiveBench, and SWE-bench",
-    question: "Which part of the score belongs to the model rather than the protocol?",
+    theme: "Training data and compute",
+    foundation: {
+      date: "26 September",
+      dateTime: "2026-09-26",
+      title: "Training Compute-Optimal Large Language Models (Chinchilla)",
+      authors: "Hoffmann et al., 2022",
+      href: "https://arxiv.org/abs/2203.15556",
+    },
+    frontier: {
+      date: "7 November",
+      dateTime: "2026-11-07",
+      title: "FineWeb2: One Pipeline to Scale Them All",
+      authors: "Penedo et al., COLM 2025",
+      href: "https://openreview.net/forum?id=jnRBe6zatP",
+    },
   },
   {
-    session: "P4",
-    frame: "Reasoning supervision",
-    papers: "Chain-of-Thought, STaR, and Let's Verify Step by Step",
-    question: "Did new supervision help, or did the system spend more inference compute?",
+    theme: "Retrieval and evidence",
+    foundation: {
+      date: "3 October",
+      dateTime: "2026-10-03",
+      title: "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      authors: "Lewis et al., 2020",
+      href: "https://papers.neurips.cc/paper/2020/hash/6b493230205f780e1bc26945df7481e5-Abstract.html",
+    },
+    frontier: {
+      date: "14 November",
+      dateTime: "2026-11-14",
+      title: "Synthesizing Scientific Literature with Retrieval-Augmented Language Models",
+      authors: "Asai et al., Nature 2026",
+      href: "https://www.nature.com/articles/s41586-025-10072-4",
+    },
   },
   {
-    session: "P5",
-    frame: "Learning from verifiable rewards",
-    papers: "DeepSeekMath, DeepSeek-R1, and Kimi k1.5",
-    question: "Which claim is isolated by an ablation and which describes a full recipe?",
+    theme: "Reasoning",
+    foundation: {
+      date: "10 October",
+      dateTime: "2026-10-10",
+      title: "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models",
+      authors: "Wei et al., 2022",
+      href: "https://arxiv.org/abs/2201.11903",
+    },
+    frontier: {
+      date: "21 November",
+      dateTime: "2026-11-21",
+      title: "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning",
+      authors: "DeepSeek-AI, 2025",
+      href: "https://arxiv.org/abs/2501.12948",
+    },
   },
   {
-    session: "P6",
-    frame: "Synthetic-data evidence",
-    papers: "Self-Instruct, OpenMathInstruct-2, and model collapse",
-    question: "What new information survives generation and selection?",
+    theme: "Evaluation",
+    foundation: {
+      date: "17 October",
+      dateTime: "2026-10-17",
+      title: "Beyond Accuracy: Behavioral Testing of NLP Models with CheckList",
+      authors: "Ribeiro et al., ACL 2020",
+      href: "https://aclanthology.org/2020.acl-main.442/",
+    },
+    frontier: {
+      date: "28 November",
+      dateTime: "2026-11-28",
+      title: "LLMs Get Lost in Multi-Turn Conversation",
+      authors: "Laban et al., ICLR 2026; first preprint 2025",
+      href: "https://openreview.net/forum?id=VKGTGGcwl6",
+    },
   },
 ] as const;
 
@@ -98,111 +164,92 @@ const assignments = [
   },
 ] as const;
 
-export function PaperReviewsPage() {
+export function ReadingClubPage() {
   return (
     <article className="main-content lecture-content course-section-page">
-      <h1>Paper reviews</h1>
+      <h1>Reading Club (NLP)</h1>
       <p>
-        Paper reviews are written research work, separate from lecture notes. Each student
-        submits two concise reviews during the course. The purpose is to reconstruct an
-        empirical claim closely enough to decide whether it should influence the shared model.
+        Each student is assigned one theme and presents its foundation paper in Round 1 and its
+        frontier paper in Round 2.
       </p>
 
-      <h2>One-page review contract</h2>
-      <ol>
-        <li>State one falsifiable claim in your own words.</li>
-        <li>Name the data, baseline, compute budget, metric, and evaluation population.</li>
-        <li>Identify the strongest control and the most important missing control.</li>
-        <li>Inspect one table or figure and state exactly what it establishes.</li>
-        <li>Propose the smallest reproduction that could change a cohort decision.</li>
-        <li>End with a verdict: adopt, test first, or reject for this project.</li>
-      </ol>
+      <h2>Paper schedule <small>Fall 2026</small></h2>
+      <p>
+        The first round establishes the foundations. The second round returns to the same themes
+        through newer work from the research frontier. Presenter assignments will be added after
+        preference registration.
+      </p>
 
-      <h2>Review sequence</h2>
-      <div className="protocol-table">
-        <table>
+      <div className="reading-club-table-wrap">
+        <table className="reading-club-table" aria-label="Reading Club NLP paper schedule">
+          <colgroup>
+            <col className="reading-club-theme-column" />
+            <col className="reading-club-paper-column" />
+            <col className="reading-club-paper-column" />
+            <col className="reading-club-presenter-column" />
+          </colgroup>
           <thead>
             <tr>
-              <th>Review</th>
-              <th>Frame</th>
-              <th>Paper set</th>
-              <th>Decision question</th>
+              <th scope="col">Theme</th>
+              <th scope="col">Round 1: Foundations</th>
+              <th scope="col">Round 2: Frontier</th>
+              <th scope="col">Presenter</th>
             </tr>
           </thead>
           <tbody>
-            {paperSequence.map((paper) => (
-              <tr key={paper.session}>
-                <td>{paper.session}</td>
-                <td>{paper.frame}</td>
-                <td>{paper.papers}</td>
-                <td>{paper.question}</td>
+            {readingClubSchedule.map((block, index) => (
+              <tr key={block.theme}>
+                <th scope="row">
+                  <span className="reading-club-block-number">Block {index + 1}</span>
+                  {block.theme}
+                </th>
+                {[block.foundation, block.frontier].map((paper) => (
+                  <td key={paper.title}>
+                    <time dateTime={paper.dateTime}>{paper.date}</time>
+                    <a href={paper.href} rel="noreferrer" target="_blank">
+                      <em>{paper.title}</em>
+                    </a>
+                    <small>{paper.authors}</small>
+                  </td>
+                ))}
+                <td><span className="reading-club-pending">Pending registration</span></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      <h2>Assessment</h2>
-      <p>
-        Reviews are graded on claim fidelity, experimental reasoning, evidence inspection,
-        and the usefulness of the proposed reproduction—not on agreement with the paper or
-        the instructor.
-      </p>
-    </article>
-  );
-}
-
-export function PaperDiscussionsPage() {
-  return (
-    <article className="main-content lecture-content course-section-page">
-      <h1>Paper discussions</h1>
-      <p>
-        Discussions are separate research meetings. They do not replace the technical lecture.
-        Each session turns one paper set into a decision about the cohort model.
-      </p>
-
-      <h2>Four rotating roles</h2>
-      <div className="discussion-roles">
-        <section>
-          <strong>Claim lead</strong>
-          <p>Reconstructs the central claim and the evidence chain without presenting a summary of every section.</p>
-        </section>
-        <section>
-          <strong>Data auditor</strong>
-          <p>Traces collection, filtering, leakage, licenses, and which population the result represents.</p>
-        </section>
-        <section>
-          <strong>Skeptic</strong>
-          <p>Develops the strongest alternative explanation and identifies a discriminating control.</p>
-        </section>
-        <section>
-          <strong>Reproducer</strong>
-          <p>Designs a compute-bounded experiment and names the artifact required to run it.</p>
-        </section>
-      </div>
-
-      <h2>45-minute protocol</h2>
-      <ol>
-        <li><strong>5 minutes:</strong> silent claim and evidence notes.</li>
-        <li><strong>10 minutes:</strong> claim lead and data audit.</li>
-        <li><strong>10 minutes:</strong> strongest challenge and author-defensible response.</li>
-        <li><strong>15 minutes:</strong> reproduction design under the cohort’s actual compute budget.</li>
-        <li><strong>5 minutes:</strong> recorded project decision, owner, and falsification condition.</li>
+      <h2>Pass criteria</h2>
+      <ol className="reading-club-criteria">
+        <li>
+          <strong>Two satisfactory presentations</strong>
+          <span>Present both assigned papers to the satisfactory standard below.</span>
+        </li>
+        <li>
+          <strong>Attendance at 9 of 12 sessions</strong>
+          <span>Presenting counts as attendance. Legitimate absences are handled individually.</span>
+        </li>
+        <li>
+          <strong>Active participation</strong>
+          <span>Contribute substantive questions or comments throughout the paper discussions.</span>
+        </li>
       </ol>
 
-      <h2>Discussion calendar</h2>
-      <div className="paper-discussion-list">
-        {paperSequence.map((paper) => (
-          <section key={paper.session}>
-            <span>{paper.session}</span>
-            <div>
-              <strong>{paper.frame}</strong>
-              <p>{paper.papers}</p>
-              <small>{paper.question}</small>
-            </div>
-          </section>
-        ))}
-      </div>
+      <h2>What counts as a satisfactory presentation</h2>
+      <p>A satisfactory presentation demonstrates that the student can:</p>
+      <ul>
+        <li>explain the problem addressed by the paper;</li>
+        <li>explain the main method;</li>
+        <li>interpret the key experiments;</li>
+        <li>identify at least one limitation; and</li>
+        <li>answer reasonable questions about the paper.</li>
+      </ul>
+
+      <p>
+        The presentation does not need to be perfect. If a presentation is not yet satisfactory,
+        the student may revise it or present the relevant part again, subject to class
+        availability.
+      </p>
     </article>
   );
 }
@@ -463,7 +510,9 @@ export function ProjectsPage() {
         <li>one owned artifact with tests and a reviewer;</li>
         <li>one reviewed contribution to another group;</li>
         <li>an individual experiment log including failed runs;</li>
-        <li>two paper reviews and one discussion role;</li>
+        <li>two satisfactory Reading Club presentations;</li>
+        <li>attendance at 9 of the 12 Reading Club paper sessions;</li>
+        <li>active participation in Reading Club discussions;</li>
         <li>an oral defense connecting the contribution to a measured model decision.</li>
       </ul>
 

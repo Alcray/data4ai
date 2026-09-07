@@ -37,7 +37,7 @@ The boundaries organize the calendar; they do not isolate concerns. Evaluation s
 
 Each meeting lasts 90 minutes. A typical session uses approximately 50 minutes for derivation and technical explanation, 15 minutes for an interactive decision checkpoint, 20 minutes for an implementation or design review connected to the shared model, and 5 minutes to record the resulting project decision.
 
-Paper reviews and paper discussions are separate course components with their own navigation, submissions, roles, and meeting protocol. They support the lectures without consuming the technical and practical spine of each 90-minute session.
+The Reading Club (NLP) pairs six foundation papers with six frontier papers. Each student presents two papers, attends at least 9 of the 12 paper sessions, and participates actively in lecturer-facilitated discussions. It supports the lectures without consuming the technical and practical spine of each 90-minute session.
 
 ## Sixteen taught sessions
 

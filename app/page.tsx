@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { AiMarketMoments } from "./AiMarketMoments";
-import { PaperDiscussionsPage, PaperReviewsPage, ProjectsPage } from "./CoursePages";
+import { ProjectsPage, ReadingClubPage } from "./CoursePages";
 import { InteractiveLearning } from "./InteractiveLearning";
 import { curriculumHtml } from "./generated/curriculum";
 import { introductionHtml } from "./generated/introduction";
@@ -28,8 +28,7 @@ const navigation = [
   "Home",
   "Calendar",
   "Lectures",
-  "Paper reviews",
-  "Paper discussions",
+  "Reading Club (NLP)",
   "Projects",
 ] as const;
 
@@ -723,10 +722,8 @@ export default function Home() {
                 />
               )}
             </>
-          ) : active === "Paper reviews" ? (
-            <PaperReviewsPage />
-          ) : active === "Paper discussions" ? (
-            <PaperDiscussionsPage />
+          ) : active === "Reading Club (NLP)" ? (
+            <ReadingClubPage />
           ) : active === "Projects" ? (
             <ProjectsPage />
           ) : active === "Calendar" ? (
