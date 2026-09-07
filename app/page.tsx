@@ -3,6 +3,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { AiMarketMoments } from "./AiMarketMoments";
+import { ReadingClubPage } from "./ReadingClubPage";
 import { ReleaseCadenceChartMount } from "./ReleaseCadenceChart";
 import { curriculumHtml } from "./generated/curriculum";
 import { introductionHtml } from "./generated/introduction";
@@ -13,6 +14,7 @@ const Lecture1Presentation = lazy(() => import("./Lecture1Presentation"));
 const navigation = [
   "Home",
   "Lectures",
+  "Reading Club (NLP)",
 ] as const;
 
 const lecturePages = [
@@ -346,6 +348,8 @@ export default function Home() {
                 <ReleaseCadenceChartMount rootRef={lecture1Ref} />
               </>
             )
+          ) : active === "Reading Club (NLP)" ? (
+            <ReadingClubPage />
           ) : activeLecture ? (
             <article
               className="main-content lecture-content"

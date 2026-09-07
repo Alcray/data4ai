@@ -621,6 +621,129 @@ button {
   margin-top: 2.8rem;
 }
 
+.reading-club-table-wrap {
+  width: 100%;
+  margin: 1.25rem 0 1.75rem;
+  overflow-x: auto;
+}
+
+.lecture-content .reading-club-table {
+  display: table;
+  min-width: 58rem;
+  margin: 0;
+  table-layout: fixed;
+  white-space: normal;
+}
+
+.reading-club-theme-column {
+  width: 16%;
+}
+
+.reading-club-paper-column {
+  width: 33%;
+}
+
+.reading-club-presenter-column {
+  width: 18%;
+}
+
+.lecture-content .reading-club-table th,
+.lecture-content .reading-club-table td {
+  vertical-align: top;
+}
+
+.lecture-content .reading-club-table tbody th {
+  background: transparent;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.reading-club-block-number,
+.reading-club-table time,
+.reading-club-table small {
+  display: block;
+}
+
+.reading-club-block-number {
+  margin-bottom: 0.3rem;
+  color: var(--light-muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.reading-club-table time {
+  margin-bottom: 0.4rem;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.025em;
+}
+
+.reading-club-table a {
+  display: block;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.reading-club-table small {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.reading-club-pending {
+  color: var(--light-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.reading-club-criteria {
+  padding: 0;
+  margin: 1.2rem 0 1.75rem;
+  border-top: 1px solid var(--border);
+  list-style: none;
+  counter-reset: reading-club-rule;
+}
+
+.reading-club-criteria li {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 0.15rem 0.75rem;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--border);
+  counter-increment: reading-club-rule;
+}
+
+.reading-club-criteria li::before {
+  grid-row: 1 / span 2;
+  color: var(--accent);
+  content: counter(reading-club-rule, decimal-leading-zero);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.reading-club-criteria strong,
+.reading-club-criteria span {
+  grid-column: 2;
+}
+
+.reading-club-criteria strong {
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
+.reading-club-criteria span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .discussion-roles {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
