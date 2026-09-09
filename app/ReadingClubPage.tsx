@@ -1,6 +1,7 @@
 const readingClubSchedule = [
   {
     theme: "Architecture",
+    presenter: "Armen Vahanyan",
     foundation: {
       date: "12 September",
       dateTime: "2026-09-12",
@@ -18,6 +19,7 @@ const readingClubSchedule = [
   },
   {
     theme: "Learning from missing text",
+    presenter: "Tatevik Minasyan",
     foundation: {
       date: "19 September",
       dateTime: "2026-09-19",
@@ -35,6 +37,7 @@ const readingClubSchedule = [
   },
   {
     theme: "Training data and compute",
+    presenter: "Anastasia Vorobyeva",
     foundation: {
       date: "26 September",
       dateTime: "2026-09-26",
@@ -52,6 +55,7 @@ const readingClubSchedule = [
   },
   {
     theme: "Retrieval and evidence",
+    presenter: "Vladimir Avanyan",
     foundation: {
       date: "3 October",
       dateTime: "2026-10-03",
@@ -69,6 +73,7 @@ const readingClubSchedule = [
   },
   {
     theme: "Reasoning",
+    presenter: "Roman Sahakyan",
     foundation: {
       date: "10 October",
       dateTime: "2026-10-10",
@@ -86,6 +91,7 @@ const readingClubSchedule = [
   },
   {
     theme: "Evaluation",
+    presenter: "Mikayel Saghatelyan",
     foundation: {
       date: "17 October",
       dateTime: "2026-10-17",
@@ -151,7 +157,7 @@ export function ReadingClubPage() {
                     <small>{paper.authors}</small>
                   </td>
                 ))}
-                <td><span className="reading-club-pending">Pending registration</span></td>
+                <td>{block.presenter}</td>
               </tr>
             ))}
           </tbody>
