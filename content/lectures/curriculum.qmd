@@ -13,12 +13,12 @@ execute:
 
 The course follows one language model through its complete lifecycle. Students do not only study finished systems: they implement the core model, construct and audit data, run controlled training experiments, build an evaluation harness, perform a post-training intervention, and defend a release package.
 
-The introduction supplies background from recurrent networks to Transformers. It is a preparatory chapter and does not count toward the sixteen taught sessions. The main course assumes that background and begins with the modern language-model lifecycle.
+The introduction supplies background from recurrent networks to Transformers and ends with a modern decoder-only readiness checkpoint. It is a preparatory chapter and does not count toward the sixteen taught sessions. The main course assumes that background and begins with the modern language-model lifecycle.
 
 ## The course at a glance
 
 <div class="rlhf-flow" role="img" aria-label="Six course families in order: foundations in lectures 1 and 2; corpus engineering in lectures 3 to 5; pretraining at scale in lectures 6 to 8; evaluation and adaptation in lectures 9 to 11; reasoning and experience in lectures 12 to 14; and transfer and release in lectures 15 and 16.">
-  <div class="rlhf-step"><span>01–02</span><strong>Foundations</strong><small>Lifecycle and decoder-only Transformer</small></div>
+  <div class="rlhf-step"><span>01–02</span><strong>Foundations</strong><small>Lifecycle, data, and capability boundaries</small></div>
   <div class="rlhf-arrow" aria-hidden="true">→</div>
   <div class="rlhf-step"><span>03–05</span><strong>Corpus engineering</strong><small>Sources, extraction, filtering, deduplication</small></div>
   <div class="rlhf-arrow" aria-hidden="true">→</div>
@@ -35,7 +35,7 @@ The boundaries organize the calendar; they do not isolate concerns. Evaluation s
 
 ## Session format
 
-Each meeting lasts 90 minutes. A typical session uses approximately 50 minutes for derivation and technical explanation, 15 minutes for an interactive decision checkpoint, 20 minutes for an implementation or design review connected to the shared model, and 5 minutes to record the resulting project decision.
+Each meeting lasts 90 minutes. A typical session uses approximately 50 minutes for derivation and technical explanation, 15 minutes for an interactive decision checkpoint, 20 minutes for an implementation or design review connected to the cumulative project artifacts, and 5 minutes to record the resulting project decision.
 
 The Reading Club (NLP) pairs six foundation papers with six frontier papers. Each student presents two papers, attends at least 9 of the 12 paper sessions, and participates actively in lecturer-facilitated discussions. It supports the lectures without consuming the technical and practical spine of each 90-minute session.
 
@@ -45,7 +45,7 @@ The Reading Club (NLP) pairs six foundation papers with six frontier papers. Eac
 
 **Lecture 1: The frontier language-model lifecycle.** Historical transitions are used to distinguish architecture, pretraining, continued pretraining, supervised fine-tuning, preference optimization, reinforcement learning, and inference-time scaling. The studio reconstructs the lineage of an open model and separates documented facts from product hypotheses.
 
-**Lecture 2 (draft): The decoder-only Transformer from scratch.** Token IDs, embeddings, causal self-attention, multi-head attention, residual streams, normalization, SwiGLU, RoPE, cross-entropy, generation, parameter counts, FLOPs, and memory. Students implement and test a minimal GPT block and make it overfit a tiny sample.
+**Lecture 2: Data, training signals, and capability boundaries.** Observed, human-labeled, self-supervised, synthetic, and embodied data; web archives and public corpora; annotation systems; pretraining, post-training, RL, test-time compute, and recursive improvement; benchmark interpretation; public distillation recipes; and cases where specialized models outperform LLMs. Students write a data–capability contract with a non-LLM baseline.
 
 ### Corpus engineering
 
@@ -91,13 +91,13 @@ The course uses five cumulative artifacts rather than sixteen disconnected exerc
 
 | Milestone | Lectures | Required evidence |
 |---|---:|---|
-| **LM core** | 1–2 | Tested tokenizer boundary, decoder-only model, optimizer, generation, parameter/FLOP accounting, tiny-data overfit |
+| **Foundation contract** | Before L1–2 | Tested decoder-only readiness model, model lineage, data-source map, benchmark cards, and non-LLM baseline |
 | **Corpus pipeline** | 3–5 | Source manifest, extraction, language ID, filtering, MinHash/LSH deduplication, contamination and privacy audit |
 | **Training and scaling** | 6–8 | Mixture proxy experiment, multilingual report, compute/memory model, profiled and restartable training run |
 | **Evaluation and post-training** | 9–13 | Versioned evaluation harness, CPT/SFT baseline, one preference or reasoning intervention, verifier audit, cost analysis |
 | **Research release** | 14–16 | Synthetic or distilled data ablation, end-to-end report, dataset/model cards, reproducibility bundle, limitations and defense |
 
-The practical spine is one cohort-built Armenian-focused model. Small 10–150M runs establish correctness and compare tokenizers, filters, mixtures, and schedules. After the artifacts and distributed system pass explicit promotion gates, the cohort may scale the selected recipe to one shared 0.8–1.1B pretraining run, then carry the checkpoint through continued pretraining where justified, SFT, preference optimization, RLVR, evaluation, and release. If the required cluster and retry budget are not secured, the same evidence chain ends in a smaller from-scratch model plus continued pretraining of an open 0.5–1.5B base model.
+The practical spine is a sequence of interoperable model-building artifacts that can support different team projects. Small 10–150M runs establish correctness and compare tokenizers, filters, mixtures, and schedules. The Lecture 8 Nemotron-100M mini-pipeline provides a concrete systems qualification track: students exercise NVIDIA-style data preparation, Megatron-Bridge training, checkpoint recovery, and a small SFT branch before making any larger compute commitment. Teams may then carry a selected checkpoint through continued pretraining where justified, SFT, preference optimization, RLVR, evaluation, and release. A language- or domain-focused model, including an Armenian-language model, is one possible project rather than a course-wide requirement. Any larger shared pretraining run requires a separately approved cluster plan, frozen artifacts, and a funded retry budget.
 
 ## What makes the course research-level
 
