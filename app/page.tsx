@@ -3,13 +3,16 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { AiMarketMoments } from "./AiMarketMoments";
+import { Lecture2DataLabs } from "./Lecture2DataLabs";
 import { ReadingClubPage } from "./ReadingClubPage";
 import { ReleaseCadenceChartMount } from "./ReleaseCadenceChart";
 import { curriculumHtml } from "./generated/curriculum";
 import { introductionHtml } from "./generated/introduction";
 import { lecture1Html } from "./generated/lecture-1";
+import { lecture2Html } from "./generated/lecture-2";
 
 const Lecture1Presentation = lazy(() => import("./Lecture1Presentation"));
+const Lecture2Presentation = lazy(() => import("./Lecture2Presentation"));
 
 const navigation = [
   "Home",
@@ -20,13 +23,14 @@ const navigation = [
 const lecturePages = [
   { name: "Introduction", html: introductionHtml },
   { name: "Lecture 1: Model lifecycle", html: lecture1Html },
+  { name: "Lecture 2: Data and capabilities", html: lecture2Html },
 ] as const;
 
 const lecturePhases = [
   {
     name: "Foundations",
-    range: "01",
-    families: [{ name: null, lectures: lecturePages.slice(1, 2) }],
+    range: "01–02",
+    families: [{ name: null, lectures: lecturePages.slice(1, 3) }],
   },
 ] as const;
 
@@ -38,6 +42,12 @@ function lecture1PresentationRequested() {
   if (typeof window === "undefined") return false;
   const params = new URLSearchParams(window.location.search);
   return params.get("lecture") === "1" && params.get("mode") === "presentation";
+}
+
+function lecture2PresentationRequested() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("lecture") === "2" && params.get("mode") === "presentation";
 }
 
 function AiMarketMomentsMount({ rootRef }: { rootRef: RefObject<HTMLElement | null> }) {
@@ -55,17 +65,26 @@ function AiMarketMomentsMount({ rootRef }: { rootRef: RefObject<HTMLElement | nu
 
 export default function Home() {
   const startsInLecture1Presentation = lecture1PresentationRequested();
+  const startsInLecture2Presentation = lecture2PresentationRequested();
   const [menuOpen, setMenuOpen] = useState(false);
   const [lecturesOpen, setLecturesOpen] = useState(true);
   const [active, setActive] = useState<PageName>(
-    startsInLecture1Presentation ? "Lecture 1: Model lifecycle" : "Home",
+    startsInLecture1Presentation
+      ? "Lecture 1: Model lifecycle"
+      : startsInLecture2Presentation
+        ? "Lecture 2: Data and capabilities"
+        : "Home",
   );
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [lecture1Presenting, setLecture1Presenting] = useState(
     startsInLecture1Presentation,
   );
+  const [lecture2Presenting, setLecture2Presenting] = useState(
+    startsInLecture2Presentation,
+  );
   const lecture1Ref = useRef<HTMLElement>(null);
+  const lecture2Ref = useRef<HTMLElement>(null);
   const activeLecture = lecturePages.find((lecture) => lecture.name === active);
 
   const results = useMemo(() => {
@@ -77,6 +96,7 @@ export default function Home() {
   }, [query]);
 
   function choosePage(item: PageName) {
+    setLecture2Presentation(false);
     setLecture1Presentation(false);
     setActive(item);
     if (lectures.includes(item as LectureName)) {
@@ -92,6 +112,19 @@ export default function Home() {
     const url = new URL(window.location.href);
     if (presenting) {
       url.searchParams.set("lecture", "1");
+      url.searchParams.set("mode", "presentation");
+    } else {
+      url.searchParams.delete("lecture");
+      url.searchParams.delete("mode");
+    }
+    window.history.replaceState({}, "", url);
+  }
+
+  function setLecture2Presentation(presenting: boolean) {
+    setLecture2Presenting(presenting);
+    const url = new URL(window.location.href);
+    if (presenting) {
+      url.searchParams.set("lecture", "2");
       url.searchParams.set("mode", "presentation");
     } else {
       url.searchParams.delete("lecture");
@@ -346,6 +379,26 @@ export default function Home() {
                 />
                 <AiMarketMomentsMount rootRef={lecture1Ref} />
                 <ReleaseCadenceChartMount rootRef={lecture1Ref} />
+              </>
+            )
+          ) : active === "Lecture 2: Data and capabilities" ? (
+            lecture2Presenting ? (
+              <Suspense fallback={null}>
+                <Lecture2Presentation onExit={() => setLecture2Presentation(false)} />
+              </Suspense>
+            ) : (
+              <>
+                <div className="lecture-present-launch">
+                  <button type="button" onClick={() => setLecture2Presentation(true)}>
+                    Present lecture
+                  </button>
+                </div>
+                <article
+                  className="main-content lecture-content"
+                  dangerouslySetInnerHTML={{ __html: lecture2Html }}
+                  ref={lecture2Ref}
+                />
+                <Lecture2DataLabs rootRef={lecture2Ref} />
               </>
             )
           ) : active === "Reading Club (NLP)" ? (

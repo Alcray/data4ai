@@ -18,3 +18,5 @@ The published course material begins with the architectural background and then 
 **Introduction.** Recurrent neural networks, LSTMs, attention, the original Transformer, and the encoder-only, decoder-only, and encoder–decoder families.
 
 **Lecture 1: The frontier language-model lifecycle.** The historical transitions that changed model interfaces, training, evaluation, inference-time computation, multimodality, and the economics of AI infrastructure.
+
+**Lecture 2: Data, training signals, and capability boundaries.** Observed, human-labeled, self-supervised, synthetic, and evaluation data; collection and annotation systems; pretraining and post-training signals; benchmark interpretation; distillation; and measured cases where specialized models outperform LLM-based systems.
