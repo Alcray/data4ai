@@ -571,9 +571,13 @@ const objectives = [
 export default function Lecture1Presentation({
   onExit,
   presentationRootRef,
+  slideContent,
+  lectureNumber = 1,
 }: {
   onExit: () => void;
   presentationRootRef?: RefObject<HTMLElement | null>;
+  slideContent?: ReactNode;
+  lectureNumber?: number;
 }) {
   const deckRef = useRef<RevealApi | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -700,7 +704,7 @@ export default function Lecture1Presentation({
 
   return (
     <div
-      aria-label="Lecture 1 presentation"
+      aria-label={`Lecture ${lectureNumber} presentation`}
       className={`lecture-presentation${isOverview ? " lp-custom-overview" : ""}`}
       onClickCapture={selectOverviewSlide}
       ref={setPresentationRoot}
@@ -747,6 +751,7 @@ export default function Lecture1Presentation({
         }}
         plugins={[RevealNotes]}
       >
+        {slideContent ?? <>
         <Slide
           className="lecture-presentation-slide lp-title-slide"
           notes="Lecture 1 of 16. Use the releases from 2022 onward as a map of the full model lifecycle: product jumps trace back to data, optimization, evaluation, inference, or system design."
@@ -1301,6 +1306,7 @@ export default function Lecture1Presentation({
             ].map((takeaway, index) => <div key={takeaway}><strong>{String(index + 1).padStart(2, "0")}</strong><span>{takeaway}</span></div>)}
           </div>
         </SlideFrame>
+        </>}
       </Deck>
     </div>
   );
