@@ -106,10 +106,11 @@ export default function Lecture2Presentation({ onExit }: { onExit: () => void })
     {slide("Source formats and manifests", "How data exists outside a training script", <Comparison headers={["Source", "Representation", "Preserve"]} rows={[["Wikimedia", "XML · SQL · JSON · RDF", "Snapshot and version"], ["Common Voice / OpenSLR", "Audio + metadata + transcripts", "Speakers · consent · validation"], ["Dataset repositories", "JSONL · CSV · Parquet · Arrow", "Schema · license · transformations"]]} />, <a href="https://www.openslr.org/160/">OpenSLR 160 · Armenian speech</a>)}
     {slide("Three records in JSONL", "A JSONL file is a stream of records", <div className="l2-jsonl-example">
       <div className="l2-jsonl-rule"><strong>One line</strong><span>one complete JSON object</span></div>
-      <pre><code>{`{"id":"hywiki-0184","text":"Armenian is an Indo-European language.","source":"hywiki-20260901","split":"train"}
-{"id":"cv-hy-9812","audio":"clips/9812.mp3","text":"Բարեւ աշխարհ","validated":true,"split":"train"}
-{"id":"math-0142","messages":[{"role":"user","content":"Solve 3x + 5 = 20."},{"role":"assistant","content":"Subtract 5, then divide by 3. x = 5."}],"verifier":{"type":"exact","answer":"5"}}`}</code></pre>
-      <div className="l2-jsonl-legend"><span><b>01</b> text record</span><span><b>02</b> audio + transcript</span><span><b>03</b> SFT + verifier</span></div>
+      <div className="l2-jsonl-records" aria-label="Three example JSONL records">
+        <div><span><b>01</b><small>TEXT RECORD</small></span><code>{`{"id":"hywiki-0184","text":"Armenian is an Indo-European language.","source":"hywiki-20260901","split":"train"}`}</code></div>
+        <div><span><b>02</b><small>AUDIO + TRANSCRIPT</small></span><code>{`{"id":"cv-hy-9812","audio":"clips/9812.mp3","text":"Բարեւ աշխարհ","validated":true,"split":"train"}`}</code></div>
+        <div><span><b>03</b><small>SFT + VERIFIER</small></span><code>{`{"id":"math-0142","messages":[{"role":"user","content":"Solve 3x + 5 = 20."},{"role":"assistant","content":"x = 5."}],"verifier":{"answer":"5"}}`}</code></div>
+      </div>
     </div>)}
     {slide("Dataset, corpus, benchmark", "Dataset, corpus, and benchmark", <Comparison headers={["Object", "Definition"]} rows={[["Dataset", "Organized records"], ["Corpus", "Material assembled for training or analysis"], ["Benchmark", "Data + task protocol + metric"]]} />)}
     {slide("Data collection infrastructure", "Data collection is a global infrastructure project", <Comparison headers={["Initiative", "Contribution"]} rows={[["Common Crawl", "Repeated web snapshots"], ["Wikimedia", "Versioned knowledge"], ["Common Voice / OpenSLR", "Speech and validation"], ["BigScience ROOTS", "1.6 TB · 59 languages"], ["Masakhane", "African NLP communities and local expertise"], ["AI4Bharat", "Indian language corpora, speech, translation"]]} />, <a href="https://arxiv.org/abs/2303.03915">ROOTS · sources and governance</a>)}
@@ -156,14 +157,18 @@ export default function Lecture2Presentation({ onExit }: { onExit: () => void })
       <div className="l2-distillation-card"><small>OUTPUT / TRAJECTORY</small><h3>Train on selected teacher behavior</h3><Flow items={["Prompts", "Teacher traces", "Verify", "SFT student"]} /><em>Black-box outputs can be sufficient</em></div>
     </div>, <><a href="https://arxiv.org/abs/1503.02531">Hinton et al.</a> · <a href="https://arxiv.org/abs/2501.12948">DeepSeek-R1</a> · <a href="https://arxiv.org/abs/2505.09388">Qwen3</a></>)}
     {slide("Twenty traces teach reasoning behavior", "SFT on reasoning traces: what 20 examples showed", <div className="l2-reasoning-study">
-      <div className="l2-study-main" aria-label="Qwen2.5 base model is trained with supervised fine-tuning to produce a reasoning student">
-        <div><small>BASE MODEL</small><strong>Qwen2.5-32B</strong></div><i aria-hidden="true">→</i><div className="l2-study-sft"><small>TRAIN</small><strong>Supervised fine-tuning</strong></div><i aria-hidden="true">→</i><div><small>STUDENT</small><strong>Qwen2.5-32B</strong><span>Long reasoning behavior</span></div>
-      </div>
-      <div className="l2-study-data" aria-label="QwQ-32B-Preview solves twenty problems to create twenty long reasoning traces that feed supervised fine-tuning">
-        <div><small>TEACHER</small><strong>QwQ-32B-Preview</strong><span>solves 20 problems</span></div><i aria-hidden="true">→</i><div className="l2-study-traces"><small>TRAINING DATA</small><strong>20 long reasoning traces</strong><span className="l2-study-feed" aria-hidden="true">↑ feeds SFT</span></div>
+      <div className="l2-reasoning-pipeline" aria-label="QwQ-32B-Preview creates twenty reasoning traces. The traces supply supervised fine-tuning data for Qwen2.5-32B, producing a reasoning student.">
+        <div className="l2-pipe-box l2-pipe-base"><small>BASE MODEL</small><strong>Qwen2.5-32B</strong></div>
+        <i className="l2-pipe-arrow l2-pipe-arrow-base" aria-hidden="true">→</i>
+        <div className="l2-pipe-box l2-pipe-sft"><small>TRAIN</small><strong>Supervised fine-tuning</strong></div>
+        <i className="l2-pipe-arrow l2-pipe-arrow-student" aria-hidden="true">→</i>
+        <div className="l2-pipe-box l2-pipe-student"><small>STUDENT</small><strong>Qwen2.5-32B</strong><span>Long reasoning behavior</span></div>
+        <div className="l2-pipe-feed" aria-hidden="true"><span>↑</span><small>TRAINING DATA ENTERS SFT</small></div>
+        <div className="l2-pipe-box l2-pipe-teacher"><small>TEACHER</small><strong>QwQ-32B-Preview</strong><span>solves 20 problems</span></div>
+        <i className="l2-pipe-arrow l2-pipe-arrow-data" aria-hidden="true">→</i>
+        <div className="l2-pipe-box l2-pipe-traces"><small>TRAINING DATA</small><strong>20 long reasoning traces</strong></div>
       </div>
       <div className="l2-study-comparison"><div><small>32B STUDENT</small><strong>Reasoning-tuned Qwen2.5</strong></div><b>OUTPERFORMED</b><div><small>72B BASELINE</small><strong>Qwen2.5-Math-72B-Instruct</strong></div></div>
-      <div className="l2-study-tags"><span>No student-side RL</span><span>Teacher-generated demonstrations</span></div>
     </div>, <><a href="https://arxiv.org/abs/2507.09850">Du et al. · 2025</a> · <a href="https://developer.nvidia.com/blog/?p=103512">NVIDIA NeMo SFT recipe</a></>)}
     {slide("GRPO and trace distillation", "GRPO and trace distillation are different training loops", original(".grpo-distill-compare"), <><a href="https://arxiv.org/abs/2402.03300">DeepSeekMath · GRPO</a> · <a href="https://research.nvidia.com/labs/adlr/Synergy/">NVIDIA · pretraining, SFT, and RL study</a></>)}
     {slide("Published claims and anti-distillation code", "Cross-lab output distillation: claim and implementation clue", original(".distillation-screenshots"), <><a href="https://www.anthropic.com/news/detecting-and-preventing-distillation-attacks">Anthropic disclosure</a> · <a href="https://www.anthropic.com/news/position-open-weights-models">Dario Amodei post</a> · <a href="https://github.com/alex000kim/claude-code/blob/main/src/services/api/claude.ts#L301-L313">Claude Code source mirror</a></>)}
