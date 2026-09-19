@@ -6437,6 +6437,201 @@ button {
   }
 }
 
+/* Lecture 3: acquisition and admission are related but separate state machines. */
+.acquisition-state-figure {
+  margin: 1.5rem 0;
+  padding: 1.15rem;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.acquisition-state-label {
+  margin-bottom: 0.7rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.acquisition-state-flow {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.acquisition-state-main .acquisition-state-node {
+  flex: 1 1 0;
+}
+
+.acquisition-state-node {
+  padding: 0.55rem 0.45rem;
+  border: 1px solid var(--border);
+  background: #fafafa;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.76rem;
+  font-weight: 650;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.acquisition-state-node-accent {
+  border-color: var(--accent);
+  background: rgb(114 83 237 / 8%);
+  color: var(--accent);
+}
+
+.acquisition-state-arrow,
+.acquisition-state-branch-arrow {
+  color: var(--accent);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.acquisition-state-branch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.acquisition-state-branch strong {
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.76rem;
+}
+
+.acquisition-state-divider {
+  height: 1px;
+  margin: 1.05rem 0;
+  background: var(--border);
+}
+
+.acquisition-state-admission {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* Lecture 3: the same document groups under three different distributions. */
+.distribution-weight-figure {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 1.25fr) repeat(4, minmax(5.75rem, 1fr));
+  margin: 1.5rem 0 0.75rem;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  background: #fff;
+}
+
+.distribution-weight-figure > div {
+  min-height: 4.25rem;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.distribution-weight-corner,
+.distribution-weight-head {
+  display: flex;
+  min-height: 3rem !important;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.distribution-weight-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 0.65rem 0.85rem;
+  background: #fafafa;
+}
+
+.lecture-content .distribution-weight-label code {
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.distribution-weight-label span {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.distribution-weight-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.distribution-dot {
+  display: block;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 5px rgb(114 83 237 / 12%);
+}
+
+.distribution-dot.weight-20 { width: 0.75rem; height: 0.75rem; opacity: 0.45; }
+.distribution-dot.weight-25 { width: 0.9rem; height: 0.9rem; opacity: 0.5; }
+.distribution-dot.weight-35 { width: 1.15rem; height: 1.15rem; opacity: 0.6; }
+.distribution-dot.weight-45 { width: 1.4rem; height: 1.4rem; opacity: 0.68; }
+.distribution-dot.weight-55 { width: 1.65rem; height: 1.65rem; opacity: 0.76; }
+.distribution-dot.weight-70 { width: 1.95rem; height: 1.95rem; opacity: 0.84; }
+.distribution-dot.weight-80 { width: 2.2rem; height: 2.2rem; opacity: 0.92; }
+.distribution-dot.weight-90 { width: 2.45rem; height: 2.45rem; opacity: 1; }
+
+.distribution-zero {
+  color: var(--muted);
+  font-size: 1.45rem;
+}
+
+@media (max-width: 42rem) {
+  .acquisition-state-main {
+    flex-direction: column;
+  }
+
+  .acquisition-state-main .acquisition-state-node {
+    width: 100%;
+  }
+
+  .acquisition-state-main .acquisition-state-arrow {
+    line-height: 0.5;
+    transform: rotate(90deg);
+  }
+
+  .acquisition-state-branch {
+    flex-wrap: wrap;
+  }
+
+  .acquisition-state-admission {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .distribution-weight-figure {
+    grid-template-columns: 6.25rem repeat(4, minmax(0, 1fr));
+  }
+
+  .distribution-weight-corner,
+  .distribution-weight-head {
+    padding: 0.35rem;
+    font-size: 0.62rem;
+    letter-spacing: 0.02em;
+  }
+}
+
 @media (min-width: 66.5rem) {
   .side-bar {
     width: calc((100% - 1064px) / 2 + 264px);

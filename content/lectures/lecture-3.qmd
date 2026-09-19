@@ -1,0 +1,1165 @@
+---
+title: "Lecture 3: Corpus design, acquisition, and provenance"
+order: 4
+description: "How to define a target population, acquire reproducible multilingual and generated sources, audit coverage, and preserve corpus provenance."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+A language model can learn only from material that reaches its training stream. If the acquired corpus contains abundant news and almost no technical explanation, no optimizer can invent the missing explanatory style. If most low-resource science text is translated from a small set of English seeds, the corpus may look large while covering far fewer independent topics than its document count suggests. If a dataset name is recorded but the exact revision is not, a later researcher may download a different object and believe they reproduced the experiment.
+
+Corpus acquisition therefore has two simultaneous roles:
+
+```text
+Statistical design                         Data engineering
+What population should be covered?   +    Which exact objects were obtained?
+                         ↓
+              Versioned acquired inventory
+```
+
+A good acquisition process produces more than files. It produces an inspectable claim about what was sought, what was reachable, what was selected, what was received, what failed, and how the resulting records are related.
+
+## Learning objectives
+
+By the end of this lecture, you should be able to:
+
+1. translate an intended model capability into a target population and acquisition frame;
+2. distinguish collection, audit, and training distributions;
+3. design a source portfolio and justify what each source should contribute;
+4. acquire reproducible snapshots from repositories, web archives, and direct sources;
+5. separate record identity from content identity;
+6. reason about transaction boundaries, retries, checksums, and failed acquisitions;
+7. estimate acquisition yield and state which population the estimate describes;
+8. characterize a corpus using document- and token-weighted views;
+9. represent original, translated, and generated material with explicit ancestry; and
+10. use provenance to propagate evaluation exclusions and withdrawal decisions.
+
+## Running example: multilingual technical language
+
+Suppose an existing multilingual base model handles general English well and produces fluent news summaries in Arabic and Swahili, but its mathematical and scientific explanations in those languages are weak. The project needs a continued-pretraining corpus that strengthens technical language without pretending that every document serves the same purpose.
+
+“Collect more multilingual data” is not a corpus design. A more operational objective is:
+
+> Increase exposure to explanatory and technical prose in Arabic and Swahili, preserve substantial naturally authored text, and record whether technical material is native, translated, or generated.
+
+Consider three source families:
+
+- natural web and news text for broad language exposure;
+- educational or scientific material for native technical coverage; and
+- translated or teacher-generated STEM material for concepts that are difficult to obtain at scale.
+
+The exact training proportions are not yet specified. The immediate goal is to make acquisition explicit and auditable.
+
+## From a capability goal to an acquisition specification
+
+### Target population, acquisition frame, and acquired inventory
+
+Corpus work becomes confusing when several different objects are all called “the dataset.” Keep them separate.
+
+The **target population** is the conceptual material the model should encounter: contemporary expository writing, mathematical explanations, code, dialogue, or another defined class of records.
+
+The **acquisition frame** is the operational collection from which records can actually be selected. It may be:
+
+- a named dataset release at a fixed revision;
+- a Common Crawl index query for one crawl;
+- a publisher's article database;
+- a set of approved domains and sitemaps;
+- a repository snapshot;
+- an institutional export; or
+- a list of seed problems for translation or generation.
+
+The **acquired inventory** contains the objects actually received. The acquisition ledger should also preserve failed and incomplete attempts as observable events.
+
+```text
+Target population → Acquisition frame → Selected candidates → Acquired inventory
+   conceptual          reachable            frozen                 received
+```
+
+A random sample from a narrow frame is still narrow. If the frame contains only news, random sampling will not produce textbooks. If it contains only translated science, it will not establish coverage of natively authored scientific writing.
+
+### Candidate, acquired, and admitted inventories
+
+These three inventories answer different operational questions:
+
+| Inventory | Meaning | Example |
+|---|---|---|
+| Candidate | Worth investigating or attempting | 12 approved educational domains |
+| Acquired | Exact objects successfully received | 8,942 archived captures with receipts |
+| Admitted | Objects approved for the next stage under a named policy | 8,310 captures released for processing |
+
+A failed download belongs in the acquisition ledger. A source with unresolved permissions can remain in the candidate catalog without entering the admitted corpus. A retrieved file can be quarantined because its digest does not match independently expected evidence.
+
+“We considered ten million records” is not the same claim as “we acquired ten million records.” If retrieval failures are concentrated in one domain or language, silently dropping them changes the corpus.
+
+### A practical specification
+
+For each planned source, record at least:
+
+| Field | Example |
+|---|---|
+| `intended_contribution` | Swahili scientific explanations |
+| `unit` | Whole article or problem–solution pair |
+| `language_scope` | Swahili and retained English source |
+| `time_scope` | 2020–2026 |
+| `frame` | Repository revision or dated archive query |
+| `origin` | Native, translated, generated, or unknown |
+| `selection_rule` | All eligible records or a seeded sample |
+| `stop_rule` | 50 GB, 100,000 records, or frame exhaustion |
+| `protected_families` | Benchmark IDs and known descendants |
+| `use_status` | Approved, pending, restricted, or withdrawn |
+
+The **stop rule** says exactly when acquisition ends. Choose it before collection so the stopping point cannot drift toward whichever result looks convenient. Common forms include:
+
+- **frame exhaustion:** attempt every record in a finite, frozen frame, such as all files in a pinned release;
+- **resource cap:** stop after a fixed number of records, bytes, requests, GPU-hours, or dollars;
+- **time boundary:** include captures through a stated date or run the acquisition job for a fixed window;
+- **coverage target:** continue until each named stratum reaches a minimum count, such as 5,000 records per language–domain cell; and
+- **yield threshold:** after a predefined checkpoint, stop when the estimated number of newly accepted records per 1,000 attempts falls below a stated value.
+
+A useful stop rule is measurable and deterministic. It defines the counting unit, what happens to an in-progress record, and how candidates are ordered when the full frame will not be exhausted. For example, “stop at 100,000 records” is incomplete if the crawler always visits the largest publisher first. A reproducible version might say: “sample candidate IDs with seed 17, attempt them in that frozen order, and stop after 100,000 successful acquisitions or frame exhaustion, whichever comes first.” The receipt should record which condition actually ended the run.
+
+These fields define the experiment. A request for “science pages” from a science-related portal does not establish that every candidate is a substantive scientific explanation. The pages may be headlines, navigation, press releases, duplicated stories, or full lessons. A source category describes where material came from; it is not a direct measurement of what the material contains.
+
+## Representativeness: what are we trying to cover?
+
+Corpus design distinguishes two forms of representativeness [@atkins1992corpusdesign; @biber1993representativeness].
+
+**Situational representativeness** concerns the range of contexts and text types represented: news, textbooks, forums, scientific articles, legal documents, conversations, code, and so on.
+
+**Linguistic representativeness** concerns the variation inside those texts: technical vocabulary, dialogue, long explanations, formulaic expressions, code-switching, sentence lengths, and other measurable properties.
+
+For model training, add a third layer: neither form guarantees **model utility**. A corpus may contain a great deal of technical writing and still fail to improve the capability of interest. That requires a controlled training and evaluation experiment.
+
+These are three different claims:
+
+```text
+“We acquired textbooks.”                 source or situational claim
+“The corpus contains long derivations.”  empirical corpus-content claim
+“Training on it improves reasoning.”     model-effect claim
+```
+
+Do not silently move from one claim to the next. For the running example, a defensible acquisition hypothesis would be: “The educational-source component should add independently authored technical explanations that are underrepresented in the news-heavy corpus.” That hypothesis can be audited at the corpus level, but it is not yet a claim about model improvement.
+
+## Collection, audit, and training are different distributions
+
+A training-data pipeline contains at least three probability distributions over documents:
+
+$$
+q_{\mathrm{collect}}(d),\qquad
+q_{\mathrm{audit}}(d),\qquad
+q_{\mathrm{train}}(d).
+$$
+
+- $q_{\mathrm{collect}}$ determines which eligible records are attempted or selected for acquisition.
+- $q_{\mathrm{audit}}$ determines which acquired records humans or automated diagnostics inspect.
+- $q_{\mathrm{train}}$ determines later training exposure.
+
+They need not be equal. A project may collect opportunistically, oversample rare languages for audit, and later use a token-level training mixture that changes exposure again.
+
+The same document group can receive nonzero probability under all three distributions, while the relative weights differ. In this schematic, dot size represents relative selection or exposure probability; a dash represents zero probability.
+
+<div class="distribution-weight-figure" role="img" aria-label="A matrix comparing collection, audit, and training distributions over broad web, rare technical, restricted, and held-out evaluation documents. Broad web has high collection weight, rare technical material has high audit and training weight, restricted records are audited but not trained on, and held-out evaluation records are collected or audited but receive zero training weight.">
+  <div class="distribution-weight-corner">distribution</div>
+  <div class="distribution-weight-head">Broad web</div>
+  <div class="distribution-weight-head">Rare technical</div>
+  <div class="distribution-weight-head">Restricted</div>
+  <div class="distribution-weight-head">Held-out evaluation</div>
+
+  <div class="distribution-weight-label"><code>q<sub>collect</sub></code><span>attempted</span></div>
+  <div class="distribution-weight-cell"><span class="distribution-dot weight-90"></span></div>
+  <div class="distribution-weight-cell"><span class="distribution-dot weight-25"></span></div>
+  <div class="distribution-weight-cell"><span class="distribution-dot weight-35"></span></div>
+  <div class="distribution-weight-cell"><span class="distribution-dot weight-20"></span></div>
+
+  <div class="distribution-weight-label"><code>q<sub>audit</sub></code><span>inspected</span></div>
+  <div class="distribution-weight-cell"><span class="distribution-dot weight-35"></span></div>
+  <div class="distribution-weight-cell"><span class="distribution-dot weight-90"></span></div>
+  <div class="distribution-weight-cell"><span class="distribution-dot weight-70"></span></div>
+  <div class="distribution-weight-cell"><span class="distribution-dot weight-45"></span></div>
+
+  <div class="distribution-weight-label"><code>q<sub>train</sub></code><span>exposed</span></div>
+  <div class="distribution-weight-cell"><span class="distribution-dot weight-55"></span></div>
+  <div class="distribution-weight-cell"><span class="distribution-dot weight-80"></span></div>
+  <div class="distribution-weight-cell"><span class="distribution-zero">—</span></div>
+  <div class="distribution-weight-cell"><span class="distribution-zero">—</span></div>
+</div>
+
+Here the rare technical group is deliberately more prominent in the audit than in collection, so reviewers can estimate its quality precisely. Restricted records may be acquired and inspected while receiving zero training probability. Held-out evaluation records can be tracked and audited but must remain outside training. “Overlap” therefore means that some of the same records or strata can have nonzero probability in several distributions—not that the distributions assign them equal weight.
+
+### Stratified audits
+
+A **stratum** is a subgroup defined before sampling whose members share an attribute relevant to the audit. Strata might be sources, languages, domains, years, file types, or combinations such as `Swahili × science × translated`. For example, if the corpus contains 9,000 documents from Source A and 1,000 from Source B, those two source groups can be treated as two strata. For the formulas below, the strata should be non-overlapping and together cover the population being estimated.
+
+Suppose the acquired corpus has strata $h=1,\ldots,H$, with $N_h$ documents in each stratum and
+
+$$
+N=\sum_h N_h.
+$$
+
+Within stratum $h$, sample $n_h$ documents and label a binary property $y_i$, such as “contains a substantive technical explanation.” The stratum estimate is
+
+$$
+\widehat p_h=\frac{1}{n_h}\sum_{i\in s_h}y_i.
+$$
+
+Choose $n_h$ from the precision the audit needs, not by searching for a desirable $p$-value. For a simple random sample estimating a binary proportion, a common planning approximation is
+
+$$
+n_0\approx\frac{z_{1-\alpha/2}^2p^*(1-p^*)}{\varepsilon^2},
+$$
+
+where $1-\alpha$ is the desired confidence level, $\varepsilon$ is the target margin of error, and $p^*$ is a planning guess for the prevalence. Here $p^*$ is not a hypothesis-test $p$-value. If the prevalence is unknown, $p^*=0.5$ gives the largest required sample. At 95% confidence, this gives approximately 96 records for a margin of ±10 percentage points and 385 for ±5 points in a large stratum. A finite stratum needs slightly fewer because sampling without replacement removes part of the uncertainty.
+
+If the goal is a separate estimate for every stratum, each stratum needs enough records for its own target precision. If the goal is only one corpus-wide estimate, samples can be allocated roughly in proportion to $N_h$, or shifted toward small, uncertain, or high-risk strata and corrected with weights. A small pilot can supply a better $p^*$ and reveal disagreement or labeling failures before the full audit is drawn.
+
+If the goal is document-weighted prevalence in the acquired corpus, then
+
+$$
+\widehat p=\sum_h\frac{N_h}{N}\widehat p_h.
+$$
+
+Suppose Source A contains 9,000 documents and Source B contains 1,000. An audit samples 100 from each and finds the property in 80 from A and 20 from B. The equal-source average is
+
+$$
+\frac{0.8+0.2}{2}=0.5.
+$$
+
+The document-population estimate is instead
+
+$$
+0.9(0.8)+0.1(0.2)=0.74.
+$$
+
+The value $0.5$ is a **macro-average across sources**: it answers what the acceptance rate would be if Source A and Source B were deliberately given equal importance, or equivalently if a source were selected uniformly before selecting a document within it. It does not estimate the acceptance rate of a uniformly selected document from this acquired corpus, because 90% of those documents come from Source A. That document-weighted question is answered by $0.74$. Whether the two sources are independent is not the deciding issue; the intended unit and weighting are.
+
+This audit **oversamples** Source B: B contains 10% of the acquired documents but supplies 50% of the audited documents. Oversampling means sampling a subgroup at a higher rate than its population share. It is often useful because it provides enough observations to understand a small or high-risk group. When reporting a population-wide estimate, the analysis must then restore the population weights rather than treating the audit sample as if it had been proportional.
+
+### Why a few examples do not establish rare coverage
+
+The **prevalence** $p$ of a category is the fraction of the target population that belongs to it. A prevalence of $p=0.005$ means that about 5 of every 1,000 records have the property. If an audit takes $n$ independent random draws, the probability of seeing none is
+
+$$
+P(0)=(1-p)^n.
+$$
+
+If $p=0.005$ and $n=10$,
+
+$$
+P(0)=0.995^{10}\approx0.951.
+$$
+
+Ten random examples therefore have about a 95% chance of missing a category that occupies 0.5% of the population. To have at least a 95% chance of seeing one such example,
+
+$$
+1-(1-p)^n\geq0.95,
+$$
+
+which gives
+
+$$
+n\geq\frac{\ln(0.05)}{\ln(1-p)}.
+$$
+
+For $p=0.005$, this requires 598 draws after rounding up. The conclusion is not that every audit needs 598 records. Schema inspection, broad quality estimation, and rare-category auditing are different sampling tasks. Deliberate stratification is often more informative for rare varieties and low-volume sources.
+
+## Build a source portfolio
+
+A source portfolio combines collections with different strengths and blind spots.
+
+| Source family | Typical acquisition route | Important acquisition metadata |
+|---|---|---|
+| Broad web | Dated crawl snapshot or released web corpus | Crawl or release, URL, capture time, archive locator |
+| Encyclopedic/reference | Dumps or fixed exports | Revision, page ID, language, structure |
+| Books | Permitted editions or public-domain collections | Edition, chapter, publication date, rights evidence |
+| Science/math | Papers, textbooks, problem banks | Source ID, version, equations, original split |
+| Code | Repository snapshots or released code corpora | Commit, path, repository, license notices |
+| Conversation | Approved forums or support exports | Thread boundaries, timestamps, collection authority |
+| Translation/generated | Fixed release or recorded generation job | Parents, model or translator version, prompts, review evidence |
+
+A dataset name is not a quality guarantee. [*Dolma*](https://arxiv.org/abs/2402.00159) [@soldaini2024dolma], Wikipedia, a publisher archive, and a local crawl can each be useful or inappropriate depending on the objective.
+
+### Reuse a corpus or acquire the source?
+
+Reusing a released corpus can save enormous engineering effort. It also inherits upstream decisions: pages never reached, structures already discarded, languages excluded, earlier filters, missing timestamps, and metadata that was never preserved.
+
+Starting from raw material preserves more options but costs more in storage, extraction, normalization, filtering, and review. Ask what additional usable coverage a source contributes relative to the existing portfolio, rather than simply which source is larger.
+
+### Multilingual source landscapes
+
+Several public projects illustrate different acquisition histories:
+
+- [FineWeb2](https://arxiv.org/abs/2506.20920) [@penedo2025fineweb2] processes many Common Crawl snapshots and releases language–script slices across more than one thousand languages.
+- [CulturaX](https://arxiv.org/abs/2309.09400) [@nguyen2023culturax] assembles multilingual material from mC4 and OSCAR across 167 languages, inheriting choices made by those upstream collections.
+- [HPLT](https://arxiv.org/abs/2403.14009) [@degibert2024hplt] combines Common Crawl and Internet Archive sources and releases both monolingual and parallel resources.
+- [Wikimedia dumps](https://dumps.wikimedia.org/) expose language-specific reference material and revision metadata.
+- [OPUS](https://opus.nlpl.eu/) distributes parallel corpora assembled from many collections with different origins and terms.
+
+Record the precise release and variant. A cleaned monolingual release, sentence-aligned parallel release, and current landing page are different artifacts. Local publishers, universities, libraries, and community projects may also supply domains and varieties that broad crawls miss.
+
+### Different releases can share upstream data
+
+FineWeb2, CulturaX, HPLT, and separately named web corpora can include the same underlying page. Adding their published token counts does not establish the size of their union. At acquisition time, retain the upstream collection, original URL, capture or publication timestamp, source record ID, and repository path or commit where relevant.
+
+## What exactly are you acquiring from the web?
+
+### WARC, WAT, and WET
+
+Common Crawl exposes several representations:
+
+- **WARC** preserves raw crawl records, including captured HTTP responses and crawl metadata.
+- **WAT** contains metadata computed from WARC records.
+- **WET** contains extracted plaintext.
+
+These are not interchangeable starting points. Beginning with WET accepts an upstream extraction. Beginning with WARC preserves more of the original response but requires later processing. If the question depends on tables, links, HTML structure, or document boundaries, WET may already have discarded necessary evidence.
+
+### URL, capture, and record are different identities
+
+A URL is a location, not a frozen object. The same URL may return one article today, a correction tomorrow, and a redirect next year. An archived capture adds time and archive location. A WARC record identifies one stored crawl object.
+
+### Discover, freeze, retrieve
+
+Separate acquisition into three stages:
+
+```text
+Discover candidates → Freeze selected membership → Retrieve payloads
+```
+
+If one script dynamically searches and downloads simultaneously, a rerun can produce a different candidate set even when the retrieval code is unchanged. For example, suppose the script reads a university's live sitemap and downloads the first 5,000 eligible URLs. Between Monday and Friday, new pages appear at the top, old pages disappear, redirects change, and previously failing servers recover. If the script keeps searching until it accumulates 5,000 successful downloads, the Friday run silently substitutes new records for Monday's failures. The code is identical, but the membership is not. Saving the discovered URL or archive-record list first creates a frozen plan that both runs can attempt.
+
+During discovery, record the crawl identifier, query, traversal state, discovery time, returned archive locators, and pre-retrieval constraints. A frozen acquisition plan might contain:
+
+```json
+{
+  "plan_id": "technical-web-pilot-v1",
+  "crawl": "CC-MAIN-YYYY-NN",
+  "records": [
+    {
+      "url": "https://example.edu/physics/lesson-7",
+      "filename": "crawl-data/.../warc/file.warc.gz",
+      "offset": 120000,
+      "length": 8000,
+      "capture_time": "2026-02-14T08:31:04Z"
+    }
+  ]
+}
+```
+
+If a compressed record begins at offset 120,000 and has length 8,000 bytes, the inclusive HTTP range is `bytes=120000-127999`, because
+
+$$
+\mathrm{end}=\mathrm{offset}+\mathrm{length}-1.
+$$
+
+```python
+from urllib.request import Request, urlopen
+
+
+def fetch_capture(row):
+    offset = int(row["offset"])
+    length = int(row["length"])
+
+    if offset < 0 or length <= 0:
+        raise ValueError("invalid archive locator")
+    if length > 20_000_000:
+        raise ValueError("record exceeds pilot limit")
+
+    end = offset + length - 1
+    request = Request(
+        "https://data.commoncrawl.org/" + row["filename"],
+        headers={
+            "Range": f"bytes={offset}-{end}",
+            "Accept-Encoding": "identity",
+        },
+    )
+
+    with urlopen(request, timeout=30) as response:
+        if response.status != 206:
+            raise ValueError(f"expected 206, got {response.status}")
+        content_range = response.headers.get("Content-Range", "")
+        if not content_range.startswith(f"bytes {offset}-{end}/"):
+            raise ValueError("server returned a different range")
+        payload = response.read(length + 1)
+
+    if len(payload) != length:
+        raise ValueError("payload length mismatch")
+    return payload
+```
+
+This retrieves the compressed bytes identified by the archive row. It has not yet extracted an article.
+
+## Dataset repositories: pin the object, not the landing page
+
+A repository name such as `organization/dataset-name` is a discovery address. If the repository changes, the same name can refer to different bytes.
+
+A reproducible acquisition records:
+
+- immutable commit or revision;
+- configuration and split;
+- exact file membership;
+- file sizes and content digests; and
+- source metadata needed downstream.
+
+```python
+from huggingface_hub import snapshot_download
+
+source_spec = {
+    "repo_id": "organization/example-dataset",
+    "commit": "0123456789abcdef0123456789abcdef01234567",
+    "files": ["data/*.parquet", "README.md"],
+}
+
+local_path = snapshot_download(
+    repo_id=source_spec["repo_id"],
+    repo_type="dataset",
+    revision=source_spec["commit"],
+    allow_patterns=source_spec["files"],
+)
+```
+
+After transfer, create receipts for the files actually present rather than assuming the glob matched the intended files:
+
+```json
+{
+  "source_id": "example-dataset",
+  "revision": "0123456789abcdef0123456789abcdef01234567",
+  "path": "data/train-00000-of-00012.parquet",
+  "bytes": 184234182,
+  "sha256": "f61d...",
+  "status": "verified"
+}
+```
+
+Streaming changes how records are read. It does not identify the source revision or traversal.
+
+## Direct crawling and institutional exports
+
+A direct crawler begins with a **frontier**: the queue of known but not-yet-attempted URLs. It starts with a small set of entry points and grows as the crawler discovers additional links. The main controls are:
+
+- a **seed domain** or seed URL, such as `example.edu`, which defines an initial host or page from which discovery begins;
+- a **sitemap**, usually an XML file published by a site, which enumerates pages the publisher wants crawlers to find;
+- an **RSS or Atom feed**, which lists recent posts or updates and can reveal pages that are not yet well linked;
+- **link-following rules**, which decide whether links found on a fetched page are added to the frontier;
+- **URL patterns**, which include or exclude sections, query parameters, languages, or file types;
+- a **depth limit**, which bounds how many link hops a page may be from a seed;
+- a **per-domain budget**, which caps pages, bytes, or time from one host;
+- a **crawl-rate limit**, which controls request frequency so the crawler does not overload a service; and
+- **stopping criteria**, which end the crawl at frame exhaustion, a resource cap, a coverage target, or another predefined condition.
+
+These controls determine which material is reachable and how quickly prolific sites dominate the frontier. They are therefore part of corpus design, not merely networking configuration.
+
+If one news site publishes 1,000 pages per day and another publishes ten, unrestricted traversal can make the first dominate the corpus. A per-domain budget reduces that domination, but the resulting distribution is no longer proportional to accessible page volume. That may be desirable, but it must be documented.
+
+For every attempt, log at least:
+
+```text
+requested URL                 final URL after redirects
+HTTP status                  MIME type
+response bytes               attempt time
+failure category             timeout and retry count
+```
+
+For institutional and API exports, preserve pagination cursors, export versions, and completion state. A job that stopped after 70 of 100 pages is not a complete export.
+
+Crawler-access policy is not the same as permission for model training or redistribution. A **crawler-access policy** records whether the automated client is allowed to request particular paths under the site's `robots.txt`, authentication requirements, rate limits, and any direct collection agreement. Record the user agent, policy snapshot or agreement version, decision, and date because the policy can change.
+
+A **training-use review** is a separate decision about whether the acquired artifact may be used to update model weights under its license, contract, privacy constraints, and the project's intended use. A **redistribution review** asks whether the team may publish the raw text, transformed records, metadata, or only aggregate statistics. A path allowed by `robots.txt` is not automatically licensed for training or redistribution, while `robots.txt` itself is not a copyright or data license.
+
+Keep these decisions in separate fields:
+
+```text
+crawler_access_policy
+training_use_review
+redistribution_review
+```
+
+The [Robots Exclusion Protocol](https://www.rfc-editor.org/rfc/rfc9309.html) specifies crawler behavior, not general access authorization.
+
+## Record identity, content identity, and storage
+
+### A URL is not a record ID, and a record ID is not a content hash
+
+Three identities are useful:
+
+- **Location identity:** a URL or repository path.
+- **Record identity:** source, version, and upstream record ID.
+- **Content identity:** a digest of one byte sequence.
+
+Two records can contain identical bytes while having different source histories. One source record can change bytes between revisions.
+
+```python
+import hashlib
+import json
+
+
+def snapshot_record_id(source_id, revision, upstream_id):
+    identity = json.dumps(
+        [source_id, revision, upstream_id],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(identity).hexdigest()
+
+
+def content_sha256(raw_bytes):
+    return hashlib.sha256(raw_bytes).hexdigest()
+```
+
+The serialization must preserve field boundaries. Naive concatenation should not allow `("ab", "c")` and `("a", "bc")` to create the same identity input.
+
+### A practical directory layout
+
+```text
+source_specs/
+    technical_web.json
+    multilingual_stem.json
+plans/
+    technical-web-pilot-v1.jsonl
+objects/
+    sha256/ab/cd/abcdef...
+receipts/
+    acquisition.jsonl
+attempts/
+    attempts.jsonl
+derivations/
+    derivations.jsonl
+coverage/
+    audit-v1.json
+locks/
+    corpus-v1.lock.json
+```
+
+The exact names and formats are not sacred. The separation of responsibilities is.
+
+### The acquisition state machine
+
+<div class="acquisition-state-figure" role="img" aria-label="Acquisition proceeds from planned to fetching, received, verified, and committed. A failed fetch may be retried, while a suspect object may be quarantined before it is committed. Separately, admission can be pending, admitted, restricted, or withdrawn.">
+  <div class="acquisition-state-label">Acquisition state</div>
+  <div class="acquisition-state-flow acquisition-state-main">
+    <span class="acquisition-state-node">planned</span>
+    <span class="acquisition-state-arrow">→</span>
+    <span class="acquisition-state-node">fetching</span>
+    <span class="acquisition-state-arrow">→</span>
+    <span class="acquisition-state-node">received</span>
+    <span class="acquisition-state-arrow">→</span>
+    <span class="acquisition-state-node">verified</span>
+    <span class="acquisition-state-arrow">→</span>
+    <span class="acquisition-state-node acquisition-state-node-accent">committed</span>
+  </div>
+  <div class="acquisition-state-branch" aria-hidden="true">
+    <span>fetch or verification exception</span>
+    <span class="acquisition-state-branch-arrow">↘</span>
+    <strong>failed</strong>
+    <span>or</span>
+    <strong>quarantined</strong>
+    <span class="acquisition-state-branch-arrow">↗</span>
+    <span>retry or review</span>
+  </div>
+  <div class="acquisition-state-divider"></div>
+  <div class="acquisition-state-label">Admission state</div>
+  <div class="acquisition-state-flow acquisition-state-admission">
+    <span class="acquisition-state-node">pending</span>
+    <span class="acquisition-state-node acquisition-state-node-accent">admitted</span>
+    <span class="acquisition-state-node">restricted</span>
+    <span class="acquisition-state-node">withdrawn</span>
+  </div>
+</div>
+
+Acquisition state and admission state are separate. A record can be perfectly verified at the byte level and still be restricted from use.
+
+### Transaction boundaries
+
+A robust single-machine sequence is:
+
+1. write to a temporary object;
+2. flush and close it;
+3. verify expected length and available integrity evidence;
+4. compute the content digest;
+5. atomically move it into content-addressed storage; and
+6. commit the acquisition receipt.
+
+The invariant is:
+
+> A committed receipt must never point to missing or partial bytes.
+
+If the process crashes after the object move but before receipt commitment, an orphan object may remain. That is recoverable. A committed receipt pointing to a half-written object is harder to reason about.
+
+### Idempotency and failure injection
+
+Running the same immutable acquisition plan twice should not create duplicate corpus membership. Attempt logs may differ, but record and content identities should remain stable when the same object is obtained.
+
+| Failure point | Expected state |
+|---|---|
+| Before any bytes | Plan remains pending |
+| Halfway through temporary write | No committed receipt |
+| After verified object move, before receipt | An orphan object may exist |
+| After receipt commit | Restart recognizes completion |
+
+Test these transitions deliberately. A pipeline is not restartable merely because it has a retry loop.
+
+## What does a checksum prove?
+
+Suppose the pipeline computes
+
+$$
+h=\operatorname{SHA256}(x).
+$$
+
+This gives a stable identifier for byte sequence $x$. If there is an independently expected digest $h^*$, checking
+
+$$
+h=h^*
+$$
+
+supports the claim that the expected bytes were received. Without an independent digest, computing $h$ still provides content identity but does not externally prove that the payload was the intended one.
+
+Always record which representation was hashed: a compressed WARC record, HTTP response body, extracted UTF-8 text, normalized text, or Parquet shard. One ambiguous checksum field is insufficient when several representations exist.
+
+## Estimate acquisition yield before scaling
+
+A bounded pilot should estimate how much usable material a full acquisition is likely to produce.
+
+Suppose the acquisition frame has $N$ candidate records. Let
+
+- $p_f$ be the probability that acquisition succeeds under the stated retry policy;
+- $p_{a\mid f}$ be the probability that a successfully fetched record is retained by a fixed pilot policy; and
+- $\bar\ell_a$ be the mean model-token length among retained records under a named tokenizer.
+
+Neither probability is normally 100%. A candidate can fail acquisition because it now returns `404` or `410`, requires authentication, blocks the approved crawler, disappears from an archive, repeatedly times out, or returns a truncated or corrupt object. Retrying helps with *transient* failures such as a dropped connection or a temporary `503`; it cannot repair a permanently removed page, an authorization rule, or a server that deterministically rejects the crawler.
+
+This is why $p_f$ is defined under a **finite retry policy**, such as “at most three attempts over 24 hours, with exponential backoff.” Under an idealized model with independent attempts and a nonzero chance of success, the probability of never succeeding approaches zero as the number of retries approaches infinity. Real failures are often correlated or permanent, however, and an infinite policy would consume unbounded time while continuously changing the snapshot date. A pinned repository release may have $p_f>0.99$; a broad historical web crawl can be substantially lower.
+
+Successful retrieval still does not guarantee admission, so $p_{a\mid f}$ can also be below 100%. A fetched object may have the wrong language or media type, contain only navigation text, fail parsing, fall outside length bounds, duplicate material already present, lack required provenance, or be restricted from the intended use. These are policy outcomes, not network failures.
+
+A planning estimate is
+
+$$
+\widehat T=N\widehat p_f\widehat p_{a\mid f}\widehat{\bar\ell}_a.
+$$
+
+The second probability is conditional on successful fetch, so this expression does not assume independence.
+
+For one million candidates from a relatively stable source, suppose the pilot observes 97% successful acquisition, 60% retention among acquired records, and 500 mean tokens among retained records. Then
+
+$$
+\widehat T=1{,}000{,}000\times0.97\times0.60\times500
+=291{,}000{,}000.
+$$
+
+This estimates 291 million retained tokens under the pilot process. The percentages are illustrative rather than universal: the project should estimate them separately for each source family. The calculation does not estimate unique tokens after global deduplication, define a final training budget, demonstrate independent topical coverage, or prove model improvement.
+
+### Heterogeneous sources
+
+If yield differs by source or language, estimate it within strata:
+
+$$
+\widehat T=
+\sum_h N_h\widehat p_{f,h}\widehat p_{a\mid f,h}\widehat{\bar\ell}_{a,h}.
+$$
+
+A global average can be misleading when one high-success source dominates the pilot. In this setting, **yield** means usable output relative to attempted input, much as manufacturing yield means the fraction of inputs that become acceptable products. It is an operational quantity: a document can be valuable in principle but still have zero yield for this run because it could not be fetched or admitted.
+
+An alternative defines realized yield for candidate $i$ as
+
+$$
+Y_i=
+\begin{cases}
+\text{retained token count}, & \text{if candidate }i\text{ yields a retained record},\\
+0, & \text{otherwise.}
+\end{cases}
+$$
+
+Then $\widehat T=N\bar Y$. Here, zero means zero usable output under the process, not that the inaccessible document had zero quality.
+
+This formulation is often easiest to audit as a spreadsheet. Each candidate receives either its retained token count or zero; the mean row yield $\bar Y$ is then scaled from the pilot sample to the $N$ candidates in the frame. The earlier product $p_f p_{a\mid f}\bar\ell_a$ decomposes that same average into interpretable stages.
+
+### Uncertainty and sampling bias
+
+A pilot built from the easiest URLs can overestimate yield. Sample candidates before knowing whether retrieval succeeds when the estimand is frame-level yield. If failures cluster by domain, date, or file type, report those groups instead of only one global percentage.
+
+For a binary property estimated from a simple random sample, an approximate finite-population variance is
+
+$$
+\widehat{\operatorname{Var}}(\widehat p)
+\approx
+\left(1-\frac{n}{N}\right)\frac{s_y^2}{n}.
+$$
+
+Intuitively, $s_y^2$ measures how mixed the sampled labels are: uncertainty is largest when the sample is close to half positive and half negative, and smaller when nearly every record receives the same label. Dividing by $n$ captures the value of a larger sample. Standard error therefore decreases roughly as $1/\sqrt n$, so cutting the margin of error in half usually requires about four times as many inspected records.
+
+The factor $1-n/N$ is the **finite-population correction**. Sampling without replacement reveals an appreciable fraction of the whole frame, so the unobserved remainder becomes smaller. When $n$ is tiny relative to $N$, this factor is nearly 1 and changes little. When every record is inspected, $n=N$, the factor becomes 0 because there is no sampling uncertainty left. This formula quantifies random-sampling uncertainty only; it does not repair a biased frame, correlated records, annotation error, or a population that changes during the audit.
+
+For stratified designs, combine weighted within-stratum variances. Every reported estimate should state what was sampled, from which frame, with what weights, and which population it describes.
+
+## Characterize the acquired corpus before training
+
+An acquisition report should answer:
+
+- Which sources dominate?
+- Which languages, scripts, and varieties are present?
+- Which domains and registers are missing?
+- How much material is native, translated, or generated?
+- How much metadata is missing?
+- Are apparent gains driven by many documents or a few very long ones?
+
+### Document-weighted and token-weighted views
+
+Suppose a pilot produces:
+
+| Component | Documents | Tokens |
+|---|---:|---:|
+| Arabic news | 42% | 61% |
+| Native Arabic science | 4% | 2% |
+| Translated Arabic STEM | 18% | 13% |
+| English science | 21% | 17% |
+| Code | 15% | 7% |
+
+Document-weighted shares ask what fraction of records belongs to a component. Token-weighted shares ask what fraction of text positions belongs to it. Their disagreement can reveal systematic document-length differences.
+
+### Source concentration
+
+Let $w_s$ be the fraction of documents from source $s$. Define
+
+$$
+H=\sum_s w_s^2,
+\qquad
+N_{\mathrm{eff}}=\frac{1}{H}.
+$$
+
+If four sources contribute exactly 25% each, then $H=0.25$ and $N_{\mathrm{eff}}=4$. If one source contributes nearly everything, $N_{\mathrm{eff}}$ approaches 1.
+
+This is a concentration diagnostic, not proof of independence. Two sites can mirror the same publisher; one site can host many independent authors.
+
+### Coverage matrices
+
+Inspect a cross-section such as
+
+$$
+\text{language}\times\text{domain}\times\text{register}\times\text{origin}\times\text{source}.
+$$
+
+For example:
+
+| Acquired material | English | Arabic | Swahili |
+|---|---:|---:|---:|
+| Native news | 20,000 | 80,000 | 12,000 |
+| Native science explanations | 25,000 | 900 | 40 |
+| Translated STEM | 0 | 15,000 | 5,000 |
+| Informal conversation | 4,000 | 0 | 0 |
+
+The conclusion is not merely that each language exists. Conversational coverage is absent in two languages, Swahili science is mostly translated, and native technical writing remains a small independent source family.
+
+Language metadata should preserve the original label, coding scheme, script, supported variety, and whether the label came from the publisher, a classifier, or a reviewer. A multilingual page may need more than one label.
+
+### Aggregate counts need inspectable examples
+
+A corpus-audit interface should let a reviewer move from a number back to supporting records. An apparently frequent topic can be driven by repeated navigation, a copied glossary, a few extremely long documents, or genuine explanatory prose. Statistics guide inspection; they do not replace it.
+
+## Original, translated, parallel, comparable, and generated are relationships
+
+A single field such as `{"language": "sw"}` cannot explain how Swahili text came to exist. Distinguish at least:
+
+- **native/original:** authored in the target language;
+- **translated:** derived from an identifiable source-language record;
+- **parallel:** explicitly aligned versions of the same content;
+- **comparable:** similar topic or register without direct translation correspondence; and
+- **generated:** produced by a model, simulator, or another synthesis process.
+
+These relationships can compose:
+
+```text
+English source problem
+        ↓ translation
+Swahili problem
+        ↓ teacher generation
+Swahili worked solution
+```
+
+The final record is written in Swahili, has translated ancestry for its problem, and synthetic ancestry for its solution.
+
+### Family identity versus record identity
+
+Suppose one English problem produces one translation, four teacher-generated solutions, and two repaired translations. There are seven descendant records but only one upstream problem family.
+
+If $Q$ seeds each produce $k$ candidates and a fraction $r$ is retained, then
+
+$$
+N_{\mathrm{accepted}}\approx Qkr.
+$$
+
+For $Q=1{,}000$, $k=4$, and $r=0.6$, the expected number of accepted records is 2,400. The collection still descends from only 1,000 seed families. Report both counts.
+
+## Corpora built from teacher models
+
+A teacher model can rewrite web documents, produce textbook-like explanations, translate source material, solve problems, generate exercises, or critique another model's output. The resulting records become a source family with an additional dependency: the generation process.
+
+[Cosmopedia](https://huggingface.co/blog/cosmopedia) is a concrete pretraining example built from model-generated educational and long-form text. Its prompts vary source topic, format, and intended audience. [Nemotron-CC](https://arxiv.org/abs/2412.02595) [@su2025nemotroncc] combines curated web material with synthetic rephrasing; NVIDIA's [release description](https://developer.nvidia.com/blog/announcing-nemotron-cc-a-trillion-token-english-language-dataset-for-llm-pretraining/) reports 1.9 trillion synthetic tokens within a 6.3-trillion-token corpus.
+
+Generation format does not determine the training objective. A worked solution can be serialized as ordinary continuation text, used as a target for supervised fine-tuning, or selected as teacher behavior for distillation.
+
+### From hard tokens to a teacher distribution
+
+Let $c_t$ be the prefix available at position $t$, and let $p_S(v\mid c_t)$ be the student's probability for vocabulary item $v$. Ordinary language-model pretraining observes one next token $x_t$ and minimizes
+
+$$
+\mathcal L_{\text{hard}}
+=-\sum_t\log p_S(x_t\mid c_t)
+=\sum_t H\!\left(\delta_{x_t},p_S(\cdot\mid c_t)\right),
+$$
+
+where $\delta_{x_t}$ places all target probability on the observed token. The student is told that $x_t$ occurred, but not how plausible the unobserved alternatives were.
+
+A teacher instead produces a logit $z_{T,v}$ for every token. With temperature $\tau$, those logits define a softened distribution
+
+$$
+q_T^{(\tau)}(v\mid c_t)
+=\frac{\exp(z_{T,v}/\tau)}
+{\sum_u\exp(z_{T,u}/\tau)}.
+$$
+
+$\tau=1$ preserves the teacher distribution; $\tau>1$ spreads probability mass and makes lower-ranked alternatives easier to observe. Token-probability distillation trains the student distribution $q_S^{(\tau)}$ toward that target:
+
+$$
+\mathcal L_{\text{KD}}
+=\tau^2\sum_t
+D_{\mathrm{KL}}\!\left(
+q_T^{(\tau)}(\cdot\mid c_t)
+\,\|\,
+q_S^{(\tau)}(\cdot\mid c_t)
+\right).
+$$
+
+The factor $\tau^2$ keeps gradient magnitudes on a comparable scale as the temperature changes. Because the teacher term is fixed, minimizing this KL divergence is equivalent, up to an additive constant, to minimizing cross-entropy from the teacher probabilities to the student probabilities. A common objective mixes observed tokens with the soft teacher signal,
+
+$$
+\mathcal L
+=(1-\lambda)\mathcal L_{\text{hard}}
++\lambda\mathcal L_{\text{KD}},
+\qquad 0\leq\lambda\leq1,
+$$
+
+as in [*Distilling the Knowledge in a Neural Network*](https://arxiv.org/abs/1503.02531) [@hinton2015distillation].
+
+### Why soft targets can be more sample-efficient
+
+At temperature 1, the gradient on a student logit for token $v$ has a useful contrast:
+
+$$
+\frac{\partial \mathcal L_{\text{hard}}}{\partial z_{S,v}}
+=p_S(v\mid c_t)-\mathbf 1[v=x_t],
+\qquad
+\frac{\partial \mathcal L_{\text{KD}}}{\partial z_{S,v}}
+=p_S(v\mid c_t)-p_T(v\mid c_t).
+$$
+
+The hard target supplies one positive token and treats every alternative alike. The soft target supplies a dense correction for the entire vocabulary. After “The capital of France is”, for example, a teacher might assign `Paris` 0.62, `Lyon` 0.08, and `France` 0.07 rather than representing only the sampled word `Paris`. Those relative probabilities communicate similarity, ambiguity, and the teacher's learned decision boundary at the same context.
+
+This can make learning more **sample-efficient**: one teacher evaluation provides information about many alternatives, and the student's target is smoother than a one-hot label. It does not guarantee lower wall-clock cost. Producing or storing teacher probabilities can be expensive, the teacher can transfer errors, and a student with insufficient capacity cannot reproduce every teacher distinction.
+
+### Two ways to create teacher-derived pretraining data
+
+**Sequence distillation** samples or decodes a teacher continuation
+
+$$
+\widetilde x_{1:T}\sim
+\prod_{t=1}^{T}p_T(x_t\mid \widetilde x_{<t},c),
+$$
+
+stores the resulting text or trajectory, and trains the student on it with ordinary next-token loss,
+
+$$
+\mathcal L_{\text{seq}}
+=-\sum_t\log p_S(\widetilde x_t\mid \widetilde x_{<t},c).
+$$
+
+The [sequence-level knowledge-distillation method](https://arxiv.org/abs/1606.07947) [@kim2016sequence] uses this idea to turn a teacher's preferred sequences into simpler student targets. This route needs only generated text, so it works with a teacher that exposes completions but not logits. It preserves the selected sequence, not the teacher's probabilities for alternatives that were not selected.
+
+**Token-probability distillation** runs the teacher on each retained prefix and stores or streams $q_T(v\mid c_t)$. A dense record costs $O(T|V|)$ values for a sequence of length $T$ and vocabulary size $|V|$, so practical systems may keep top-$k$ logits, quantized values, or a documented tail approximation. Those approximations are part of the data specification: omitted probability mass can change the target. Teacher and student tokenizers also need an explicit alignment when their vocabularies differ.
+
+Synthetic text and probability targets are therefore separate choices. A project can apply teacher probabilities to naturally authored text, train on generated text with only one-hot next-token targets, or combine both.
+
+### Why not give the student the teacher's entire corpus?
+
+If the original corpus is available and affordable, direct pretraining is a strong baseline and often remains part of the student mixture. It is not always an equivalent substitute for distillation:
+
+- the teacher's training corpus may be private, incompletely documented, or too large to replay;
+- a smaller student has less capacity and a smaller compute budget, so it may not extract the same structure from trillions of raw one-hot targets;
+- teacher probabilities expose relationships among alternatives that one observed token per context leaves implicit; and
+- a teacher can generate targeted explanations, translations, or difficult examples for regions where the student's current corpus is weak.
+
+Distillation is thus a form of compression and target shaping, not a magical reconstruction of the teacher. A defensible experiment compares direct pretraining, teacher-generated sequences, soft probability targets, and mixtures of them under the same student architecture and compute budget.
+
+Full-distribution distillation also requires access that many closed API models do not provide. An API may return sampled output text, or at most a limited list of top-token log probabilities, without the full logits, complete vocabulary mapping, stable tokenizer, or immutable checkpoint revision. OpenAI- or Anthropic-hosted models can still serve as sequence teachers when provider terms permit, but sampled completions cannot reconstruct the probability assigned to every alternative token. This access boundary is one reason an API-only model cannot simply be distilled as though it were a locally hosted teacher with full forward-pass access.
+
+A generated corpus has not demonstrated successful distillation merely because generation completed. The acquired corpus is an input to the student-training experiment, not evidence that the student learned the desired behavior.
+
+### Generated-data receipts
+
+Keep the teacher's input as well as its output. This illustrative record contains one accepted response:
+
+```json
+{
+  "record_id": "response-0042",
+  "parent_ids": ["seed-0007"],
+  "seed_split": "train",
+  "origin": "teacher_generated",
+  "language": "en",
+  "teacher_run": "teacher-run-017",
+  "request": {
+    "system": "Explain the solution step by step.",
+    "prompt": "Solve 3x + 5 = 20.",
+    "temperature": 0.7,
+    "max_output_tokens": 256
+  },
+  "response": "3x = 15, so x = 5. Answer: $\\boxed{x=5}$.",
+  "finish_reason": "stop",
+  "review": {
+    "verifier_run": "equation-check-v1",
+    "status": "accepted",
+    "evidence": "3 * 5 + 5 == 20"
+  }
+}
+```
+
+The associated teacher-run record should identify the model revision or provider model ID, request date, prompt-template version, tokenizer if exposed, decoding settings, and applicable output terms. If the provider exposes no immutable checkpoint, record that limitation rather than claiming perfect regeneration.
+
+The arithmetic check verifies the final value. It does not verify every reasoning step, the wording, or the teacher's own training provenance. Store review evidence by type instead of reducing it to `quality=true`.
+
+Record every attempt separately, including API failures, truncation, repaired outputs, and rejected candidates. This separates provider reliability from candidate quality and prevents retries from being counted as independently sourced tasks.
+
+## Provenance is a graph, not a source string
+
+One source record can produce many descendants, and one training sequence can contain fragments from many sources. Represent the relationships as a directed graph
+
+$$
+G=(V,E),
+$$
+
+where nodes are records or artifacts and edges are dependency relationships.
+
+```text
+source_problem_2917
+    ├──translated_to──> sw_translation_v2
+    │                         └──admitted_as──> record_921a
+    └──generated_from──> teacher_solution_3
+                              └──admitted_as──> record_b817
+
+record_921a ──packed_into──> shard_0042
+record_b817 ──packed_into──> shard_0042
+shard_0042  ──consumed_by──> checkpoint_step_18000
+```
+
+A tabular edge store can represent the same graph:
+
+```text
+parent_id             child_id               relation
+source_problem_2917   sw_translation_v2       translated_to
+sw_translation_v2     record_921a             admitted_as
+source_problem_2917   teacher_solution_3      generated_from
+teacher_solution_3    record_b817             admitted_as
+record_921a            shard_0042              packed_into
+record_b817            shard_0042              packed_into
+shard_0042             checkpoint_step_18000   consumed_by
+```
+
+Each transformation also needs a run record containing input IDs, tool or model revision, configuration, output IDs, and status. A provenance edge records dependency, not correctness.
+
+### Protected evaluation families
+
+Suppose a source problem is later identified as part of a protected benchmark. Let $S$ be the protected source nodes. The known affected set is
+
+$$
+A=S\cup\operatorname{Descendants}(S).
+$$
+
+A breadth-first traversal is sufficient:
+
+```python
+from collections import deque
+
+
+def descendants(graph, seeds):
+    seen = set(seeds)
+    queue = deque(seeds)
+
+    while queue:
+        node = queue.popleft()
+        for child in graph.get(node, []):
+            if child not in seen:
+                seen.add(child)
+                queue.append(child)
+    return seen
+```
+
+The visited set avoids repeated work and prevents malformed cycles from causing an infinite traversal. The result finds known descendants. It cannot discover unknown mirrors, unrecorded paraphrases, or undisclosed data used by a teacher model.
+
+Reserve evaluation at the family level whenever the underlying task is shared. If a problem is held out, its translations and generated solutions should remain outside training as well. Independently splitting descendants can place the question in evaluation and its answer in training.
+
+### Withdrawal
+
+When a source must be withdrawn:
+
+1. mark the affected source records;
+2. traverse known descendants;
+3. block them from new corpus builds;
+4. rebuild affected manifests and shards;
+5. publish a superseding inventory; and
+6. identify training runs that consumed the affected shards.
+
+Removing files does not reverse completed gradient updates. Provenance identifies where material propagated; it does not mathematically undo learning.
+
+## Rights and use decisions belong to artifacts
+
+Keep these questions separate:
+
+```text
+Can we access it?          Can we copy and store it?
+Can we transform it?       Can we use it for training?
+Can we redistribute text?  Can we release a resulting model?
+```
+
+Do not collapse them into one `licensed=true` field. A compact rights record might contain:
+
+```json
+{
+  "artifact": "source-release-2026-09",
+  "notice_url": "https://example.org/terms",
+  "notice_version": "2026-09-03",
+  "reviewed_uses": {
+    "internal_analysis": "approved",
+    "training": "approved",
+    "text_redistribution": "restricted"
+  },
+  "reviewer": "data-governance-02",
+  "review_date": "2026-09-18",
+  "conditions": ["preserve attribution"]
+}
+```
+
+A compilation license can differ from rights in individual texts. A teacher-generated derivative can also retain dependencies on its seed source and provider terms. Preserve the evidence and reviewed decision rather than expecting a later engineer to reconstruct them. [*Datasheets for Datasets*](https://doi.org/10.1145/3458723) [@gebru2021datasheets] provides a broader documentation framework for motivation, composition, collection, intended use, and maintenance.
+
+## A complete acquisition dossier
+
+A small auditable corpus project can use this structure:
+
+```text
+corpus_project/
+├── source_specs/
+│   ├── source_a.json
+│   ├── source_b.json
+│   └── source_c.json
+├── discovery/
+│   ├── source_a_candidates.parquet
+│   └── source_b_candidates.parquet
+├── plans/
+│   └── acquisition-v1.jsonl
+├── objects/
+│   └── sha256/...
+├── receipts/
+│   └── acquired-v1.jsonl
+├── attempts/
+│   └── attempts-v1.jsonl
+├── provenance/
+│   └── derivations-v1.jsonl
+├── audits/
+│   ├── sample-v1.csv
+│   └── coverage-v1.md
+└── locks/
+    └── acquired-corpus-v1.lock.json
+```
+
+Another engineer should be able to answer:
+
+- What population was the project trying to cover?
+- What was the actual acquisition frame?
+- Which records were selected and which were successfully acquired?
+- Which failures occurred, and where?
+- Which exact bytes correspond to each committed record?
+- Which records share ancestry?
+- Which protected families were excluded?
+- What population does the audit sample represent?
+- Which limitations remain visible?
+
+## Practical checkpoint: execute somebody else's plan
+
+### Part A — Write the specification
+
+Choose a bounded multilingual acquisition objective. Define the target population, acquisition frame, strata, acquisition unit, selection rule, stopping rule, expected outputs, protected evaluation families, origin labels, and rights-status fields. Do not explain the plan orally yet.
+
+### Part B — Swap plans
+
+A partner receives the specification and writes every question that must be answered before implementation:
+
+- Which exact domains are included?
+- Does a corrected translation replace the old row or create a new version?
+- Do redirects count as success?
+- What happens when a planned file is missing?
+- Is the record limit global or per source?
+
+Each unanswered question reveals state that existed only in the author's head. Amend the specification and preserve its change history.
+
+### Part C — Acquire a small fixture
+
+Use immutable fixtures or a reviewed public source. Produce frozen candidate membership, acquired objects, an attempt log, verified receipts, and a corpus lock.
+
+### Part D — Test failure behavior
+
+Run at least four tests:
+
+1. interrupt the process before object commitment;
+2. corrupt a stored object after hashing;
+3. retry the same immutable plan; and
+4. provide different bytes for the same immutable record identity.
+
+For each test, name the invariant being checked.
+
+### Part E — Audit coverage
+
+Construct a documented random or stratified sample. Report language and variety, source and domain, register, origin, missing metadata, acquisition failures, document- and token-weighted shares, one concentration measure, and at least five contextual inspections that support or challenge a source's intended contribution.
+
+### Part F — Run a withdrawal drill
+
+Mark one seed family as withdrawn or protected. Traverse its known descendants and report which records, manifests, and training inputs require review.
+
+Submit the acquisition specification, amended specification, frozen plan, receipts, attempt log, corpus lock, executable acquisition code, failure-test output, coverage report, and provenance report. Include a short divergence report separating specification gaps, acquisition failures, and deliberate judgment calls.
+
+## Check your understanding
+
+1. Why can a statistically valid sample from a web archive still be unrepresentative of the target population?
+2. What is the difference between an acquisition frame and an acquired inventory?
+3. When is an equal-stratum audit mean appropriate, and when must strata be weighted by population size?
+4. Why does inspecting ten records provide little evidence about a category with 0.5% prevalence?
+5. What can be lost by starting from WET instead of WARC?
+6. Why should discovery and retrieval be separate stages?
+7. Why is an immutable repository revision necessary when the dataset name has not changed?
+8. What does a newly computed checksum establish, and what does it not establish?
+9. Why is a crash after object storage but before receipt commitment preferable to the reverse order?
+10. Why can 10,000 generated records represent far fewer than 10,000 independent topics?
+11. What can a provenance graph do that a single source string cannot?
+12. Why can provenance enforce known benchmark ancestry without detecting every contamination path?
+
+## What to remember
+
+1. Acquisition is both statistical sampling and data engineering: define the desired population and the exact objects received.
+2. Target population, acquisition frame, selected candidates, acquired inventory, and admitted corpus are different objects.
+3. Collection, audit, and training distributions are different. A balanced audit does not imply a balanced corpus or balanced training exposure.
+4. Source labels are not capability measurements. Inspect what the material actually contains.
+5. Freeze membership before retrieval when possible, pin source versions, and make failures observable.
+6. Keep location, record identity, and exact bytes separate; a checksum identifies bytes but does not automatically prove they were intended.
+7. Report both records and independent source families for translated and generated data.
+8. Teacher-generated corpora require the input, output, model and prompt versions, decoding settings, attempts, and review evidence.
+9. Provenance is a graph that allows known evaluation exclusions and withdrawals to propagate.
+10. An inspectable corpus is a versioned artifact with explicit limits, not a folder named after a token count.
+
+## References
+
+::: {#refs}
+:::

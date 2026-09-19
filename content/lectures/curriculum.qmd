@@ -20,3 +20,5 @@ The published course material begins with the architectural background and then 
 **Lecture 1: The frontier language-model lifecycle.** The historical transitions that changed model interfaces, training, evaluation, inference-time computation, multimodality, and the economics of AI infrastructure.
 
 **Lecture 2: Data, training signals, and capability boundaries.** Observed, human-labeled, self-supervised, synthetic, and evaluation data; collection and annotation systems; pretraining and post-training signals; benchmark interpretation; distillation; and measured cases where specialized models outperform LLM-based systems.
+
+**Lecture 3: Corpus design, acquisition, and provenance.** Target populations and acquisition frames; reproducible snapshots; multilingual and teacher-generated source portfolios; acquisition yield and coverage audits; record identity, rights, and provenance.

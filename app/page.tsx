@@ -10,9 +10,11 @@ import { curriculumHtml } from "./generated/curriculum";
 import { introductionHtml } from "./generated/introduction";
 import { lecture1Html } from "./generated/lecture-1";
 import { lecture2Html } from "./generated/lecture-2";
+import { lecture3Html } from "./generated/lecture-3";
 
 const Lecture1Presentation = lazy(() => import("./Lecture1Presentation"));
 const Lecture2Presentation = lazy(() => import("./Lecture2Presentation"));
+const Lecture3Presentation = lazy(() => import("./Lecture3Presentation"));
 
 const navigation = [
   "Home",
@@ -24,6 +26,7 @@ const lecturePages = [
   { name: "Introduction", html: introductionHtml },
   { name: "Lecture 1: Model lifecycle", html: lecture1Html },
   { name: "Lecture 2: Data and capabilities", html: lecture2Html },
+  { name: "Lecture 3: Corpus design, acquisition, and provenance", html: lecture3Html },
 ] as const;
 
 const lecturePhases = [
@@ -31,6 +34,11 @@ const lecturePhases = [
     name: "Foundations",
     range: "01–02",
     families: [{ name: null, lectures: lecturePages.slice(1, 3) }],
+  },
+  {
+    name: "Pretraining",
+    range: "03",
+    families: [{ name: null, lectures: lecturePages.slice(3, 4) }],
   },
 ] as const;
 
@@ -50,6 +58,12 @@ function lecture2PresentationRequested() {
   return params.get("lecture") === "2" && params.get("mode") === "presentation";
 }
 
+function lecture3PresentationRequested() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("lecture") === "3" && params.get("mode") === "presentation";
+}
+
 function AiMarketMomentsMount({ rootRef }: { rootRef: RefObject<HTMLElement | null> }) {
   const [target, setTarget] = useState<Element | null>(null);
 
@@ -66,6 +80,7 @@ function AiMarketMomentsMount({ rootRef }: { rootRef: RefObject<HTMLElement | nu
 export default function Home() {
   const startsInLecture1Presentation = lecture1PresentationRequested();
   const startsInLecture2Presentation = lecture2PresentationRequested();
+  const startsInLecture3Presentation = lecture3PresentationRequested();
   const [menuOpen, setMenuOpen] = useState(false);
   const [lecturesOpen, setLecturesOpen] = useState(true);
   const [active, setActive] = useState<PageName>(
@@ -73,6 +88,8 @@ export default function Home() {
       ? "Lecture 1: Model lifecycle"
       : startsInLecture2Presentation
         ? "Lecture 2: Data and capabilities"
+        : startsInLecture3Presentation
+          ? "Lecture 3: Corpus design, acquisition, and provenance"
         : "Home",
   );
   const [query, setQuery] = useState("");
@@ -82,6 +99,9 @@ export default function Home() {
   );
   const [lecture2Presenting, setLecture2Presenting] = useState(
     startsInLecture2Presentation,
+  );
+  const [lecture3Presenting, setLecture3Presenting] = useState(
+    startsInLecture3Presentation,
   );
   const lecture1Ref = useRef<HTMLElement>(null);
   const lecture2Ref = useRef<HTMLElement>(null);
@@ -97,6 +117,7 @@ export default function Home() {
 
   function choosePage(item: PageName) {
     setLecture2Presentation(false);
+    setLecture3Presentation(false);
     setLecture1Presentation(false);
     setActive(item);
     if (lectures.includes(item as LectureName)) {
@@ -125,6 +146,19 @@ export default function Home() {
     const url = new URL(window.location.href);
     if (presenting) {
       url.searchParams.set("lecture", "2");
+      url.searchParams.set("mode", "presentation");
+    } else {
+      url.searchParams.delete("lecture");
+      url.searchParams.delete("mode");
+    }
+    window.history.replaceState({}, "", url);
+  }
+
+  function setLecture3Presentation(presenting: boolean) {
+    setLecture3Presenting(presenting);
+    const url = new URL(window.location.href);
+    if (presenting) {
+      url.searchParams.set("lecture", "3");
       url.searchParams.set("mode", "presentation");
     } else {
       url.searchParams.delete("lecture");
@@ -399,6 +433,24 @@ export default function Home() {
                   ref={lecture2Ref}
                 />
                 <Lecture2DataLabs rootRef={lecture2Ref} />
+              </>
+            )
+          ) : active === "Lecture 3: Corpus design, acquisition, and provenance" ? (
+            lecture3Presenting ? (
+              <Suspense fallback={null}>
+                <Lecture3Presentation onExit={() => setLecture3Presentation(false)} />
+              </Suspense>
+            ) : (
+              <>
+                <div className="lecture-present-launch">
+                  <button type="button" onClick={() => setLecture3Presentation(true)}>
+                    Present lecture
+                  </button>
+                </div>
+                <article
+                  className="main-content lecture-content"
+                  dangerouslySetInnerHTML={{ __html: lecture3Html }}
+                />
               </>
             )
           ) : active === "Reading Club (NLP)" ? (
