@@ -11,12 +11,9 @@ const readingClubSchedule = [
       href: "https://papers.neurips.cc/paper/7181-attention-is-all-you-need.pdf",
     },
     frontier: {
-      date: "7 November",
-      dateTime: "2026-11-07",
-      previousDates: [
-        { date: "24 October", dateTime: "2026-10-24" },
-        { date: "31 October", dateTime: "2026-10-31" },
-      ],
+      date: "24 October",
+      dateTime: "2026-10-24",
+      previousDates: [],
       title: "Gated Attention for Large Language Models",
       authors: "Qiu et al., NeurIPS 2025",
       href: "https://proceedings.neurips.cc/paper_files/paper/2025/hash/904e89bb4e632e75fb47f093b620b257-Abstract-Conference.html",
@@ -26,23 +23,17 @@ const readingClubSchedule = [
     theme: "Learning from missing text",
     presenter: "Tatevik Minasyan",
     foundation: {
-      date: "3 October",
-      dateTime: "2026-10-03",
-      previousDates: [
-        { date: "19 September", dateTime: "2026-09-19" },
-        { date: "26 September", dateTime: "2026-09-26" },
-      ],
+      date: "19 September",
+      dateTime: "2026-09-19",
+      previousDates: [],
       title: "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
       authors: "Devlin et al., NAACL 2019",
       href: "https://aclanthology.org/N19-1423/",
     },
     frontier: {
-      date: "14 November",
-      dateTime: "2026-11-14",
-      previousDates: [
-        { date: "31 October", dateTime: "2026-10-31" },
-        { date: "7 November", dateTime: "2026-11-07" },
-      ],
+      date: "31 October",
+      dateTime: "2026-10-31",
+      previousDates: [],
       title: "Large Language Diffusion Models (LLaDA)",
       authors: "Nie et al., NeurIPS 2025",
       href: "https://arxiv.org/abs/2502.09992",
@@ -52,23 +43,17 @@ const readingClubSchedule = [
     theme: "Training data and compute",
     presenter: "Anastasia Vorobyeva",
     foundation: {
-      date: "10 October",
-      dateTime: "2026-10-10",
-      previousDates: [
-        { date: "26 September", dateTime: "2026-09-26" },
-        { date: "3 October", dateTime: "2026-10-03" },
-      ],
+      date: "3 October",
+      dateTime: "2026-10-03",
+      previousDates: [{ date: "26 September", dateTime: "2026-09-26" }],
       title: "Training Compute-Optimal Large Language Models (Chinchilla)",
       authors: "Hoffmann et al., 2022",
       href: "https://arxiv.org/abs/2203.15556",
     },
     frontier: {
-      date: "21 November",
-      dateTime: "2026-11-21",
-      previousDates: [
-        { date: "7 November", dateTime: "2026-11-07" },
-        { date: "14 November", dateTime: "2026-11-14" },
-      ],
+      date: "7 November",
+      dateTime: "2026-11-07",
+      previousDates: [],
       title: "FineWeb2: One Pipeline to Scale Them All",
       authors: "Penedo et al., COLM 2025",
       href: "https://openreview.net/forum?id=jnRBe6zatP",
@@ -78,23 +63,17 @@ const readingClubSchedule = [
     theme: "Retrieval and evidence",
     presenter: "Vladimir Avanyan",
     foundation: {
-      date: "17 October",
-      dateTime: "2026-10-17",
-      previousDates: [
-        { date: "3 October", dateTime: "2026-10-03" },
-        { date: "10 October", dateTime: "2026-10-10" },
-      ],
+      date: "10 October",
+      dateTime: "2026-10-10",
+      previousDates: [{ date: "3 October", dateTime: "2026-10-03" }],
       title: "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
       authors: "Lewis et al., 2020",
       href: "https://papers.neurips.cc/paper/2020/hash/6b493230205f780e1bc26945df7481e5-Abstract.html",
     },
     frontier: {
-      date: "28 November",
-      dateTime: "2026-11-28",
-      previousDates: [
-        { date: "14 November", dateTime: "2026-11-14" },
-        { date: "21 November", dateTime: "2026-11-21" },
-      ],
+      date: "14 November",
+      dateTime: "2026-11-14",
+      previousDates: [],
       title: "Synthesizing Scientific Literature with Retrieval-Augmented Language Models",
       authors: "Asai et al., Nature 2026",
       href: "https://www.nature.com/articles/s41586-025-10072-4",
@@ -104,23 +83,17 @@ const readingClubSchedule = [
     theme: "Reasoning",
     presenter: "Roman Sahakyan",
     foundation: {
-      date: "24 October",
-      dateTime: "2026-10-24",
-      previousDates: [
-        { date: "10 October", dateTime: "2026-10-10" },
-        { date: "17 October", dateTime: "2026-10-17" },
-      ],
+      date: "10 October",
+      dateTime: "2026-10-10",
+      previousDates: [],
       title: "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models",
       authors: "Wei et al., 2022",
       href: "https://arxiv.org/abs/2201.11903",
     },
     frontier: {
-      date: "5 December",
-      dateTime: "2026-12-05",
-      previousDates: [
-        { date: "21 November", dateTime: "2026-11-21" },
-        { date: "28 November", dateTime: "2026-11-28" },
-      ],
+      date: "21 November",
+      dateTime: "2026-11-21",
+      previousDates: [],
       title: "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning",
       authors: "DeepSeek-AI, 2025",
       href: "https://arxiv.org/abs/2501.12948",
@@ -130,23 +103,17 @@ const readingClubSchedule = [
     theme: "Evaluation",
     presenter: "Mikayel Saghatelyan",
     foundation: {
-      date: "31 October",
-      dateTime: "2026-10-31",
-      previousDates: [
-        { date: "17 October", dateTime: "2026-10-17" },
-        { date: "24 October", dateTime: "2026-10-24" },
-      ],
+      date: "17 October",
+      dateTime: "2026-10-17",
+      previousDates: [],
       title: "Beyond Accuracy: Behavioral Testing of NLP Models with CheckList",
       authors: "Ribeiro et al., ACL 2020",
       href: "https://aclanthology.org/2020.acl-main.442/",
     },
     frontier: {
-      date: "12 December",
-      dateTime: "2026-12-12",
-      previousDates: [
-        { date: "28 November", dateTime: "2026-11-28" },
-        { date: "5 December", dateTime: "2026-12-05" },
-      ],
+      date: "28 November",
+      dateTime: "2026-11-28",
+      previousDates: [],
       title: "LLMs Get Lost in Multi-Turn Conversation",
       authors: "Laban et al., ICLR 2026; first preprint 2025",
       href: "https://openreview.net/forum?id=VKGTGGcwl6",
@@ -194,8 +161,8 @@ export function ReadingClubPage() {
         preference registration.
       </p>
       <p className="reading-club-schedule-note">
-        There are no meetings on 12 or 26 September. Crossed-out dates show earlier scheduled
-        dates; the final date in each row is current.
+        The first two presentations took place on 19 September. There is no meeting on 26
+        September. Crossed-out dates show rescheduled presentations.
       </p>
 
       <div className="reading-club-table-wrap">
