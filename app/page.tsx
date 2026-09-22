@@ -3,6 +3,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { AiMarketMoments } from "./AiMarketMoments";
+import { KarginBenchPage } from "./KarginBenchPage";
 import { Lecture2DataLabs } from "./Lecture2DataLabs";
 import { ReadingClubPage } from "./ReadingClubPage";
 import { ReleaseCadenceChartMount } from "./ReleaseCadenceChart";
@@ -20,6 +21,7 @@ const navigation = [
   "Home",
   "Lectures",
   "Reading Club (NLP)",
+  "Capstone project",
 ] as const;
 
 const lecturePages = [
@@ -455,6 +457,8 @@ export default function Home() {
             )
           ) : active === "Reading Club (NLP)" ? (
             <ReadingClubPage />
+          ) : active === "Capstone project" ? (
+            <KarginBenchPage />
           ) : activeLecture ? (
             <article
               className="main-content lecture-content"
