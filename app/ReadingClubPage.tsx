@@ -157,8 +157,7 @@ export function ReadingClubPage() {
       <h2>Paper schedule <small>Fall 2026</small></h2>
       <p>
         The first round establishes the foundations. The second round returns to the same themes
-        through newer work from the research frontier. Presenter assignments will be added after
-        preference registration.
+        through newer work from the research frontier.
       </p>
       <p className="reading-club-schedule-note">
         The first two presentations took place on 19 September. There is no meeting on 26
