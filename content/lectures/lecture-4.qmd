@@ -1,5 +1,5 @@
 ---
-title: "Lecture 4 (draft): Document extraction, quality filtering, and corpus auditing"
+title: "Lecture 4: Document extraction, quality filtering, and corpus auditing"
 order: 5
 description: "How acquired HTML, PDF, code, and structured records become auditable candidate documents through extraction, normalization, language identification, and measured quality filtering."
 bibliography: ../references.bib

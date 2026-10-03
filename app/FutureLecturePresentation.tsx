@@ -67,6 +67,7 @@ function Content({ slide }: { slide: SlideSpec }) {
 export default function FutureLecturePresentation({ lectureNumber, onExit }: { lectureNumber: number; onExit: () => void }) {
   const deck = decks[lectureNumber];
   if (!deck) return null;
+  const isDraft = deck.number !== 4;
   const openText = deck.number === 4 ? (anchor: string, slideHash: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set("lecture", "4");
@@ -84,14 +85,14 @@ export default function FutureLecturePresentation({ lectureNumber, onExit }: { l
   const slideContent = <>
     <Slide className="lecture-presentation-slide lp-title-slide future-slide" data-text-anchor={deck.textAnchor} notes={`Lecture ${deck.number}: ${deck.title}. ${deck.subtitle} Use the chapter for the complete derivations and the practical exercise; pause at the question slides before revealing the explanation.`}>
       <div className="lp-title-shell future-title">
-        <p className="lp-kicker">DATA FOR AI · LECTURE {deck.number} OF 16 · DRAFT</p>
+        <p className="lp-kicker">DATA FOR AI · LECTURE {deck.number} OF 16{isDraft && " · DRAFT"}</p>
         <h1>{deck.title}</h1><p className="future-subtitle">{deck.subtitle}</p>
         <p className="lp-title-hint">→ arrows to navigate · O overview · S speaker view · F full screen · Q exit</p>
       </div>
     </Slide>
     {parts.length > 0 && <Slide className="lecture-presentation-slide future-slide future-slide-outline" data-text-anchor={deck.outlineTextAnchor} notes={`Follow the same five parts as the chapter: ${parts.map((part) => `${part.label}: ${part.title}`).join("; ")}. Begin with document recovery, then move through representation, quality decisions, corpus-level effects, and the assembled pipeline. Select a part to jump to its opening slide.`}>
       <div className="lp-slide-shell">
-        <header className="lp-slide-header"><p className="lp-kicker">DRAFT · LECTURE {deck.number} · OUTLINE</p><h2>From acquired objects to an audited corpus</h2></header>
+        <header className="lp-slide-header"><p className="lp-kicker">{isDraft && "DRAFT · "}LECTURE {deck.number} · OUTLINE</p><h2>From acquired objects to an audited corpus</h2></header>
         <div className="lp-slide-body">
           <ol className="future-points future-part-outline">{parts.map((part) => <li key={part.id}>
             <span aria-hidden="true">{part.label.replace("Part ", "")}</span>
@@ -108,7 +109,7 @@ export default function FutureLecturePresentation({ lectureNumber, onExit }: { l
           <h2 className="future-reading-title">{slide.title}</h2>
           <p lang="hy">{slide.readingText}</p>
         </div> : <div className="lp-slide-shell">
-          <header className="lp-slide-header"><p className="lp-kicker">DRAFT · LECTURE {deck.number} · {part ? `${part.label.toUpperCase()} · ${part.title}` : slide.section}</p><h2>{slide.title}</h2></header>
+          <header className="lp-slide-header"><p className="lp-kicker">{isDraft && "DRAFT · "}LECTURE {deck.number} · {part ? `${part.label.toUpperCase()} · ${part.title}` : slide.section}</p><h2>{slide.title}</h2></header>
           <div className="lp-slide-body"><Content slide={slide} /></div>
           <footer className="lp-source">{slide.source?.url ? <a href={slide.source.url} target="_blank" rel="noreferrer">{slide.source.label}</a> : slide.source?.label ?? `Lecture ${deck.number} · ${slide.section}`}</footer>
         </div>}
@@ -117,7 +118,7 @@ export default function FutureLecturePresentation({ lectureNumber, onExit }: { l
       return [
         <Slide id={part.slideId} className="lecture-presentation-slide future-slide future-slide-part" key={part.slideId} data-text-anchor={deck.number === 4 ? part.id : undefined} notes={part.notes}>
           <div className="lp-title-shell future-part-title">
-            <p className="lp-kicker">DRAFT · LECTURE {deck.number} · {part.label.toUpperCase()}</p>
+            <p className="lp-kicker">{isDraft && "DRAFT · "}LECTURE {deck.number} · {part.label.toUpperCase()}</p>
             <h2>{part.title}</h2>
             <p className="future-part-topics">{part.topics.join(" · ")}</p>
           </div>

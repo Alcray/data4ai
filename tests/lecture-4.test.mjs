@@ -16,6 +16,19 @@ async function loadDeck(number) {
   return (await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`)).default;
 }
 
+test("Lecture 4 has published labels in the chapter, navigation, curriculum, and slides", () => {
+  const label = "Lecture 4: Document extraction, quality filtering, and corpus auditing";
+  assert.ok(read("content/lectures/lecture-4.qmd").includes('title: "' + label + '"'));
+  assert.ok(read("content/lectures/curriculum.qmd").includes("**" + label + ".**"));
+  assert.doesNotMatch(read("content/lectures/curriculum.qmd"), /Draft material|Lecture 4 \(draft\)/);
+  assert.ok(read("app/page.tsx").includes('const lecture4Name = "' + label + '"'));
+  assert.doesNotMatch(read("app/generated/lecture-4.ts"), /Lecture 4 \(draft\)/);
+  const presentation = read("app/FutureLecturePresentation.tsx");
+  assert.ok(presentation.includes("const isDraft = deck.number !== 4;"));
+  assert.ok(presentation.includes('{isDraft && " · DRAFT"}'));
+  assert.ok(presentation.includes('{isDraft && "DRAFT · "}LECTURE {deck.number}'));
+});
+
 test("Lecture 4 presentation follows the chapter's five major parts", async () => {
   const chapter = read("content/lectures/lecture-4.qmd");
   const deck = await loadDeck(4);
@@ -238,7 +251,7 @@ for (let number = 4; number <= 4; number += 1) {
     assert.equal([...html.matchAll(/<h1(?:\s|>)/g)].length, 1, "Render exactly one chapter title");
     if (number >= 9) assert.match(chapter, /<details[\s>]/, "Include an answer-reveal checkpoint");
     assert.match(chapter, /```(?:python|bash|json)/, "Include a concrete technical artifact");
-    assert.match(chapter, /^title:.*\(draft\)/m);
+    assert.doesNotMatch(chapter, /^title:.*\(draft\)/m);
     for (const citation of chapter.matchAll(/\[[^\]\n]*@[a-zA-Z][^\]\n]*\]/g)) {
       for (const [, key] of citation[0].matchAll(/@([a-zA-Z][\w:-]*)/g)) {
         assert.ok(citationKeys.has(key), `Missing bibliography entry: ${key}`);

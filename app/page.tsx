@@ -19,7 +19,7 @@ const Lecture1Presentation = lazy(() => import("./Lecture1Presentation"));
 const Lecture2Presentation = lazy(() => import("./Lecture2Presentation"));
 const Lecture3Presentation = lazy(() => import("./Lecture3Presentation"));
 const FutureLecturePresentation = lazy(() => import("./FutureLecturePresentation"));
-const lecture4Name = "Lecture 4 (draft): Document extraction, quality filtering, and corpus auditing";
+const lecture4Name = "Lecture 4: Document extraction, quality filtering, and corpus auditing";
 
 const navigation = [
   "Home",
