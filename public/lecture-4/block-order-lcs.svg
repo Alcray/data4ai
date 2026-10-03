@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 560" role="img" aria-labelledby="title desc">
+  <title id="title">Same blocks, different order</title>
+  <desc id="desc">The reference is A B C D. The extraction is A C B D. A B D is a longest common subsequence of length three. Matching connectors advance left to right; C is skipped. Coverage is three divided by four, or 0.75.</desc>
+  <rect width="1040" height="560" fill="#fff"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <g fill="#111827" font-size="30" font-weight="600">
+      <text x="24" y="56">Same blocks, different order</text>
+    </g>
+    <g fill="#6B7280" font-size="24">
+      <text x="24" y="160">Reference R</text>
+      <text x="24" y="345">Extracted S</text>
+    </g>
+    <g stroke="#7253ED" stroke-width="3" fill="none">
+      <path d="M300 193 L300 297"/>
+      <path d="M490 193 L680 297"/>
+      <path d="M870 193 L870 297"/>
+    </g>
+    <g fill="#F2EFFE" stroke="#7253ED" stroke-width="2">
+      <rect x="245" y="111" width="110" height="82" rx="8"/>
+      <rect x="435" y="111" width="110" height="82" rx="8"/>
+      <rect x="815" y="111" width="110" height="82" rx="8"/>
+      <rect x="245" y="297" width="110" height="82" rx="8"/>
+      <rect x="625" y="297" width="110" height="82" rx="8"/>
+      <rect x="815" y="297" width="110" height="82" rx="8"/>
+    </g>
+    <g fill="#fff" stroke="#9CA3AF" stroke-width="2" stroke-dasharray="6 5">
+      <rect x="625" y="111" width="110" height="82" rx="8"/>
+      <rect x="435" y="297" width="110" height="82" rx="8"/>
+    </g>
+    <g fill="#5B3FD4" font-size="40" font-weight="700" text-anchor="middle">
+      <text x="300" y="166">A</text><text x="490" y="166">B</text><text x="870" y="166">D</text>
+      <text x="300" y="352">A</text><text x="680" y="352">B</text><text x="870" y="352">D</text>
+    </g>
+    <g fill="#6B7280" font-size="40" text-anchor="middle">
+      <text x="680" y="166">C</text><text x="490" y="352">C</text>
+    </g>
+    <g fill="#6B7280" font-size="25" text-anchor="middle">
+      <text x="395" y="160">→</text><text x="585" y="160">→</text><text x="775" y="160">→</text>
+      <text x="395" y="345">→</text><text x="585" y="345">→</text><text x="775" y="345">→</text>
+    </g>
+    <text x="245" y="435" fill="#5B3FD4" font-size="29" font-weight="600">Chosen chain: A → B → D</text>
+    <text x="245" y="479" fill="#111827" font-size="27">LCS coverage = 3 / 4 = 0.75</text>
+    <text x="245" y="523" fill="#6B7280" font-size="23">Skip a block; never reverse its order.</text>
+  </g>
+</svg>

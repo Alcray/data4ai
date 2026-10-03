@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">A subreddit, its threads, and a nested conversation</title>
+  <desc id="desc">Constructed Reddit-style teaching example. The r/learnpython community contains three threads. Selected thread A expands into its post, one comment with a nested reply, and another comment. These are self-written examples, not a captured user conversation.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 10 5 0 10" fill="none" stroke="#7253ED" stroke-width="1.5"/></marker>
+  </defs>
+  <rect width="1200" height="480" fill="#fff"/>
+  <g font-family="Segoe UI, Arial, sans-serif" fill="#111827">
+    <text x="20" y="28" font-size="18" fill="#6B7280">COMMUNITY</text>
+    <text x="20" y="65" font-size="30" font-weight="700" fill="#5B3FD4">r/learnpython</text>
+    <line x1="20" y1="86" x2="368" y2="86" stroke="#E5E7EB"/>
+    <rect x="20" y="108" width="348" height="100" rx="8" fill="#F2EFFE" stroke="#7253ED" stroke-width="2"/>
+    <text x="38" y="135" font-size="17" fill="#5B3FD4" font-weight="700">THREAD A</text>
+    <text x="38" y="166" font-size="23">Why does append()</text>
+    <text x="38" y="194" font-size="23">return None?</text>
+    <text x="38" y="264" font-size="17" fill="#6B7280">THREAD B</text>
+    <text x="38" y="295" font-size="23">Reading a CSV file</text>
+    <line x1="20" y1="320" x2="368" y2="320" stroke="#E5E7EB"/>
+    <text x="38" y="362" font-size="17" fill="#6B7280">THREAD C</text>
+    <text x="38" y="393" font-size="23">Help with a for loop</text>
+    <path d="M380 158 H422" stroke="#7253ED" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="440" y="10" width="740" height="452" rx="8" fill="#fff" stroke="#7253ED" stroke-width="2"/>
+    <text x="464" y="40" font-size="17" fill="#5B3FD4" font-weight="700">THREAD A · POST + COMMENTS</text>
+    <text x="464" y="79" font-size="29" font-weight="700">Why does append() return None?</text>
+    <text x="464" y="119" font-size="22" font-family="Consolas, monospace">items = [1, 2]</text>
+    <text x="464" y="150" font-size="22" font-family="Consolas, monospace">result = items.append(3)</text>
+    <line x1="464" y1="175" x2="1156" y2="175" stroke="#E5E7EB"/>
+    <path d="M476 206 V327 M476 235 H493 M476 307 H517" stroke="#D1D5DB" stroke-width="2" fill="none"/>
+    <text x="502" y="211" font-size="16" fill="#6B7280">COMMENT 1</text>
+    <text x="502" y="242" font-size="23">append() changes the list in place.</text>
+    <path d="M526 269 V327" stroke="#D1D5DB" stroke-width="2"/>
+    <text x="544" y="283" font-size="16" fill="#6B7280">REPLY TO COMMENT 1</text>
+    <text x="544" y="314" font-size="23">So I should print items, not result?</text>
+    <line x1="464" y1="350" x2="1156" y2="350" stroke="#E5E7EB"/>
+    <text x="502" y="383" font-size="16" fill="#6B7280">COMMENT 2</text>
+    <text x="502" y="414" font-size="23">The updated list is [1, 2, 3].</text>
+  </g>
+</svg>

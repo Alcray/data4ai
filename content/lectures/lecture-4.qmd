@@ -1,0 +1,2655 @@
+---
+title: "Lecture 4 (draft): Document extraction, quality filtering, and corpus auditing"
+order: 5
+description: "How acquired HTML, PDF, code, and structured records become auditable candidate documents through extraction, normalization, language identification, and measured quality filtering."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+<span id="lecture-4-introduction"></span>Lecture 3 ended with a versioned inventory of acquired objects. Some of those objects are compressed WARC records containing HTTP responses. Some are PDFs. Some are Parquet or JSON records from released datasets. Some are clean-looking text fields that already reflect somebody else's extraction decisions.
+
+None of them is automatically a training document.
+
+A web page may contain an article, navigation menus, cookie notices, related-story links, advertisements, comments, code snippets, equations, tables, captions, and hidden accessibility text. A PDF can contain the right characters in the wrong reading order. A language classifier can confidently label a short mixed-language page with the wrong language. A “quality” classifier can reward familiar encyclopedia-style prose and reject exactly the informal or low-resource language we hoped to add.
+
+The same distinction appears in speech datasets. The Armenian Toloka work described in [*From Scarcity to Sufficiency*](https://www.isca-archive.org/interspeech_2025/karpov25_interspeech.pdf) [@karpov2025scarcity] used Yerevan City Magazine texts, crowdsourced readings, and ASR-assisted validation. A magazine paragraph was not the final training example: it became a reading prompt, then an audio–transcript pair. The paper reports 69.23 hours of verified crowdsourced speech.
+
+<div class="lecture-diagram" role="img" aria-label="A magazine document becomes a short reading prompt; a worker records the prompt; validation produces an audio and transcript pair for ASR training.">
+  <div class="lecture-diagram-box">Magazine document<br><em>source text</em></div>
+  <div class="lecture-diagram-arrow">→</div>
+  <div class="lecture-diagram-box accent">Reading prompt<br><em>sentence selection</em></div>
+  <div class="lecture-diagram-arrow">→</div>
+  <div class="lecture-diagram-box">Recorded utterance<br><em>audio + given text</em></div>
+  <div class="lecture-diagram-arrow">→</div>
+  <div class="lecture-diagram-box accent">ASR training pair<br><em>validated and formatted</em></div>
+</div>
+
+We will inspect the [released Toloka processors](#armenian-toloka-case) as a concrete case of source-dependent processing and fallible quality evidence. Their restrictions make sense for a particular read-speech task; copying them into a technical language-model corpus would remove useful numbers, formulas, and mixed-script text.
+
+Corpus processing therefore does not simply remove dirt from a neutral dataset. It **defines the document representation and changes the population that survives**.
+
+<div class="lecture-diagram">
+  <div class="lecture-diagram-box">Acquired objects<br><em>Lecture 3</em></div>
+  <div class="lecture-diagram-arrow">→</div>
+  <div class="lecture-diagram-box accent">Extraction & normalization</div>
+  <div class="lecture-diagram-arrow">→</div>
+  <div class="lecture-diagram-box accent">Language & quality evidence</div>
+  <div class="lecture-diagram-arrow">→</div>
+  <div class="lecture-diagram-box">Audited candidate documents<br><em>input to Lecture 5</em></div>
+</div>
+
+The technical goal of this lecture is not to find one magical filter. It is to build a processing system in which every transformation is explicit, every score has a meaning, every rejection can be explained, and the effect of the pipeline on corpus composition can be measured.
+
+
+> **Objective**
+> Starting from a frozen acquired inventory, construct an extraction and quality-filtering pipeline that produces candidate training documents while preserving enough evidence to evaluate extraction errors, language decisions, filter trade-offs, and changes in corpus composition.
+
+<span id="lecture-4-outline"></span>The lecture follows five stages:
+
+1. [Recover and evaluate the document](#recover-the-document)
+2. [Normalize text and identify language](#normalize-and-identify-language)
+3. [Define quality and decide what to keep](#decide-what-to-keep)
+4. [Audit how processing changes the corpus](#audit-corpus-changes)
+5. [Assemble, test, and defend the pipeline](#assemble-and-test-the-pipeline)
+
+**Learning objectives**
+
+By the end of this lecture, you should be able to:
+
+* define the **document unit** and structured representation produced by extraction;
+* explain why HTML stripping is not the same problem as main-content extraction;
+* evaluate extraction using explicit reference spans or blocks rather than visual impressions;
+* distinguish Unicode normalization from more destructive text rewriting;
+* treat language identification as a measured classifier with base-rate, calibration, and mixed-language failure modes;
+* define document-quality labels before choosing thresholds;
+* compare heuristic, learned, and language-model-based quality signals;
+* build an annotation/audit set and interpret annotator disagreement;
+* estimate both the quality of retained material and the amount of good material a filter removes;
+* choose a threshold under explicit constraints rather than by intuition;
+* compare corpus composition before and after processing using source-, document-, and token-level views; and
+* produce a versioned candidate corpus whose decisions can be reconstructed and revised.
+
+## Part I: Recover and evaluate the document {#recover-the-document}
+
+Start with the acquired objects and decide what each training document should contain. This part establishes a common output contract, follows the extraction paths for different formats, and tests whether the resulting documents preserve the intended content.
+
+### Running example: processing the Armenian technical corpus {#running-corpus-example}
+
+For a concrete worked example, consider an acquired corpus intended to strengthen **Eastern Armenian technical and explanatory language** through continued pretraining, while retaining natural Armenian text and preserving the ancestry of translated material. This is one possible corpus objective, not a required language or source mixture for every project.
+
+At the end of acquisition, suppose our bounded pilot contains three source families:
+
+1. **Natural Armenian web/news pages** acquired as archived HTML captures.
+2. **Armenian educational/scientific pages and documents**, including HTML and a small number of PDFs.
+3. **Translated STEM problem–solution records** acquired from a versioned structured dataset.
+
+For the worked examples below, imagine a frozen pilot inventory of 10,000 acquired records:*
+
+| Source family                       | Acquired records | Raw representation              |
+| ----------------------------------- | ---------------: | ------------------------------- |
+| Natural Armenian web/news           |            3,000 | HTML in archived HTTP responses |
+| Armenian educational/scientific web |            5,000 | mostly HTML, some PDFs          |
+| Translated STEM                     |            2,000 | structured JSON/Parquet rows    |
+| **Total**                           |       **10,000** | mixed                           |
+
+<small>*Illustrative counts only. Do not infer a recommended or effective training-data distribution from these numbers.</small>
+
+#### Three source families, three concrete inputs {#source-family-specimens}
+
+These small fixtures show what each source type can contain. The Armenian wording and record IDs below are constructed examples, not quotations from the released Toloka corpus or a claim about its training rows.
+
+<span id="natural-armenian-specimen"></span>**Natural Armenian web/news.** Select the article rather than every visible string:
+
+```html
+<nav>Գլխավոր | Մշակույթ</nav>
+<article>
+  <h1>Քաղաքը առավոտյան</h1>
+  <p>Երևանի փողոցները վաղ առավոտյան խաղաղ են։</p>
+</article>
+<footer>Բաժանորդագրվել | Գովազդ</footer>
+```
+
+```text
+[heading]   Քաղաքը առավոտյան
+[paragraph] Երևանի փողոցները վաղ առավոտյան խաղաղ են։
+```
+
+<span id="educational-armenian-specimen"></span>**Educational/scientific material.** Recover the explanation *and* its equation:
+
+```html
+<main>
+  <h1>Նյուտոնի երկրորդ օրենքը</h1>
+  <p>Հաստատուն զանգվածի դեպքում ուժը տրվում է (1) բանաձևով։</p>
+  <div class="equation" id="eq-1">F = ma</div>
+</main>
+```
+
+```text
+[heading]   Նյուտոնի երկրորդ օրենքը
+[paragraph] Հաստատուն զանգվածի դեպքում ուժը տրվում է (1) բանաձևով։
+[equation: eq-1] F = ma
+reference: paragraph → eq-1
+```
+
+The same logical output could come from a PDF, but its equation and paragraph would have page/bounding-box locators instead of DOM locators.
+
+<span id="translated-stem-specimen"></span>**Translated STEM.** Map explicit fields rather than scraping a rendered page:
+
+```json
+{
+  "source_id": "algebra:fixture-17",
+  "question_en": "Solve 3x + 5 = 20.",
+  "question_hy": "Լուծեք 3x + 5 = 20 հավասարումը։",
+  "solution_hy": "3x = 15, հետևաբար x = 5։"
+}
+```
+
+```text
+[question] Լուծեք 3x + 5 = 20 հավասարումը։
+[answer]   3x = 15, հետևաբար x = 5։
+origin: translated
+parent/family: algebra:fixture-17
+```
+
+The English original remains in the audit record even if it is not included in the Armenian training serialization. A fluent translation with a missing equals sign is still a broken mathematical example.
+
+The three sources should **not** be forced through exactly the same parser. Their processing paths branch and later converge into a common document schema.
+
+```text
+HTML capture ──> HTML parser ──> block extraction ──┐
+                                                   │
+PDF object ────> PDF/OCR path ─> ordered blocks ───┼──> common document schema
+                                                   │
+JSON row ──────> field mapping ─> structured blocks ┘
+```
+
+This is the first important principle of the lecture:
+
+> **Standardize the output contract, not necessarily the extraction algorithm.**
+
+#### Source adapters and shared transformations {#modular-extraction-pipeline}
+
+Imagine that the web fixture, a scanned version of the same physics page, and the STEM row all need to become typed blocks. HTML needs DOM selection; the scan needs OCR and layout recovery; the row needs a field mapping. None of those operations is a substitute for the others.
+
+<div class="lecture-diagram" role="img" aria-label="Three source-specific adapters converge on typed blocks, followed by shared schema checks and block-appropriate normalization.">
+  <div class="lecture-diagram-box">HTML: DOM selection<br>PDF: text layer / OCR<br>JSON: field mapping</div>
+  <div class="lecture-diagram-arrow">→</div>
+  <div class="lecture-diagram-box accent">Typed blocks<br><em>IDs, order, source locators</em></div>
+  <div class="lecture-diagram-arrow">→</div>
+  <div class="lecture-diagram-box">Shared checks<br><em>schema + references</em></div>
+  <div class="lecture-diagram-arrow">→</div>
+  <div class="lecture-diagram-box accent">Eligible normalization<br><em>by type and language</em></div>
+</div>
+
+This is a **modular pipeline**: relatively small stages have named inputs, outputs, versions, and tests. An **integrated extractor** can instead recover layout, select content, and serialize it in one component. Integrated systems may use joint context well; modular systems make intermediate failures and selective reruns easier to isolate. A practical system can combine both: an integrated PDF adapter can still emit the same schema as a DOM adapter.
+
+Share a transformation when its meaning and preservation requirements really are shared. Schema validation and provenance checks usually can be shared. A tested prose Unicode policy may serve several branches. But capitalizing every block would change case-sensitive identifiers; collapsing spaces would corrupt code; rewriting numbers as spoken words could damage equations. Armenian punctuation changes useful for a read-speech task are not a universal rule for Armenian pretraining text. **Unify interfaces and justified common work, not every transformation.**
+
+#### Armenian Toloka: from magazine text to an ASR example {#armenian-toloka-case}
+
+The magazine source is publicly documented as [Yerevan City Magazine Open Texts, SLR153](https://www.openslr.org/153/). The released [SDP recipe](https://github.com/NVIDIA/NeMo-speech-data-processor/tree/27c5e635fa27d41b6aacdaee5cd1fdd2708b3bc6/dataset_configs/armenian/toloka) separates **start**, **validate**, and **get final results**. The code examples here describe that pinned public snapshot, not an assertion that every historical collection run used identical settings.
+
+<span id="toloka-prompt-filtering"></span>The start recipe reads DOCX paragraphs, rewrites selected punctuation, splits sentences, extracts bracketed text into an additional candidate stream, removes duplicates, and retains prompts with **3–20 counted Armenian words**. It excludes candidates matching configured patterns such as digits, Latin/Cyrillic letters, brackets, and arithmetic symbols. This selects easy-to-read prompts; it is not a recipe for preserving every meaningful detail of an article.
+
+The paper describes a validator trained on Common Voice and FLEURS. It treats audiobook alignment and pseudo-labeling of public audio as separate acquisition routes, not as additional Toloka worker checks. The pinned validation config names `nvidia/stt_hy_fastconformer_hybrid_large_pc`; retain the exact checkpoint revision in a reproducible run.
+
+Here is an actual source sentence from the SLR153 archive: Margarit Mirzoyan's “EIF-20․ կարևորի մասին”, in `evnmag78/EIF-20․Yerevan journal-12.07.2022 BY edits.docx`. The source is Yerevan City Magazine/Qaghaki Amsagir LLC, released under [CC BY-SA 4.0](https://www.openslr.org/153/). The processing views below apply the documented punctuation/comparison rules to that excerpt; they do not identify a recorded Toloka submission.
+
+The sentence contains 11 counted Armenian words and passes the start recipe's displayed word-count and character-pattern gates. It is not a real worker submission; the audio filename and duration below illustrate the training-manifest schema.
+
+| Stage | Representation |
+| --- | --- |
+| DOCX source sentence | `Արդյունքում ձևավորվեց առաջին ինովացիոն կենտրոնը և մշակվեց մարզերում նորարարության խթանման մոդելը։` |
+| Toloka reading prompt | `Արդյունքում ձևավորվեց առաջին ինովացիոն կենտրոնը և մշակվեց մարզերում նորարարության խթանման մոդելը:` |
+| Validation comparison view | `արդյունքում ձևավորվեց առաջին ինովացիոն կենտրոնը և մշակվեց մարզերում նորարարության խթանման մոդելը` |
+| Training transcript | `Արդյունքում ձևավորվեց առաջին ինովացիոն կենտրոնը և մշակվեց մարզերում նորարարության խթանման մոդելը:` |
+
+```json
+{
+  "audio_filepath": "16k/example-001.wav",
+  "text": "Արդյունքում ձևավորվեց առաջին ինովացիոն կենտրոնը և մշակվեց մարզերում նորարարության խթանման մոդելը:",
+  "duration": 6.8
+}
+```
+
+The final-results recipe fetches **accepted assignments**, checks that audio can be loaded, converts it to **16 kHz mono WAV**, applies sentence formatting, and emits the audio path, supplied text, and duration. The lowercased punctuation-free strings are a *comparison view*, not the desired stored transcript for every application.
+
+#### Worker restrictions and ASR disagreement are different {#toloka-quality-controls}
+
+The [pool setup code](https://github.com/NVIDIA/NeMo-speech-data-processor/blob/27c5e635fa27d41b6aacdaee5cd1fdd2708b3bc6/sdp/processors/toloka/create_pool.py) defines behavioral restrictions:
+
+| Signal in the released code | Action |
+| --- | --- |
+| At least 2 consecutive skipped assignments | Restrict access to this pool for 1 day |
+| At least 5 fast submissions in a 10-assignment history; “fast” means under 60 seconds | Permanent restriction across the requester's projects |
+
+These are **assignment-level** rules. The pool config groups five recording tasks per assignment; 60 seconds is not a minimum duration for each audio clip. Consecutive skipping and rapid submission are two separate signals. Neither alone establishes the linguistic correctness of a recording.
+
+<span id="toloka-wer-example"></span>For content validation, the [validation recipe](https://github.com/NVIDIA/NeMo-speech-data-processor/blob/27c5e635fa27d41b6aacdaee5cd1fdd2708b3bc6/dataset_configs/armenian/toloka/pipeline_validate_answers.yaml) runs an Armenian ASR model, normalizes both its hypothesis and the supplied prompt, and measures **word error rate (WER)**:
+
+$$
+\mathrm{WER}_{\%}
+=100\,\frac{S+D+I}{N_{\mathrm{ref}}},
+$$
+
+where $S$, $D$, and $I$ count substituted, deleted, and inserted words relative to the $N_{\mathrm{ref}}$ reference words. Lower disagreement is better under this comparison; insertions can make WER exceed 100%.
+
+For example, the reference `երևանի փողոցները վաղ առավոտյան խաղաղ են` has six words. A hypothesis that omits `վաղ` and changes `խաղաղ` to `լուռ` has one deletion and one substitution:
+
+$$
+\mathrm{WER}_{\%}=100(1+1)/6\approx33.3\%.
+$$
+
+<span id="toloka-assignment-acceptance"></span>Inspect the [acceptance processor](https://github.com/NVIDIA/NeMo-speech-data-processor/blob/27c5e635fa27d41b6aacdaee5cd1fdd2708b3bc6/sdp/processors/toloka/accept_if.py), not only its name. The released rule accepts a submitted **assignment** when at least three of its recordings have WER strictly below **75%**. That is a permissive assignment-level gate, not a guarantee that every recording in the accepted assignment meets a strict per-clip quality threshold. The final-results recipe does not add a second per-clip WER gate.
+
+High WER can come from a misreading, noise, an unsuitable prompt, or an ASR model that does not recognize a correct reading. It does not by itself prove fraud. The released [rejection processor](https://github.com/NVIDIA/NeMo-speech-data-processor/blob/27c5e635fa27d41b6aacdaee5cd1fdd2708b3bc6/sdp/processors/toloka/reject_if.py) rejects still-submitted assignments from globally restricted workers; the WER processor does not itself impose a worker ban. Keep worker eligibility, payment/assignment status, and per-record training admission as distinct decisions.
+
+### 1. Define the output contract before choosing an extractor
+
+It is tempting to begin by asking, “Which HTML extraction library should we use?” That is too early. First decide what an acceptable **document** is and what evidence the pipeline must preserve.
+
+A useful abstraction is
+
+$$
+\mathcal D_{\mathrm{cand}}
+=
+F_{\psi}\left(
+L_{\lambda}\left(
+N_{\nu}\left(
+E_{\eta}(\mathcal D_{\mathrm{raw}})
+\right)\right)\right),
+$$
+
+where
+
+* $E_{\eta}$ is extraction under configuration/version $\eta$;
+* $N_{\nu}$ is normalization under policy $\nu$;
+* $L_{\lambda}$ produces language and related evidence under model/configuration $\lambda$; and
+* $F_{\psi}$ applies a quality/admission policy $\psi$.
+
+The formula is intentionally simple. A real implementation should preserve intermediate outputs rather than materializing only the final set.
+
+#### 1.1 The document unit is a modeling decision {#document-unit}
+
+For an article site, one page may correspond naturally to one document. Other source types are less obvious.
+
+A forum can be represented as:
+
+```text
+one document per thread
+```
+
+or
+
+```text
+one document per message + thread-family ID
+```
+
+A book can be represented as a whole book, chapter, or section. A repository can be a repository, file, function, or chunk. A Q&A dataset can be a question, a question–answer pair, or an entire conversation.
+
+<span id="forum-document-example"></span>A Reddit-style example makes the hierarchy visible: a community contains many threads, and one thread contains a post with comments and nested replies. Reddit calls its communities *subreddits*. The self-written example below separates those levels; it is not a screenshot or quotation of a real user conversation.
+
+![Constructed Reddit-style hierarchy: the r/learnpython community contains three threads, and one selected thread expands into its post and nested replies.](lecture-4/reddit-thread-hierarchy.svg)
+
+<small>Community terminology: [Reddit Help](https://support.reddithelp.com/hc/en-us/articles/204533569-What-are-communities-or-subreddits). Conversation and thread IDs are constructed for teaching, not acquired Reddit data or a training-data permission claim.</small>
+
+The subreddit is a collection, not automatically one training document. A thread-level document can retain the post and its comment tree together. A message-level representation instead stores each post or comment separately, with a common `family_id = thread:A` and a `reply_to` field. Those fields preserve relationships even when a short reply becomes its own document.
+
+Choose whether quoted earlier messages are preserved, deduplicated within the thread, or represented by references. In a post-level representation, preserve reply targets as well as the thread-family ID; otherwise a short answer may lose the question it answers. A thread can span multiple paginated views, so “one URL” is not necessarily “one thread.”
+
+These choices affect later stages:
+
+* **filtering:** short messages and long threads have different statistics;
+* **deduplication:** repeated boilerplate can dominate small units;
+* **evaluation contamination:** the correct held-out family may be larger than the document;
+* **packing:** long units may be split across training sequences;
+* **sampling:** document-level selection gives different exposure than family-level selection.
+
+Lecture 3 required us to state the unit before acquisition. Lecture 4 now turns that unit into a concrete representation.
+
+<span id="document-length-and-sequences"></span>**A document is not a fixed-length training sequence.** A complete one-sentence definition and a long scientific chapter can both be legitimate documents. Do not pad stored text with filler, truncate every document to a common size, or merge unrelated documents merely to equalize their lengths.
+
+For a model with a 2,048-token context, a later sequence builder might pack several short documents into one sequence with explicit boundary tokens, and split a 10,000-token document into windows. Keep source IDs, offsets, boundary markers, and the chosen cross-document attention policy. Packing does not have to erase the document contract.
+
+There is no universally correct length distribution. Inspect token-length quantiles, short-text completeness, and coverage of long coherent explanations. Under document-uniform sampling, long documents can contribute many more tokens per draw; under token-uniform exposure, a 10,000-token chapter accounts for far more mass than a 20-token sentence. A filter that rejects every short document changes what the model can learn, even when its output looks more uniform.
+
+#### 1.2 Preserve structure before flattening {#preserve-document-structure}
+
+A minimal extracted record should contain more than one `text` string.
+
+```json
+{
+  "document_id": "doc-001",
+  "parent_object_id": "sha256:...",
+  "source_record_id": "armenian-edu:rev42:article-9182",
+  "extractor": {
+    "name": "html-maintext-v2",
+    "run_id": "extract-run-004"
+  },
+  "blocks": [
+    {
+      "block_id": 0,
+      "type": "heading",
+      "text": "Նյուտոնի երկրորդ օրենքը"
+    },
+    {
+      "block_id": 1,
+      "type": "paragraph",
+      "text": "..."
+    },
+    {
+      "block_id": 2,
+      "type": "equation",
+      "text": "F = ma"
+    }
+  ],
+  "plain_text_version": "flatten-v1",
+  "language_evidence": [],
+  "quality_signals": {},
+  "decision": {
+    "status": "pending",
+    "policy": "quality-policy-v3"
+  }
+}
+```
+
+A later serializer may flatten the blocks into ordinary continuation text. That does not mean extraction should discard block boundaries prematurely.
+
+The distinction is especially important for technical material. A prose-only representation can look fluent while silently losing the equations, code, lists, or table relationships that made the page technically useful.
+
+<span id="formula-reference-example"></span>Suppose the text says, “Using Eq. (1) and the mass in Table 4, compute the force.” The required extracted information is not just that sentence:
+
+```json
+{
+  "document_id": "physics:fixture-1",
+  "blocks": [
+    {"id": "p-7", "type": "paragraph",
+     "text": "Using Eq. (1) and Table 4, compute the force.",
+     "references": ["eq-1", "table-4"]},
+    {"id": "eq-1", "type": "equation", "text": "F = ma"},
+    {"id": "table-4", "type": "table",
+     "columns": ["mass_kg", "acceleration_m_s2"],
+     "rows": [[2, 3]]}
+  ]
+}
+```
+
+| Preserved relation | Broken extraction |
+| --- | --- |
+| `p-7 → eq-1 → F = ma` | “Using Eq. (1)…” with no equation |
+| `p-7 → table-4 → m = 2 kg, a = 3 m/s²` | “See Table 4…” with no cells or units |
+| Resolved content supports `F = 6 N` | Required premises are absent |
+
+An ID is useful only if it resolves to retained content. Scope IDs to a document/version so that `eq-1` on two different pages does not collide. If a reference points into another source document, store that source identity and locator, resolve it where possible, and explicitly mark unresolved references. For training serialization, place the referenced equation/table near its explanation or include another self-contained rendering. A model does not automatically dereference an arbitrary ID in a text file.
+
+Fluent prose with missing premises creates opportunities for unsupported completions; it does not guarantee a hallucination. Structure-preservation checks should therefore detect dangling references, not merely count how many words survived.
+
+#### 1.3 Separate evidence from policy {#evidence-and-policy}
+
+Suppose the document has:
+
+```json
+{
+  "language_score_hye": 0.94,
+  "repeated_line_ratio": 0.02,
+  "alphabetic_char_ratio": 0.81,
+  "quality_model_score": 0.73
+}
+```
+
+Those are **measurements**. The statement
+
+```json
+{"status": "accepted", "policy": "quality-policy-v3"}
+```
+
+is a **decision**.
+
+Do not overwrite the measurements with the decision. A later policy should be able to reinterpret stored evidence without rerunning expensive extraction or scoring when possible.
+
+
+> **`quality=true` is not a useful audit record.**
+> It hides the property being measured, the model or rule that produced the judgment, the threshold, the source/language context, and the policy version.
+
+<span id="toloka-selective-retry"></span>**A rejected recording can still be useful evidence.** Consider an extension to the Toloka design: preserve the original audio and reference text when a per-clip training-admission policy rejects an ASR mismatch. This selective-retry design is illustrative; it is not a claim that the released recipe already implements such a retry ledger.
+
+```json
+{
+  "record_id": "speech:fixture-42",
+  "audio_object": "sha256:...",
+  "reference_text": "Երևանի փողոցները վաղ առավոտյան խաղաղ են:",
+  "evidence": {
+    "asr_model": "armenian-asr:checkpoint-A",
+    "comparison_normalizer": "hy-comparison-v1",
+    "hypothesis": "երևանի այգին երեկ երեկոյան լուռ էր",
+    "wer_percent": 83.3
+  },
+  "decision": {
+    "status": "rejected",
+    "reason": "asr_reference_mismatch",
+    "policy": "per-clip-admission-v1"
+  }
+}
+```
+
+When checkpoint B becomes available, select records whose exclusion depends on the changed ASR evidence. Reuse their audio and reference text, generate new hypotheses, recompute WER under the same comparison normalizer, and append a new evidence/decision version. Records rejected for missing permission or irrecoverable audio corruption do not become eligible merely because the ASR model improved.
+
+<div class="lecture-diagram" role="img" aria-label="A rejection ledger selects only ASR-dependent rejected records, reruns the new ASR model, recomputes comparison evidence, and applies the admission policy again.">
+  <div class="lecture-diagram-box">Rejection ledger<br><em>typed reasons</em></div>
+  <div class="lecture-diagram-arrow">→</div>
+  <div class="lecture-diagram-box accent">ASR-dependent subset<br><em>audio retained</em></div>
+  <div class="lecture-diagram-arrow">→</div>
+  <div class="lecture-diagram-box">New checkpoint<br><em>new hypothesis + WER</em></div>
+  <div class="lecture-diagram-arrow">→</div>
+  <div class="lecture-diagram-box accent">Revised admission<br><em>old evidence retained</em></div>
+</div>
+
+Changing only the threshold can reuse the old scores; changing the recognizer requires new inference only for affected records. A successful retry can show that the old recognizer was wrong, rather than that the speaker's recording became better. Audit a sample of both recovered and still-rejected clips to measure that distinction.
+
+#### Stop and reason {#extraction-length-question}
+
+You extract 7,500 characters from one page and 5,000 from another.
+
+**Question:** Is the first extraction better?
+
+No. It retained more text. That extra text may be valuable paragraphs—or navigation, comments, footer text, duplicated headings, or a cookie notice. Extraction quality is not the same thing as extracted length.
+
+### 2. Web extraction is structural inference {#web-extraction-path}
+
+For a raw archived web capture, the path to text is approximately:
+
+```text
+compressed WARC bytes
+        ↓
+WARC record
+        ↓
+HTTP response
+        ↓
+body bytes + headers
+        ↓
+character decoding
+        ↓
+HTML parse tree
+        ↓
+content-region selection
+        ↓
+ordered blocks
+        ↓
+plain-text representation
+```
+
+Common Crawl's distinction among WARC, WAT, and WET makes one boundary visible: WARC retains raw crawl responses, while WET stores extracted plaintext. Starting from WET therefore means inheriting an upstream extraction decision rather than performing extraction from the original HTML response yourself.
+
+Every arrow above can fail differently.
+
+| Stage               | Example failure                                         |
+| ------------------- | ------------------------------------------------------- |
+| WARC parsing        | locator points to unexpected record type                |
+| HTTP interpretation | response is a redirect or error page                    |
+| body decoding       | wrong character encoding creates replacement characters |
+| HTML parsing        | malformed markup produces unexpected tree recovery      |
+| content selection   | sidebar retained, article dropped                       |
+| block ordering      | columns or nested elements appear in wrong order        |
+| flattening          | headings, equations, and code lose boundaries           |
+
+Typed failure states are preferable to disappearing rows.
+
+For example:
+
+```text
+unsupported_mime
+http_error_record
+body_decode_error
+empty_dom
+empty_main_content
+structural_validation_failed
+extractor_exception
+```
+
+A failed extraction is part of the corpus-processing evidence.
+
+#### 2.1 Why regex tag deletion is not main-content extraction {#main-content-extraction}
+
+Consider this simplified page:
+
+```html
+<body>
+  <nav>
+    Home | Physics | Mathematics | Contact
+  </nav>
+
+  <main>
+    <h1>Newton's second law</h1>
+    <p>The net force on a body equals...</p>
+    <p>For constant mass, F = ma.</p>
+  </main>
+
+  <aside>
+    Most read: 10 exam tips
+  </aside>
+
+  <footer>
+    Copyright ... Privacy ... Newsletter ...
+  </footer>
+</body>
+```
+
+Removing tags produces something like:
+
+```text
+Home Physics Mathematics Contact
+Newton's second law
+The net force on a body equals...
+For constant mass, F = ma.
+Most read: 10 exam tips
+Copyright Privacy Newsletter
+```
+
+The HTML markup disappeared, but the non-content text did not.
+
+<span id="good-html-extraction"></span>A good extraction for this fixture selects the `<main>` region, preserves its heading and two paragraphs in order, and records where they came from:
+
+```text
+document: newton:fixture-1
+heading    /body/main/h1   Newton's second law
+paragraph  /body/main/p[1] The net force on a body equals...
+paragraph  /body/main/p[2] For constant mass, F = ma.
+excluded regions: nav, aside, footer
+```
+
+The training view contains only:
+
+```text
+Newton's second law
+
+The net force on a body equals...
+
+For constant mass, F = ma.
+```
+
+This is the expected output for the *given fixture*, not a universal instruction to remove every aside or comment. On a forum, replies can be the main content; on an article, an aside can contain a required definition.
+
+A main-content extractor is solving a different problem:
+
+> Which regions of the parsed page correspond to the document we intend to train on?
+
+Signals commonly used by extraction systems include:
+
+* text length within a node or subtree;
+* link density;
+* paragraph density;
+* tag type and nesting;
+* repeated layout elements across pages;
+* local text-to-markup ratios; and
+* learned or heuristic patterns associated with article bodies.
+
+No signal is universally correct. Poetry, documentation, forum threads, reference pages, and code tutorials do not all look like newspaper articles.
+
+FineWeb is one published example of a web pretraining pipeline that extracts main text before language and quality filtering; its released documentation lists Trafilatura as the extractor in its pipeline. The important lesson is not “always use Trafilatura.” It is that extraction is an explicit, versioned stage whose downstream effect can be measured.
+
+#### 2.2 A minimal DOM baseline {#dom-baseline}
+
+<span id="html-baseline-input"></span>Before running the extractor, identify the intended document in this constructed page. The heading, paragraph, and equation belong; the navigation and footer do not.
+
+```html
+<body>
+  <nav>Home | Physics | Contact</nav>
+  <main>
+    <h1>Newton's second law</h1>
+    <p>For constant mass, force equals mass times acceleration.</p>
+    <div class="equation">F = ma</div>
+  </main>
+  <footer>Privacy | Newsletter</footer>
+</body>
+```
+
+<span id="dom-baseline-code"></span>A simple baseline makes the selection rule inspectable. Predict which nodes it will emit before running it:
+
+```python
+from bs4 import BeautifulSoup
+
+DROP = {"script", "style", "noscript", "nav", "footer", "form"}
+
+
+def extract_blocks(html: str):
+    soup = BeautifulSoup(html, "html.parser")
+
+    for tag in soup.find_all(DROP):
+        tag.decompose()
+
+    blocks = []
+    for node in soup.find_all(["h1", "h2", "h3", "p", "pre", "li"]):
+        text = " ".join(node.stripped_strings)
+        if not text:
+            continue
+        kind = {
+            "h1": "heading",
+            "h2": "heading",
+            "h3": "heading",
+            "p": "paragraph",
+            "pre": "code",
+            "li": "list_item",
+        }[node.name]
+        blocks.append({"type": kind, "text": text})
+
+    return blocks
+```
+
+<span id="dom-failure-fixtures"></span>For the page above, the required document is:
+
+```text
+[heading]   Newton's second law
+[paragraph] For constant mass, force equals mass times acceleration.
+[equation]  F = ma
+```
+
+The baseline actually returns only:
+
+```text
+[heading]   Newton's second law
+[paragraph] For constant mass, force equals mass times acceleration.
+```
+
+It successfully excludes `nav` and `footer` but never selects the equation's `div`. The prose remains readable while its formula disappears.
+
+Trace the same code on these additional inputs before deciding how to improve it:
+
+| Input fixture | Actual baseline output | Why it fails |
+| --- | --- | --- |
+| `<div class="article">Useful explanation.</div>` | no blocks | The selected tag list excludes `div`. |
+| `<li><p>Keep this step.</p></li>` | `list_item: Keep this step.` **and** `paragraph: Keep this step.` | Both ancestor and descendant are emitted. |
+| `<pre>if ready:\n    run()</pre>` | `code: if ready:\n    run()` | One text node retains its internal whitespace. This case alone does **not** expose the bug. |
+| `<pre><code>if ready:\n    <span>run()</span></code></pre>` | `code: if ready: run()` | `stripped_strings` strips each text node, then a space joins them; highlighted code loses indentation. |
+| `<aside><p>Most read: 10 exam tips</p></aside>` | an unwanted paragraph | `aside` is not in `DROP`; the original fixture hides the problem by using unwrapped sidebar text. |
+
+The repair depends on the document contract. Choose a main-content root before emitting blocks; avoid double-counting nested containers; preserve raw whitespace in code; and test legitimate document-local navigation separately from site menus. Simply adding more tag names can increase recall while also retaining more boilerplate.
+
+#### 2.3 Keep the source path back to the raw object
+
+For each extracted block, preserve enough information to return to the original object. Depending on format, that can be DOM path, character span, page number, or another locator.
+
+For example:
+
+```json
+{
+  "block_id": 17,
+  "type": "paragraph",
+  "text": "...",
+  "source_locator": {
+    "kind": "dom_path",
+    "value": "/html/body/main/article/p[4]"
+  }
+}
+```
+
+A source locator does not prove the extracted text is correct. It makes disagreements inspectable.
+
+### 3. Extraction for PDFs, code, and structured datasets
+
+A good pipeline does not pretend HTML is the only document format.
+
+#### 3.1 PDFs: characters can be correct while the document is wrong {#pdf-reading-order}
+
+PDF stores a page description, not necessarily a logical reading sequence. A text layer may produce:
+
+```text
+column 1 line 1
+column 2 line 1
+column 1 line 2
+column 2 line 2
+```
+
+when the intended order is:
+
+```text
+column 1 line 1
+column 1 line 2
+...
+column 2 line 1
+column 2 line 2
+```
+
+OCR introduces a different family of errors:
+
+```text
+0 ↔ O
+1 ↔ l
+- ↔ −
+մ ↔ visually similar glyphs
+```
+
+For scientific text, losing a minus sign, superscript, equation boundary, or table alignment can be more damaging than losing several ordinary prose words.
+
+Therefore evaluate PDFs on **layout-sensitive fixtures**, not only on raw character overlap.
+
+Useful recorded fields include:
+
+```text
+text_layer_present
+ocr_used
+ocr_model_version
+page_count
+reading_order_method
+math_blocks_detected
+pages_failed
+```
+
+<span id="pdf-extraction-recipe"></span>**A concrete text-layer-first path.** Start by rendering the page for inspection and extracting positioned text with [PyMuPDF](https://pymupdf.readthedocs.io/en/latest/recipes-text.html). Keep coordinates rather than immediately joining strings. Its dictionary representation exposes lines and spans; this matters because one automatically grouped block can include text from both columns. The example below orders text lines for a known two-column article fixture whose body is between $y=80$ and $y=720$, with a gutter around $x=300$ PDF points. Those boundaries must be determined from the inspected page; they are not portable constants.
+
+```python
+import pymupdf
+
+def extract_two_column_body(page, body, gutter_left, gutter_right):
+    records = []
+    for block in page.get_text("dict")["blocks"]:
+        if block["type"] != 0:
+            continue
+        for index, line in enumerate(block["lines"]):
+            rect = pymupdf.Rect(line["bbox"])
+            if not rect.intersects(body):
+                continue
+            if not body.contains(rect) or line["dir"] != (1.0, 0.0):
+                raise ValueError("Boundary/rotation: layout review needed")
+            text = "".join(span["text"] for span in line["spans"])
+            if text.strip():
+                records.append({
+                    "block_id": f"p{page.number + 1}:b{block['number']}:l{index}",
+                    "page": page.number + 1, "bbox": list(rect),
+                    "type": "text_line", "text": text
+                })
+    left = [r for r in records if r["bbox"][2] <= gutter_left]
+    right = [r for r in records if r["bbox"][0] >= gutter_right]
+    if len(left) + len(right) != len(records):
+        raise ValueError("Spanning/ambiguous line: layout review needed")
+    position = lambda r: (r["bbox"][1], r["bbox"][0])
+    return sorted(left, key=position) + sorted(right, key=position)
+
+with pymupdf.open("article.pdf") as pdf:
+    page = pdf[0]
+    body = pymupdf.Rect(40, 80, 560, 720)
+    records = extract_two_column_body(page, body, 290, 310)
+```
+
+<span id="pdf-column-order-example"></span>For an inspected page with these four blocks:
+
+| Position | Text | Output order |
+| --- | --- | ---: |
+| left, $y=100$ | `Force depends on mass.` | 1 |
+| right, $y=100$ | `Example: m = 2 kg.` | 3 |
+| left, $y=140$ | `For constant mass, F = ma.` | 2 |
+| right, $y=140$ | `With a = 3 m/s², F = 6 N.` | 4 |
+
+the result reads the whole left column, then the right. Top-to-bottom sorting alone could alternate columns. `sort=True` is a useful convenience, not a guarantee of correct order for arbitrary layouts. A spanning heading, figure, table, footnote, or column change needs an explicit layout plan; the function raises on ambiguous body lines instead of silently pretending it solved them. Extract page titles and other required regions separately and insert them in that plan. These are positioned text-line records, not yet semantic paragraphs; group them only after inspecting line spacing, indentation, and column structure.
+
+<span id="pdf-ocr-fallback"></span>**When the page is a scan.** No usable body text may mean OCR is needed, not that the document is empty. PyMuPDF's [OCR path](https://pymupdf.readthedocs.io/en/latest/recipes-ocr.html) uses a separately installed Tesseract and language data; Armenian requires the `hye` data. An empty-text check is only a first gate: mixed scans can have a text-layer page number but an image-only body.
+
+```python
+# After determining that this page needs OCR:
+tp = page.get_textpage_ocr(language="hye+eng", dpi=300, full=True)
+ocr_blocks = page.get_text("blocks", textpage=tp)
+```
+
+Cache OCR output with its engine/language-data versions and configuration, then apply the same explicit reading-order review. OCR produces recognized text, not reliable equation semantics or table cell relationships. For a born-digital table, inspect `page.find_tables()` and preserve rows, columns, headers, and units; for image-only tables or formulas, use an appropriate layout/math recognition path and audit it separately. Do not present a coordinate-sorted prose string as structure-preserving scientific extraction.
+
+<span id="ocr-error-specimens"></span>**A small symbol error can change the scientific statement.** Compare these deliberately corrupted strings with the intended page:
+
+| Printed page | Possible OCR corruption | What changed? |
+| --- | --- | --- |
+| `F = ma` | `F = rna` | One `m` became two letters, `rn`. |
+| `m = 0.5 kg` | `m = O.5 kg` | The digit zero became the letter O. |
+| `a = −3 m/s²` | `a = 3 m/s2` | The minus sign disappeared and the superscript became a baseline digit. |
+| `F = −1.5 N` | `F = 1.5 N` | The force changed sign. |
+
+This is a constructed error fixture, not measured output from a particular OCR engine. The reference preserves the sign, value, and unit structure; a raw character score alone cannot say whether those relationships survived.
+
+Keep the raw PDF digest, extractor version, page and bounding box for each block, chosen layout policy, OCR evidence, unresolved regions, and validation results. Compare the rendered page against the reconstructed document on fixtures with columns, superscripts, minus signs, tables, and cross-references before accepting a source at scale.
+
+#### 3.2 Code and repositories {#code-and-repositories}
+
+For code, whitespace can be syntax. Comments and strings may be natural language. Generated files and vendored dependencies can dominate a repository.
+
+A code extractor should therefore preserve at least:
+
+* repository family;
+* commit;
+* file path;
+* detected language;
+* file bytes/text;
+* generated/vendor decision evidence; and
+* boundaries between files.
+
+Applying a prose normalizer that collapses repeated spaces can silently corrupt Python.
+
+#### 3.3 Structured released datasets
+
+Our translated STEM component arrives as structured rows rather than raw HTML. There is no reason to fake an HTML extraction step.
+
+A mapping may be:
+
+```python
+
+def map_stem_row(row):
+    return {
+        "blocks": [
+            {"type": "question", "text": row["question_hy"]},
+            {"type": "answer", "text": row["solution_hy"]},
+        ],
+        "parent_ids": [row["source_id"]],
+        "origin": "translated",
+    }
+```
+
+The transformation is still versioned. Field selection is still a processing decision. If the source row contains an English original, answer key, verification result, or family ID, discarding them can make later audits impossible even if the training serializer eventually uses only Armenian text.
+
+#### Stop and reason
+
+A PDF extractor achieves 99% character accuracy but consistently places the second column before the end of the first.
+
+**Question:** Is 99% character accuracy enough to call the extractor good?
+
+No. A language model consumes order. High character accuracy can coexist with catastrophic sequence errors. The evaluation unit must match the structure we care about preserving.
+
+### 4. Evaluate extraction against an explicit reference
+
+Visual inspection is necessary, but it is not a measurement protocol.
+
+Create a reference sample before comparing extractors. For each sampled object, define which content should survive and in which order under the document policy.
+
+#### 4.1 Write extraction guidelines first {#extraction-reference-guidelines}
+
+Annotators need answers to questions such as:
+
+* Are titles retained?
+* Are section headings retained?
+* Are figure captions retained?
+* Are references retained?
+* Are comments part of the document?
+* Are inline formulas retained?
+* Are tables in scope?
+* What happens to quotations?
+* Are related-article links excluded?
+* Is author/date metadata part of training text or only metadata?
+
+Without guidelines, disagreement between annotators can masquerade as extractor error.
+
+<span id="parenthetical-reading-guidelines"></span>**A parenthesis case from the Armenian Toloka collection.** Some reading prompts contained text in parentheses, but the instructions did not explicitly say whether that text should be spoken. Some readers included it; others skipped it. The same visible prompt therefore produced two interpretations of the task.
+
+Consider this constructed sentence, illustrating the ambiguity rather than reproducing a recorded worker submission:
+
+```text
+Երևանում (Հայաստանի մայրաքաղաքում) բացվեց նոր գիտական կենտրոն։
+```
+
+It means “In Yerevan (the capital of Armenia), a new scientific center opened.” Here are the two possible readings:
+
+| Interpretation | Spoken words |
+| --- | --- |
+| Read the parenthetical content | `Երևանում Հայաստանի մայրաքաղաքում բացվեց նոր գիտական կենտրոն` |
+| Treat it as an unspoken aside | `Երևանում բացվեց նոր գիտական կենտրոն` |
+
+Suppose the recognizer transcribes the second reading perfectly, but the reference contains all seven words. With punctuation ignored, the two parenthetical words become two deletions:
+
+$$
+\mathrm{WER}_{\%}=100\,\frac{2}{7}\approx28.6\%.
+$$
+
+That number measures disagreement with the full-reading reference. It does **not** by itself establish poor pronunciation, recognizer failure, or careless work: the task left the reading policy ambiguous. If the intended policy had been to omit the aside, the perfectly transcribed five-word reading would have zero WER against the corresponding five-word reference.
+
+Before collecting new recordings, make the rule operational: “Read every word, including the words inside parentheses. Do not say the bracket symbols.” Alternatively, prepare a prompt without the parenthetical phrase **before collection** and use that exact version as the transcript. In either design, the displayed prompt, instructions, and expected speech must agree.
+
+For existing ambiguous recordings, retain the original prompt, audio, instruction version, and review reason. Resolve the intended spoken transcript through review rather than retroactively treating every omission as worker misconduct. A better ASR model can recover what was said; it cannot determine what an unspecified instruction was supposed to require.
+
+This reading-policy example is distinct from the pinned preparation recipe described earlier: that recipe extracts bracketed contents into additional candidates and excludes candidates still containing brackets. Input preparation can avoid ambiguity, but it is not a substitute for explicit annotation guidelines.
+
+#### 4.2 Block-level precision and recall {#extraction-precision-and-recall}
+
+Suppose the reference document contains a set of required blocks. After aligning system blocks to reference blocks, define
+
+$$
+P_E
+=
+\frac{\text{correctly retained blocks}}
+     {\text{all retained blocks}},
+\qquad
+R_E
+=
+\frac{\text{correctly retained blocks}}
+     {\text{all required blocks}}.
+$$
+
+The alignment rule must be documented. Exact string equality is often too strict because whitespace normalization can change strings without changing content.
+
+A token-occurrence version can similarly measure retained content, but do not reduce the document to a **set of word types**. A system that duplicates one paragraph and deletes another can preserve nearly the same vocabulary set.
+
+<span id="extraction-reference-specimens"></span>**What do good and bad outputs actually look like?** Use a small physics page with four required blocks. Its navigation menu is outside the reference:
+
+```text
+A [heading]   Newton's second law
+B [paragraph] For constant mass, force equals mass times acceleration.
+C [equation]  F = ma
+D [code]      force = mass * acceleration
+```
+
+A faithful extraction returns A, B, C, and D once, with their content and boundaries preserved. All four returned blocks are required, and all four required blocks survive: `precision = 4/4 = 1` and `recall = 4/4 = 1`.
+
+Now compare this flawed output:
+
+```text
+N [navigation] Home | Physics | Contact
+A [heading]    Newton's second law
+B [paragraph]  For constant mass, force equals mass times acceleration.
+D [code]       force = mass * acceleration
+```
+
+It returns four blocks, but only A, B, and D match the reference. The menu is an unwanted insertion, and the equation is missing. Thus `precision = 3/4 = 0.75` and `recall = 3/4 = 0.75`. A clean-looking output containing only A, B, and D would improve precision to `3/3 = 1`, but recall would still be `3/4 = 0.75`: removing junk does not restore the missing equation.
+
+| Output | Correct / returned | Correct / required | Interpretation |
+| --- | ---: | ---: | --- |
+| A, B, C, D | 4/4 | 4/4 | Faithful selection |
+| N, A, B, D | 3/4 | 3/4 | Junk included; equation lost |
+| A, B, D | 3/3 | 3/4 | Clean but incomplete |
+
+The IDs are labels for **aligned block occurrences**, not strings that the extractor must literally print. Match each reference occurrence at most once; a second copy of B is an extra returned block, not credit for recovering C. These scores evaluate selection under the stated policy. A separate order check is still needed even when precision and recall are both one.
+
+#### 4.3 Worked example {#extractor-comparison-example}
+
+Reference document:
+
+```text
+1 heading
+8 paragraphs
+1 equation block
+1 code block
+```
+
+Extractor A returns:
+
+```text
+1 heading
+8 correct paragraphs
+1 navigation block
+```
+
+Extractor B returns:
+
+```text
+1 heading
+7 correct paragraphs
+1 equation block
+1 code block
+```
+
+Under simple block matching:
+
+| Extractor | Correct retained | Total retained | Required total | Precision | Recall |
+| --------- | ---------------: | -------------: | -------------: | --------: | -----: |
+| A         |                9 |             10 |             11 |      0.90 |  0.818 |
+| B         |               10 |             10 |             11 |      1.00 |  0.909 |
+
+But even this table hides a domain-specific fact: **A lost all mathematical/code structure**, while B lost one prose paragraph.
+
+That is why the evaluation should also report preservation by block type.
+
+| Block type | A recall | B recall |
+| ---------- | -------: | -------: |
+| Headings   |     1.00 |     1.00 |
+| Paragraphs |     1.00 |    0.875 |
+| Equations  |     0.00 |     1.00 |
+| Code       |     0.00 |     1.00 |
+
+For our technical-language objective, the second table may matter more than the first.
+
+#### 4.4 Ordering errors {#extraction-order-errors}
+
+Let the reference sequence of aligned block IDs be
+
+$$
+R=(r_1,\ldots,r_m)
+$$
+
+and the extracted sequence be $S$.
+
+One simple diagnostic is normalized longest-common-subsequence coverage:
+
+$$
+\mathrm{LCSRecall}
+=
+\frac{|\operatorname{LCS}(R,S)|}{|R|}.
+$$
+
+A **subsequence** is a sequence obtained by skipping zero or more elements without changing the order of those that remain. It need not be contiguous. A *common* subsequence appears in the same order in both sequences; the longest common subsequence (LCS) retains as many such aligned block occurrences as possible.
+
+<span id="lcs-order-example"></span>Imagine four blocks: A is the heading, B introduces the setup, C gives the equation, and D reports the result. The extractor keeps every block but swaps B and C:
+
+<figure>
+  <img src="lecture-4/block-order-lcs.svg" alt="Reference order A, B, C, D and extracted order A, C, B, D. Highlighted matches A, B, D form a longest common subsequence of length three; C is skipped in both rows." style="display:block;width:100%;height:auto">
+  <figcaption>One longest common subsequence is A → B → D. All four blocks survive, but only three can be matched while preserving both orders.</figcaption>
+</figure>
+
+Read the highlighted chain left to right in each row. We can match A, then B, then D. We cannot also include C: the reference puts B before C, while the extracted document puts C before B. A → C → D is another equally long choice; the longest subsequence need not be unique.
+
+$$
+\mathrm{LCSRecall}=\frac{3}{4}=0.75.
+$$
+
+Block-level precision and recall are both one here because nothing is missing or added. LCS coverage exposes the ordering defect those selection scores miss. It does not mean “25% of characters are wrong”; it means a longest order-preserving match covers three of the four reference blocks.
+
+This is not a universal extraction metric. The same score can arise from different failures:
+
+| Extracted sequence | LCS length / reference length | What happened |
+| --- | ---: | --- |
+| A, B, C, D | 4/4 = 1.00 | Correct order |
+| A, C, B, D | 3/4 = 0.75 | Middle blocks swapped |
+| A, B, D | 3/4 = 0.75 | Equation block deleted |
+| A, N, B, C, D | 4/4 = 1.00 | Unwanted navigation inserted |
+
+LCS coverage alone cannot distinguish the swap from the deletion, and an insertion need not reduce it. Report precision, missing blocks, and ordering diagnostics together; inspect the aligned sequences when the cause matters. A more detailed evaluation can separately report insertion, deletion, and reordering errors.
+
+#### 4.5 Paired extractor comparisons {#paired-extractor-comparisons}
+
+If two extractors process the same 200 objects, compare them **on the same objects**.
+
+Do not only report:
+
+```text
+Extractor A mean score = 0.91
+Extractor B mean score = 0.93
+```
+
+Inspect the disagreement set:
+
+```text
+A succeeds, B fails
+B succeeds, A fails
+both fail differently
+```
+
+That set often reveals domain-specific failure modes faster than the average.
+
+For example, B may outperform on article pages but fail on documentation pages because it mistakes short code-heavy sections for boilerplate.
+
+#### Stop and reason
+
+Two extractors have the same average recall. Extractor A fails mainly on long tables. Extractor B fails mainly on short Armenian-language pages.
+
+**Question:** Are they equivalent for our project?
+
+No. Average performance does not encode which strata bear the errors. The source, language, register, and document-type breakdown is part of the evaluation.
+
+---
+
+## Part II: Normalize text and identify language {#normalize-and-identify-language}
+
+Once extraction has recovered the content and its structure, the next decisions concern text representation and language. Normalization and language identification need explicit policies and measured error rates, especially for multilingual and mixed-language material.
+
+### 5. Normalization is not “cleaning until the text looks nice”
+
+Once content is extracted, we often normalize its representation. This stage is powerful because small transformations can affect matching, language identification, deduplication, tokenization, and later model exposure.
+
+The safest mindset is:
+
+> **Every normalization is a transformation with a version and a preservation contract.**
+
+#### 5.1 Unicode normalization
+
+Unicode can encode canonically equivalent text using different code-point sequences. The Unicode Standard defines NFC, NFD, NFKC, and NFKD normalization forms.
+
+For general text, NFC is often a conservative choice because it preserves canonical equivalence while composing where possible. Compatibility forms such as NFKC intentionally collapse additional compatibility distinctions and therefore can lose information that may matter to an application.
+
+A minimal prose normalizer might be:
+
+```python
+import unicodedata
+
+
+def normalize_prose(text: str) -> str:
+    text = unicodedata.normalize("NFC", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return "\n".join(line.rstrip() for line in text.split("\n"))
+```
+
+Notice what it does **not** do:
+
+* lowercase everything;
+* remove non-ASCII characters;
+* replace all punctuation with ASCII;
+* collapse all whitespace globally;
+* strip digits;
+* remove equations;
+* delete short lines.
+
+Those are separate policy decisions.
+
+#### 5.2 Canonical versus compatibility normalization {#normalization-forms}
+
+A useful conceptual distinction is:
+
+```text
+NFC / NFD   -> canonical equivalence
+NFKC / NFKD -> compatibility equivalence
+```
+
+<span id="normalization-policy-examples"></span>**Compare the actual transformations.** Unicode NFC and spelling out a number for speech are different operations:
+
+| Policy | Before | After | Preservation requirement |
+| --- | --- | --- | --- |
+| Unicode NFC | `cafe\u0301`: final letter is `U+0065 U+0301` | `café`: final letter is `U+00E9` | Same word, canonically equivalent encoding. |
+| Armenian speech text | `12` | `տասներկու` | Same quantity, now written as spoken words. |
+| Armenian speech text with a unit | `12 կգ` | `տասներկու կիլոգրամ` | Quantity and unit retained under a stated reading policy. |
+
+In the first row, `\u0301` denotes the combining acute accent, not six literal characters in the input. [Unicode normalization forms](https://unicode.org/reports/tr15/) are formally defined. A project's broader text rewriting is task-specific: number wording and unit expansion need explicit rules for context, and should not be applied indiscriminately to equations, identifiers, dates, or code.
+
+Compatibility normalization may intentionally map characters that are visually or functionally related into the same representation. That can be useful for identifiers or search keys, but it is not automatically appropriate for training text.
+
+For example, mathematical typography, full-width punctuation, special symbols, or compatibility characters can carry formatting information. FineWeb2's public changelog is a useful real-world reminder: its maintainers revised normalization-related processing after finding that some generic fixes changed punctuation and formatting in undesirable ways for particular languages. The lesson is to validate normalization **per content type and language**, not to assume that more normalization is always better.
+
+#### 5.3 Idempotence {#normalization-idempotence}
+
+If a normalizer is intended to be idempotent, test
+
+$$
+N(N(x))=N(x).
+$$
+
+A transformation that changes its output every time it is run is difficult to reason about in a rebuild.
+
+<span id="idempotence-pass-example"></span>For a prose-only example, compare two functions that reduce ordinary spaces:
+
+```python
+import re
+
+
+def collapse_runs(text):
+    return re.sub(r" +", " ", text)
+
+
+def replace_pairs_once(text):
+    return text.replace("  ", " ")
+```
+
+Each dot below stands for one ordinary space:
+
+| Function | Input | First pass | Second pass |
+| --- | --- | --- | --- |
+| `collapse_runs` | `a····b` | `a·b` | `a·b` |
+| `replace_pairs_once` | `a····b` | `a··b` | `a·b` |
+
+The first function reaches a stable representation after one pass. The second can change the result again because each call replaces nonoverlapping pairs only once. Stability makes repeated builds reproducible; it does not establish whether collapsing spaces was appropriate for the block. Neither policy should be applied blindly to Python indentation.
+
+<span id="idempotence-not-correctness"></span>But idempotence is not correctness.
+
+The function
+
+```python
+
+def normalize(text):
+    return ""
+```
+
+is perfectly idempotent and completely useless.
+
+So test both:
+
+1. algebraic properties such as idempotence; and
+2. preservation fixtures containing multilingual prose, code, equations, punctuation, numbers, and known edge cases.
+
+#### 5.4 Different block types need different policies
+
+Prose and code should not necessarily share a whitespace policy.
+
+```python
+
+def normalize_block(block):
+    if block["type"] == "code":
+        return normalize_code(block["text"])
+    return normalize_prose(block["text"])
+```
+
+Likewise, a table or equation may need a representation-specific policy.
+
+A single global regex such as
+
+```python
+re.sub(r"\s+", " ", text)
+```
+
+can destroy indentation and line structure.
+
+#### 5.5 Preserve versions and offsets
+
+If normalization changes the string, offsets into the raw extraction can change.
+
+An annotation such as
+
+```json
+{"start": 170, "end": 194, "label": "equation"}
+```
+
+only makes sense relative to a named text version.
+
+Store either:
+
+```text
+text_version = extracted-v1
+```
+
+or
+
+```text
+text_version = normalized-v2
+```
+
+and preserve mappings when downstream audit requirements need them.
+
+#### Stop and reason
+
+Your pipeline converts every dash-like Unicode character to ASCII `-` because this reduces vocabulary size in an exploratory tokenizer.
+
+**Question:** Does that justify rewriting the stored corpus this way?
+
+No. A tokenizer convenience does not automatically justify destructive corpus normalization. You can preserve original/normalized text and make a tokenizer-specific decision later.
+
+### 6. Language identification is a classifier, not metadata truth
+
+Our corpus objective distinguishes Armenian, English, translations, and potentially mixed-language material. Language identification (LID) is therefore part of processing—but its output is evidence, not ground truth.
+
+Suppose a classifier produces scores
+
+$$
+s_1(x),\ldots,s_K(x),
+$$
+
+and predicts
+
+$$
+\widehat l(x)=\arg\max_l s_l(x).
+$$
+
+The largest score is not automatically a calibrated posterior probability.
+
+#### 6.1 Keep label sources separate {#language-evidence-sources}
+
+A document can have several language signals:
+
+```json
+{
+  "publisher_language": "hy",
+  "html_lang_attribute": "hy",
+  "lid_model": "glotlid-revision-X",
+  "lid_prediction": "hye_Armn",
+  "lid_score": 0.94,
+  "human_audit_label": null
+}
+```
+
+These signals can disagree.
+
+Here, `hy` is a source language declaration, while `hye_Armn` is a model label pairing Armenian with Armenian script. The model revision and score are illustrative. A project can use a different audit vocabulary:
+
+```text
+mostly_hy
+mostly_en
+mixed_hy_en
+unknown
+insufficient_text
+```
+
+These project labels are defined by the annotation rubric, not inherited automatically from the LID model. Keep `null` for an audit not yet performed; use `unknown` when inspection cannot resolve the language, and `insufficient_text` when the available text cannot support a judgment. This distinction prevents “no human evidence” from becoming a human language judgment.
+
+Do not overwrite publisher metadata with a model prediction. Do not treat a top-level domain as a language label. Do not treat script detection as language identification.
+
+#### 6.2 Script is not language
+
+Armenian script strongly constrains possibilities, but the general principle remains important:
+
+```text
+script ≠ language
+```
+
+Many languages share scripts. Some languages use multiple scripts. A page can also mix Armenian prose, Latin-script references, mathematical notation, and code.
+
+FineWeb2 groups releases by language–script pairs rather than a single generic language label, illustrating why script information can be useful without replacing language identification.
+
+#### 6.3 Low-resource and closely related languages are hard
+
+GlotLID was designed specifically to broaden language identification coverage to many low-resource languages. Its published analysis highlights failure modes such as noisy metadata, leakage from high-resource languages, closely related languages, and variety/macrolanguage boundaries.
+
+This matters because the errors we care about are not necessarily symmetric. If Armenian is rare in the raw candidate pool, even a modest false-positive rate from a much larger neighboring class can dominate the selected set.
+
+#### 6.4 Worked example: the base-rate problem {#language-base-rate-example}
+
+Suppose only 0.1% of a candidate population is truly in the target language.
+
+For a constructed population of **100,000 documents**, that means **100 target-language** documents and **99,900 other-language** documents. Apply a 90% true-positive rate and a 1% false-positive rate to their respective groups:
+
+| True group | Flagged as target | Not flagged |
+| --- | ---: | ---: |
+| 100 target-language documents | 90 correct flags | 10 missed |
+| 99,900 other-language documents | 999 wrong flags | 98,901 correct rejections |
+
+The selected set contains **90 + 999 = 1,089 documents**. Its precision is **90 / 1,089 ≈ 8.3%**: fewer than one in ten selected documents is actually target-language. The 1% error rate applies to the much larger non-target population, not to the 100 target documents.
+
+The classifier has:
+
+$$
+P(\widehat y=1\mid y=1)=0.90
+$$
+
+and
+
+$$
+P(\widehat y=1\mid y=0)=0.01.
+$$
+
+Then Bayes' rule gives
+
+$$
+P(y=1\mid \widehat y=1)
+=
+\frac{0.90\times0.001}
+{0.90\times0.001+0.01\times0.999}
+\approx0.083.
+$$
+
+Only about 8.3% of flagged documents are genuinely target-language under this constructed population.
+
+A 1% false-positive rate sounds small until the negative population is hundreds of times larger than the positive population.
+
+#### 6.5 Mixed-language documents {#mixed-language-documents}
+
+A sentence-level monolingual classifier can return only the dominant language even when several languages are present. MaskLID is one published example of a method designed to expose code-switching that a single dominant-label classifier can hide.
+
+For pretraining data, mixed-language content is not automatically bad. A programming tutorial might contain Armenian explanation plus English identifiers and code. A scientific article may cite English titles. A bilingual glossary may be desirable.
+
+Therefore consider labels such as:
+
+```text
+mostly_hy
+mostly_en
+mixed_hy_en
+unknown
+insufficient_text
+```
+
+or block-level language evidence when the project needs it.
+
+#### 6.6 Evaluate LID by the strata that matter
+
+A single overall accuracy can hide failures in exactly the low-resource subset you care about.
+
+Audit by dimensions such as:
+
+```text
+language × script × source × document length × content type
+```
+
+Include deliberately difficult categories:
+
+* short pages;
+* lists;
+* code-heavy pages;
+* mixed-language pages;
+* transliterated text;
+* OCR text;
+* closely related varieties.
+
+The operational question is not merely “What is the classifier's benchmark accuracy?” It is:
+
+> “What mistakes does this model make on the documents our pipeline is about to keep or reject?”
+
+---
+
+## Part III: Define quality and decide what to keep {#decide-what-to-keep}
+
+With candidate documents in hand, define what makes them useful for the intended training objective. This part connects quality signals to human labels, measures errors on both sides of a filter, and turns those measurements into a defensible retention policy.
+
+### 7. There is no universal scalar called “document quality”
+
+The word **quality** is dangerous because it compresses several different properties into one adjective.
+
+A document can be:
+
+* perfectly extracted but factually poor;
+* linguistically fluent but off-domain;
+* technically useful but full of equations that look unusual to a prose filter;
+* short but valuable;
+* repetitive because it is boilerplate;
+* repetitive because it is a legitimate reference table;
+* informal but exactly the register the model lacks.
+
+Before building a filter, define the property.
+
+#### 7.1 Separate possible label axes {#quality-label-axes}
+
+For our running example, we could annotate at least four axes:
+
+| Axis                                 | Example question                                                                  |
+| ------------------------------------ | --------------------------------------------------------------------------------- |
+| **Extraction integrity**             | Did we recover the intended document without obvious boilerplate or truncation?   |
+| **Language evidence**                | Is substantive content in the intended language/variety?                          |
+| **Substantive content**              | Does the record contain more than navigation, link lists, or empty template text? |
+| **Technical-structure preservation** | Were equations/code/table relationships preserved where relevant?                 |
+
+A fifth axis might characterize **expository/educational style**, but that should not be silently renamed “quality.” It is a coverage feature tied to our corpus objective.
+
+This distinction prevents a common mistake:
+
+> training a classifier to prefer Wikipedia-like prose, calling the score “quality,” and then treating everything unlike Wikipedia as bad data.
+
+#### 7.2 Heuristic quality signals {#heuristic-quality-signals}
+
+A heuristic filter computes an observable feature and applies a rule.
+
+Examples include:
+
+* minimum/maximum document length;
+* fraction of alphabetic characters;
+* fraction of replacement characters;
+* repeated-line ratio;
+* maximum n-gram repetition;
+* mean token length;
+* fraction of lines ending in punctuation;
+* fraction of lines that look like menus or lists;
+* link density from HTML structure;
+* fraction of code-like or symbol-heavy blocks.
+
+Heuristics are attractive because they are cheap and interpretable. Their weakness is that the same surface pattern can mean different things in different languages and domains.
+
+**Repeated-line ratio**
+
+For $L>0$ lines and $U$ distinct normalized lines, define
+
+$$
+r_{\mathrm{line}}
+=1-\frac{U}{L}.
+$$
+
+If a 100-line page contains only 60 unique normalized lines,
+
+$$
+r_{\mathrm{line}}=0.4.
+$$
+
+But this weights a two-character repeated line and a 500-character repeated paragraph equally. A character-weighted variant answers a different question.
+
+Always name the metric.
+
+**Alphabetic-character ratio**
+
+One possible signal is
+
+$$
+r_{\alpha}
+=
+\frac{\#\text{alphabetic characters}}
+{\#\text{non-whitespace characters}}.
+$$
+
+A low value can indicate corruption—or mathematics, code, tables, identifiers, or another legitimate content type.
+
+So the rule
+
+```text
+reject if alphabetic_ratio < 0.7
+```
+
+may be reasonable for one prose source and disastrous for a technical source.
+
+#### 7.3 Learned quality filters
+
+A learned binary filter can be written as
+
+$$
+s(x)=\sigma(w^T\phi(x)+b),
+$$
+
+or implemented with a modern encoder/classifier.
+
+The crucial question is:
+
+> What label was this model trained to predict?
+
+If positives are Wikipedia and negatives are random web pages, the model estimates separability under that training setup. It may learn topic, register, punctuation, source style, or length as proxies.
+
+The score is not a universal probability that a document is “good for LLMs.”
+
+DataComp-LM is useful as a research example because it studies curation choices in a controlled training/evaluation framework. Its results are evidence that filtering strategy can strongly affect downstream model quality; they do not supply a universally optimal classifier or threshold for our Armenian corpus.
+
+#### 7.4 Language-model-based scores {#language-model-quality-scores}
+
+A fixed language model $q$ can score a sequence of $m$ tokens with average negative log likelihood
+
+$$
+H_q(x)
+=-\frac1m
+\sum_{t=1}^{m}
+\log q(x_t\mid x_{<t}).
+$$
+
+Very high loss can indicate malformed or unfamiliar text. Very low loss can indicate repetitive templates. But both interpretations are conditional on the scoring model and tokenizer.
+
+A specialized Armenian physics explanation may receive high loss because the scorer has little Armenian physics in its own training distribution. Rejecting it for unfamiliarity can remove exactly the coverage we were trying to add.
+
+The score measures **surprisal under the scoring model**, not intrinsic value.
+
+#### 7.5 Real pipelines combine signals
+
+FineWeb's public processing documentation lists URL filtering, text extraction, language identification, heuristic quality rules, deduplication, and PII formatting as distinct stages. FineWeb2 further adapts multilingual filtering by language and script rather than relying on one universal threshold across all languages.
+
+Those projects are valuable examples because they make pipeline decisions inspectable and evaluate alternatives. They should not be copied mechanically.
+
+#### Stop and reason
+
+A quality classifier gives Armenian poetry a mean score of 0.31 and encyclopedia articles 0.88.
+
+**Question:** Does this show that Armenian poetry is lower quality?
+
+No. It shows that the model maps those documents to different scores. To interpret the scores, you need the training labels, source distribution, calibration evidence, and the corpus objective.
+
+### 8. Build the audit labels before selecting the threshold {#quality-audit-workflow}
+
+A common workflow is:
+
+```text
+run filter
+→ inspect some accepted examples
+→ choose a threshold that “looks clean”
+```
+
+This is backwards.
+
+A stronger workflow is:
+
+```text
+define label/rubric
+→ sample operational population
+→ annotate without seeing filter decisions when practical
+→ measure disagreement
+→ score documents
+→ choose threshold on development evidence
+→ evaluate once on held-out audit data
+```
+
+#### 8.1 A compact annotation rubric
+
+For our running example, use a multi-axis rubric rather than one vague binary label.
+
+| Field                 | Values                            | Meaning                                   |
+| --------------------- | --------------------------------- | ----------------------------------------- |
+| `extract_integrity`   | 0 / 1 / 2                         | unusable / partial / good                 |
+| `substantive_body`    | 0 / 1                             | template/list-only vs substantive content |
+| `language`            | hy / en / mixed / unknown         | audited dominant/mixed language           |
+| `technical_structure` | lost / partial / preserved / n.a. | equations/code/tables where relevant      |
+| `notes`               | free text                         | ambiguity and failure explanation         |
+
+A later policy can define, for example:
+
+```text
+accept if
+  extract_integrity >= 1
+  AND substantive_body == 1
+  AND language in {hy, mixed}
+```
+
+while storing `technical_structure` for analysis rather than automatically rejecting on it.
+
+That policy is transparent. `quality=true` is not.
+
+#### 8.2 Borderline examples belong in the guidelines
+
+Guidelines should explicitly cover:
+
+* a page with one useful paragraph and a large navigation menu;
+* a code tutorial with little prose;
+* a bilingual Armenian–English glossary;
+* a short but complete definition;
+* a long list of equations;
+* OCR text with recoverable errors;
+* a translated problem whose Armenian is fluent but formula formatting is broken.
+
+The hard cases define the policy more than the easy ones.
+
+#### 8.3 Annotator disagreement is information {#annotator-agreement}
+
+Suppose two annotators label 100 documents as `good` or `bad` under a specific rubric.
+
+Their joint table is:
+
+|                  | Annotator B good | Annotator B bad |   Total |
+| ---------------- | ---------------: | --------------: | ------: |
+| Annotator A good |               70 |              10 |      80 |
+| Annotator A bad  |                5 |              15 |      20 |
+| **Total**        |           **75** |          **25** | **100** |
+
+Observed agreement is
+
+$$
+p_o=\frac{70+15}{100}=0.85.
+$$
+
+Expected agreement under the product of empirical marginals is
+
+$$
+p_e=(0.8)(0.75)+(0.2)(0.25)=0.65.
+$$
+
+Cohen's kappa is
+
+$$
+\kappa
+=\frac{p_o-p_e}{1-p_e}
+=\frac{0.85-0.65}{0.35}
+\approx0.571.
+$$
+
+Do not read $\kappa=0.571$ as “57.1% correct.” It is a chance-adjusted agreement statistic under particular assumptions.
+
+Report:
+
+* the full label table;
+* class prevalence;
+* raw agreement;
+* the agreement statistic; and
+* examples of disagreements.
+
+Kappa can behave unexpectedly with highly imbalanced labels. One number should not replace looking at the confusion pattern.
+
+#### 8.4 Adjudication creates a policy reference, not metaphysical truth
+
+After disagreement, annotators may discuss the case and produce an adjudicated label.
+
+Retain:
+
+```text
+annotator_A_label
+annotator_B_label
+adjudicated_label
+adjudication_reason
+rubric_version
+```
+
+If most disagreements occur on “short but complete” documents, perhaps the rubric is underspecified. The problem may not be annotator quality.
+
+This is an important lesson from corpus annotation work: some apparent model errors are really disagreements about how the category itself was defined.
+
+#### 8.5 Train/dev/audit boundaries
+
+If you train a learned filter, separate:
+
+```text
+filter-training data
+threshold-development data
+final audit data
+```
+
+Do not repeatedly inspect the final audit set while tuning the policy and then call the final score unbiased.
+
+If multiple pages come from the same site/template/family, a row-level random split can leak formatting patterns across partitions. Use a source- or family-aware split when the intended question is performance on unseen sources.
+
+### 9. Evaluate both retained and rejected material
+
+Suppose `good under the rubric` is the positive class and `keep` is the filter's positive decision.
+
+Then
+
+$$
+\mathrm{precision}
+=\frac{TP}{TP+FP},
+$$
+
+$$
+\mathrm{recall}
+=\frac{TP}{TP+FN}.
+$$
+
+Interpret them in corpus terms:
+
+* **precision:** among documents we retained, what fraction are good under the rubric?
+* **recall:** among all good documents in the candidate population, what fraction did we retain?
+
+Inspecting only accepted documents can estimate the first quantity under a valid sample design. It cannot estimate the second.
+
+#### 9.1 Worked example: accepted and rejected audits {#retained-rejected-audit-example}
+
+Our pipeline processes 10,000 candidate documents.
+
+```text
+retained: 6,000
+rejected: 4,000
+```
+
+We independently sample 200 retained and 200 rejected documents for human audit.
+
+Results:
+
+| Partition | Population size | Audited | Good in audit | Estimated good population |
+| --------- | --------------: | ------: | ------------: | ------------------------: |
+| Retained  |           6,000 |     200 |           180 |                     5,400 |
+| Rejected  |           4,000 |     200 |            40 |                       800 |
+
+<span id="audit-population-weights"></span>Retained precision is estimated as
+
+$$
+\widehat P=\frac{180}{200}=0.90.
+$$
+
+Estimated good documents among retained:
+
+$$
+6000\times0.90=5400.
+$$
+
+Estimated good documents among rejected:
+
+$$
+4000\times0.20=800.
+$$
+
+Estimated recall is therefore
+
+$$
+\widehat R
+=\frac{5400}{5400+800}
+\approx0.871.
+$$
+
+The same audit also estimates that approximately
+
+$$
+\frac{5400+800}{10000}=0.62
+$$
+
+of the candidate population is good under the rubric.
+
+If you simply pooled the 400 manually inspected items, you would get
+
+$$
+\frac{180+40}{400}=0.55,
+$$
+
+which is not the document-population estimate because the audit intentionally oversampled the rejected partition.
+
+This is exactly why Lecture 3 separated the **audit distribution** from the **population being estimated**.
+
+#### 9.2 Audit by language and source
+
+An overall precision of 90% can hide:
+
+```text
+English precision       96%
+Armenian precision      78%
+short Armenian pages    61%
+```
+
+If the project exists specifically to improve Armenian data, the overall number is not sufficient.
+
+Stratify the audit along dimensions that matter to the corpus objective.
+
+#### 9.3 Document-weighted and token-weighted quality
+
+Suppose bad retained documents are mostly very short. Document precision can be 90% while 98% of retained **tokens** come from good documents.
+
+Conversely, a few very long bad documents can make token-level contamination much worse than document precision suggests.
+
+Report both when the distinction matters:
+
+$$
+P_{\mathrm{doc}}
+=\frac{\#\text{good retained docs}}
+{\#\text{retained docs}},
+$$
+
+and
+
+$$
+P_{\mathrm{token}}
+=\frac{\text{tokens in good retained docs}}
+{\text{tokens in retained docs}}.
+$$
+
+Neither replaces the other.
+
+#### Stop and reason {#precision-recall-question}
+
+You manually inspect 100 retained documents and 95 are good.
+
+**Question:** Can you conclude that the filter has 95% recall?
+
+No. A representative sample suggests that about 95% of the kept documents are good. It does not tell us how many good documents the filter discarded. That second question requires inspecting the rejected set too.
+
+<span id="precision-recall-readable-example"></span>**A clean kept set can still lose most of the useful material.** Consider a constructed pool of 1,000 pages whose quality labels are all known:
+
+| Filter decision | Good pages | Junk pages | Total |
+| --- | ---: | ---: | ---: |
+| Kept | 95 | 5 | 100 |
+| Discarded | 405 | 495 | 900 |
+| Total | 500 | 500 | 1,000 |
+
+Looking only at the kept row, 95 of 100 pages are good: **95% precision**. Looking at all good pages, only 95 of the original 500 survived: **19% recall**. The other 405 good pages were discarded.
+
+The denominators answer different questions: precision asks “How clean is what we kept?”; recall asks “How much of the good material did we recover?” These exact toy counts are not inferred from the preceding sample. An audit of accepted pages alone cannot reveal the missing 405.
+
+### 10. Threshold selection is a decision under constraints {#threshold-decision}
+
+A continuous filter score becomes a policy only after choosing a threshold.
+
+Suppose a held-out development audit gives the following constructed results:
+
+| Threshold | Retained docs | Precision | Recall | Armenian science retained |
+| --------: | ------------: | --------: | -----: | ------------------------: |
+|      0.30 |         8,500 |      0.78 |   0.96 |                       92% |
+|      0.50 |         6,700 |      0.88 |   0.89 |                       81% |
+|      0.65 |         5,400 |      0.93 |   0.80 |                       69% |
+|      0.80 |         3,900 |      0.97 |   0.61 |                       42% |
+
+There is no universally correct row.
+
+A project with strict storage limits may prefer a higher threshold. A low-resource corpus may accept somewhat lower precision to preserve rare coverage. A safety-sensitive source may have non-negotiable rejection criteria separate from generic quality scoring.
+
+The threshold choice should state the objective.
+
+For example:
+
+> Among policies with estimated retained precision at least 90%, choose the threshold retaining the largest number of Armenian scientific documents, subject to no protected-source violations.
+
+This is an explicit decision rule. It can be challenged and reproduced.
+
+#### 10.1 Precision–recall and retention curves
+
+Always examine the curve rather than only the selected point.
+
+Useful plots/tables include:
+
+```text
+threshold → precision
+threshold → recall
+threshold → documents retained
+threshold → tokens retained
+threshold → retention by language/source/register
+```
+
+A threshold that looks harmless globally can sharply reduce one low-resource stratum.
+
+#### 10.2 Per-language thresholds can be justified {#language-specific-thresholds}
+
+A single threshold assumes score meaning is sufficiently comparable across languages.
+
+That may fail because:
+
+* classifier calibration differs;
+* document-length distributions differ;
+* punctuation and segmentation patterns differ;
+* available training data differ; and
+* the positive class itself may have been defined unevenly.
+
+FineWeb2 is a useful real example of a multilingual web pipeline that tunes filtering thresholds and stopword configurations by language rather than treating one global threshold as sacred.
+
+Per-language thresholds are not automatically fair or correct. They simply make the policy explicit and allow language-specific validation.
+
+#### 10.3 Threshold overfitting
+
+If you try 100 thresholds and repeatedly inspect the same evaluation sample until the result looks good, that sample is now development evidence.
+
+Keep an untouched audit set or use a nested design.
+
+The same principle applies if you repeatedly train proxy language models to pick the best filter. Once a benchmark has guided your filter choices, it no longer serves as untouched final evidence.
+
+---
+
+## Part IV: Audit how processing changes the corpus {#audit-corpus-changes}
+
+A filter makes decisions about individual documents, but its accumulated effects change the corpus. Track which sources and languages survive, inspect the text behind suspicious statistics, and use reference comparisons to investigate shifts in coverage.
+
+### 11. Measure how the pipeline changed the corpus
+
+A filter can improve average document cleanliness while quietly changing language, register, source, topic, and length distributions.
+
+A corpus audit therefore asks not only:
+
+> “How many documents survived?”
+
+but also:
+
+> “Which documents survived?”
+
+#### 11.1 Before/after composition for the running example {#source-retention-example}
+
+Suppose the 10,000-document pilot changes as follows:
+
+| Source family                | Before docs | After docs | Document retention | Before tokens | After tokens |
+| ---------------------------- | ----------: | ---------: | -----------------: | ------------: | -----------: |
+| Natural Armenian web/news    |       3,000 |      2,550 |                85% |          3.6M |         3.2M |
+| Armenian educational/science |       5,000 |      3,000 |                60% |          4.0M |         2.9M |
+| Translated STEM              |       2,000 |      1,900 |                95% |          1.2M |        1.15M |
+| **Total**                    |  **10,000** |  **7,450** |          **74.5%** |      **8.8M** |    **7.25M** |
+
+Globally, 74.5% of documents survive.
+
+But the policy removed 40% of the educational/science documents and only 5% of translated STEM.
+
+If our objective was to increase **native Armenian technical coverage**, that asymmetry demands investigation.
+
+Possible explanations include:
+
+* native technical pages are shorter;
+* formulas make them look less prose-like;
+* PDF extraction is worse than structured dataset extraction;
+* language identification confidence is lower on pages with Latin symbols;
+* the quality model prefers the style of translated benchmark-like data.
+
+The table does not tell us which explanation is true. It tells us where to look.
+
+#### 11.2 Conditional versus cumulative retention {#conditional-cumulative-retention}
+
+Suppose the web branch has:
+
+```text
+90% pass extraction integrity
+85% of those pass language policy
+75% of those pass quality policy
+```
+
+Cumulative retention is
+
+$$
+0.90\times0.85\times0.75
+=0.57375.
+$$
+
+So only about 57.4% of the original web candidates survive all three stages.
+
+Do not report the three percentages as though each refers to the original population.
+
+A good stage report contains both:
+
+```text
+conditional retention at stage
+cumulative retention from starting population
+```
+
+#### 11.3 Document-weighted versus token-weighted feature rates {#document-token-weighting}
+
+Let $c_i$ be occurrences of a feature in document $i$ and $n_i$ its length.
+
+Document-weighted mean rate:
+
+$$
+\bar r_{\mathrm{doc}}
+=\frac1M\sum_{i=1}^{M}\frac{c_i}{n_i}.
+$$
+
+Token-weighted corpus rate:
+
+$$
+r_{\mathrm{token}}
+=\frac{\sum_i c_i}{\sum_i n_i}.
+$$
+
+Consider two documents:
+
+```text
+Doc A: 100 tokens, 10 occurrences
+Doc B: 900 tokens, 0 occurrences
+```
+
+Then
+
+$$
+\bar r_{\mathrm{doc}}
+=\frac{0.10+0}{2}=0.05,
+$$
+
+while
+
+$$
+r_{\mathrm{token}}
+=\frac{10}{1000}=0.01.
+$$
+
+Neither is wrong.
+
+The first asks about a uniformly selected document. The second asks about a uniformly selected token position in the corpus.
+
+Use the weighting that matches the claim.
+
+#### 11.4 Length distributions
+
+Mean length can hide heavy tails. Report quantiles:
+
+```text
+p10, p25, median, p75, p90, p99
+```
+
+before and after filtering, preferably by important source/language strata.
+
+A minimum-length filter may barely change total token count while deleting thousands of short conversational or definition-like documents.
+
+#### 11.5 Frequency and dispersion {#frequency-and-dispersion}
+
+A feature that appears 1,000 times can be distributed across the corpus or concentrated in one source.
+
+Let $f_i(w)$ be the count of feature $w$ in partition $i$. Its range is
+
+$$
+\operatorname{range}(w)
+=\sum_i \mathbf 1[f_i(w)>0].
+$$
+
+A simple size-adjusted dispersion statistic is
+
+$$
+DP(w)
+=
+\frac12\sum_i
+\left|
+\frac{f_i(w)}{f(w)}
+-
+\frac{n_i}{\sum_j n_j}
+\right|,
+$$
+
+for $f(w)>0$.
+
+If the feature distribution exactly follows corpus size, $DP=0$. Increasing concentration pushes the measure upward.
+
+The partition matters. Document-level dispersion and source-level dispersion answer different questions.
+
+A phrase appearing in 100 different pages from one mirrored site is widespread by page count but concentrated by source family.
+
+Lecture 5 will connect this to duplicate and contamination structure.
+
+### 12. Contextual inspection: statistics should lead back to text
+
+Aggregate diagnostics are most useful when the student can return to concrete examples.
+
+The corpus-linguistics materials emphasize concordancing—keyword-in-context (KWIC)—because a frequency is often ambiguous until we see the contexts that produced it.
+
+For corpus engineering, the same technique can expose processing failures.
+
+#### 12.1 Useful diagnostic queries
+
+Search extracted text for:
+
+```text
+replacement character: �
+repeated navigation: "Home | About | Contact"
+boilerplate phrases
+broken equation markers
+very long symbol runs
+HTML entity remnants
+OCR artifacts
+unexpected English phrases inside Armenian pages
+```
+
+Then inspect:
+
+```text
+left context | match | right context
+```
+
+sorted by source, extractor, or decision status.
+
+A repeated footer phrase appearing in 40,000 documents may explain both a keyword spike and later false duplicate matches.
+
+#### 12.2 Inspect accepted and rejected examples
+
+For every high-impact filter, maintain a review view containing:
+
+```text
+raw source link/locator
+extracted text
+feature values
+classifier scores
+rule that fired
+final policy decision
+```
+
+Then inspect both:
+
+```text
+high-scoring accepted documents
+borderline accepted documents
+borderline rejected documents
+extreme rejected documents
+```
+
+The borderline cases are especially informative about threshold semantics.
+
+#### 12.3 Exploration and prevalence estimation are different {#exploration-and-prevalence}
+
+Handpicking suspicious examples is excellent for discovering a bug.
+
+It is not a random sample.
+
+Use two different workflows:
+
+```text
+exploratory inspection -> discover failure modes
+probability audit       -> estimate how common they are
+```
+
+Do not report the fraction of failures in a deliberately difficult error set as corpus prevalence.
+
+#### Stop and reason
+
+You search rejected documents for `F = ma` and find many correct Armenian physics explanations.
+
+**Question:** Have you estimated how often the filter wrongly removes technical material?
+
+No. You have discovered a failure mode. To estimate prevalence, design an audit sample from the relevant rejected population.
+
+### 13. Optional reference-based corpus comparisons
+
+Sometimes a before/after comparison reveals which lexical or structural features a filter disproportionately removes.
+
+A simple descriptive ratio for feature $w$ is
+
+$$
+R(w)
+=
+\frac{f_{\mathrm{after}}(w)/N_{\mathrm{after}}}
+{f_{\mathrm{before}}(w)/N_{\mathrm{before}}}.
+$$
+
+Values below 1 indicate lower normalized prevalence after filtering; values above 1 indicate higher prevalence.
+
+For rare features, use a documented smoothing rule before taking logarithms.
+
+#### 13.1 Keyness-style comparisons
+
+If students use a likelihood-ratio statistic, construct the full contingency table:
+
+|                  | Corpus A | Corpus B |
+| ---------------- | -------: | -------: |
+| feature $w$      |      $a$ |      $b$ |
+| all other tokens |  $N_A-a$ |  $N_B-b$ |
+
+Expected counts are
+
+$$
+E_{ij}
+=\frac{O_{i\cdot}O_{\cdot j}}
+{O_{\cdot\cdot}},
+$$
+
+and
+
+$$
+G^2
+=2\sum_{i,j}
+O_{ij}\ln\frac{O_{ij}}{E_{ij}}.
+$$
+
+But be careful about interpretation.
+
+Before/after corpora are **not independent samples**: one is derived from the other. Tokens within a document are also dependent, and testing thousands of features creates a multiple-comparisons problem.
+
+Therefore, in this course, use keyness primarily as an **exploratory ranking tool** unless you have a defensible sampling/inference design.
+
+For stronger uncertainty estimates, resample documents or source families and recompute the descriptive statistic. A bootstrap can quantify variation under the resampling scheme, but it does not repair bias in the underlying acquisition frame.
+
+---
+
+## Part V: Assemble, test, and defend the pipeline {#assemble-and-test-the-pipeline}
+
+The final part brings these decisions together in an executable, auditable process. Compare stage order and cost, follow one document through the full pipeline, and distinguish corpus-audit evidence from evidence of model improvement. The extended practical checkpoint offers a way to apply the ideas independently.
+
+### 14. Pipeline order changes both cost and sometimes the result
+
+A corpus pipeline is not merely a set of filters. Order matters.
+
+#### 14.1 Cheap filters before expensive filters {#filter-order-cost}
+
+Start with **100 pages** and two fixed checks on the same unchanged text. A structural check detects empty or corrupted pages and costs **1 unit per page**. A neural quality scorer costs **20 units per page**. Once either check rejects a page, processing stops.
+
+In this constructed example, 70 pages pass the structural check when it runs first, and 60 pass the neural scorer when it runs first:
+
+| Order | First stage | Second stage | Total work |
+| --- | --- | --- | ---: |
+| Structural check → neural scorer | Check 100 pages: 100 units | Score 70 survivors: 1,400 units | 1,500 units |
+| Neural scorer → structural check | Score 100 pages: 2,000 units | Check 60 survivors: 60 units | 2,060 units |
+
+Cheap-first avoids neural scoring on 30 obvious failures. Expensive-first instead pays for all 100 neural scores, saving only 40 cheap checks. The first order saves **560 units** while preserving the same final set, because both unchanged rules must pass in either order.
+
+These are illustrative costs, not measured runtimes. Measure actual per-page cost and rejection rates before choosing an order. If a stage changes the representation or depends on an earlier stage's output, the same-final-set claim no longer follows; section 14.2 examines that case.
+
+The general cost calculation is:
+
+Suppose filter A costs $c_A$ per document and passes fraction $p_A$. Filter B costs $c_B$.
+
+If A runs first, expected cost per starting document is
+
+$$
+C_{A\to B}=c_A+p_Ac_B.
+$$
+
+If B runs first,
+
+$$
+C_{B\to A}=c_B+p_Bc_A.
+$$
+
+This calculation helps schedule fixed predicates.
+
+Example:
+
+```text
+cheap structural check:
+  cost = 1 unit
+  pass = 0.70
+
+expensive neural scorer:
+  cost = 20 units
+  pass = 0.60
+```
+
+Cheap first:
+
+$$
+1+0.70(20)=15.
+$$
+
+Expensive first:
+
+$$
+20+0.60(1)=20.6.
+$$
+
+The cheap-first order saves computation under these assumptions.
+
+This is **not** an independence assumption; it is an expected scheduling calculation using measured pass rates.
+
+#### 14.2 Some transformations do not commute {#transformation-order}
+
+If two predicates inspect the exact same immutable representation, their final intersection may be order-independent.
+
+But many corpus operations change the representation.
+
+Examples:
+
+```text
+normalize -> language ID
+```
+
+can differ from
+
+```text
+language ID -> normalize
+```
+
+if normalization repairs or damages characters used by the classifier.
+
+Similarly, deduplication in Lecture 5 can interact with quality filtering. If a duplicate cluster contains one broken extraction and one clean extraction, “choose representative first, then quality-filter” can produce a different result from “score cluster members, then choose a representative.”
+
+Do not assume pipeline stages commute because they all eventually return Booleans.
+
+#### 14.3 Keep a transformation ledger
+
+For every derived document, record something like:
+
+```json
+{
+  "document_id": "doc-001",
+  "parent_object_id": "sha256:...",
+  "transformations": [
+    {"run": "extract-v2", "status": "ok"},
+    {"run": "normalize-nfc-v1", "status": "ok"},
+    {"run": "lid-glotlid-X", "status": "ok"},
+    {"run": "quality-signals-v4", "status": "ok"},
+    {"run": "policy-v3", "status": "accepted"}
+  ]
+}
+```
+
+This makes a later question such as
+
+> “Which documents were rejected only because of quality rule `R17`?”
+
+answerable without reconstructing the entire pipeline from logs.
+
+### 15. End-to-end worked trace for one document {#document-processing-trace}
+
+Let us follow one Armenian educational page from Lecture 3 through the pipeline.
+
+#### 15.1 Acquired object
+
+Lecture 3 recorded:
+
+```json
+{
+  "record_id": "armenian-edu:rev42:article-9182",
+  "content_sha256": "abc123...",
+  "mime": "text/html",
+  "url": "https://example-education.am/physics/newton-2",
+  "capture_time": "2026-02-14T08:31:04Z"
+}
+```
+
+#### 15.2 Extraction
+
+Extractor `html-maintext-v2` emits:
+
+```text
+heading: Նյուտոնի երկրորդ օրենքը
+paragraph: ...
+equation: F = ma
+paragraph: ...
+```
+
+and reports:
+
+```json
+{
+  "raw_chars": 18241,
+  "retained_chars": 6118,
+  "block_count": 9,
+  "link_text_chars": 103,
+  "status": "ok"
+}
+```
+
+#### 15.3 Normalization
+
+`normalize-nfc-v1` changes 6 canonically equivalent sequences and line endings but preserves block count and equation text.
+
+Recorded evidence:
+
+```json
+{
+  "unicode_form": "NFC",
+  "changed_codepoint_positions": 6,
+  "code_blocks_modified": 0,
+  "equation_blocks_modified": 0
+}
+```
+
+#### 15.4 Language evidence
+
+Block-level LID produces:
+
+```text
+heading       hy   0.98
+paragraph 1   hy   0.97
+equation      und  n/a
+paragraph 2   hy   0.95
+references    en   0.88
+```
+
+Document policy labels it `mostly_hy`, not “invalid mixed-language.”
+
+#### 15.5 Quality signals
+
+```json
+{
+  "repeated_line_ratio": 0.00,
+  "alphabetic_char_ratio": 0.74,
+  "replacement_char_ratio": 0.00,
+  "neural_quality_score": 0.66,
+  "content_blocks": 9
+}
+```
+
+The neural score is below a hypothetical global threshold of 0.70.
+
+#### 15.6 Human audit
+
+The auditor marks:
+
+```json
+{
+  "extract_integrity": 2,
+  "substantive_body": 1,
+  "language": "hy",
+  "technical_structure": "preserved",
+  "notes": "clear school-level physics explanation"
+}
+```
+
+The document becomes a **false negative** under the global threshold.
+
+Further analysis shows many native Armenian technical pages have scores in the 0.55–0.70 range because formulas, shorter paragraphs, and source style differ from the filter's positive training examples.
+
+This one document does not establish prevalence. It identifies a hypothesis:
+
+> The global quality threshold may disproportionately reject native Armenian technical content.
+
+We then test that hypothesis on a probability sample from the relevant rejected stratum.
+
+#### 15.7 Revised policy
+
+After held-out validation, suppose policy `v4` uses:
+
+```text
+source/language-aware threshold
++ minimum extraction-integrity rule
++ explicit preservation of technical blocks
+```
+
+The record is accepted under `v4`.
+
+Crucially, we can explain **why** the outcome changed without re-acquiring the page.
+
+That is what a versioned processing pipeline should enable.
+
+### 16. Practical checkpoint: compare two defensible processing policies {#processing-policy-lab}
+
+Use the frozen acquired inventory from Lecture 3. Work on a bounded subset large enough to contain meaningful variation but small enough to audit carefully.
+
+The task is not “build the cleanest corpus.” The task is:
+
+> **Compare two explicit processing policies and provide evidence for the one you would take forward.**
+
+#### Part A — Write the document contract
+
+Define:
+
+* document unit;
+* supported input format(s);
+* block types;
+* what is considered main content;
+* how titles, captions, equations, code, and tables are treated;
+* normalization policy;
+* language label space; and
+* final disposition states.
+
+Do this **before** comparing extractors.
+
+#### Part B — Build two extraction variants
+
+For example:
+
+```text
+Policy A: simple DOM baseline
+Policy B: stronger main-content extractor
+```
+
+or
+
+```text
+Policy A: prose-only flattening
+Policy B: structure-preserving blocks
+```
+
+Run both on the same objects.
+
+#### Part C — Construct an extraction reference sample
+
+Create a small stratified sample across at least:
+
+```text
+source × format × document-length group
+```
+
+Annotate required blocks and order. Report extraction precision/recall and structural preservation by block type.
+
+Do not hide failed objects from the denominator.
+
+#### Part D — Audit language identification
+
+Create an independent LID audit sample containing:
+
+* ordinary Armenian prose;
+* short Armenian pages;
+* mixed Armenian–English text;
+* code/math-heavy pages; and
+* likely confusable/non-target records.
+
+Report confusion tables and false-positive/false-negative examples. Do not report only global accuracy.
+
+#### Part E — Define a quality rubric
+
+Use at least three independent dimensions. Have two people annotate a shared subset without seeing the filter score if practical.
+
+Report:
+
+* label prevalence;
+* raw agreement;
+* disagreement examples;
+* an agreement statistic if appropriate; and
+* the adjudication rule.
+
+#### Part F — Evaluate thresholds
+
+On development data, produce a table/curve of:
+
+```text
+threshold
+retained documents
+retained tokens
+estimated precision
+estimated recall
+retention by source/language
+```
+
+State the decision rule used to select the threshold.
+
+Then evaluate the chosen policy once on the held-out audit set.
+
+#### Part G — Compare the corpus before and after
+
+At minimum report:
+
+* documents and tokens by source;
+* documents and tokens by language/origin;
+* document-length quantiles;
+* conditional and cumulative retention per pipeline stage;
+* one dispersion/concentration diagnostic; and
+* contextual examples explaining at least two observed shifts.
+
+#### Part H — Failure portfolio
+
+Include at least five concrete failures, such as:
+
+```text
+boilerplate retained
+article body dropped
+PDF reading order wrong
+mixed-language page misclassified
+short valid explanation rejected
+formula corrupted by normalization
+quality model strongly prefers one source style
+```
+
+For each, identify the responsible stage and whether the failure is detectable automatically.
+
+#### Deliverable
+
+Submit:
+
+1. processing specification;
+2. executable pipeline/configuration;
+3. extraction reference annotations;
+4. LID and quality audit annotations;
+5. threshold-development report;
+6. held-out audit results;
+7. before/after corpus audit;
+8. failure portfolio; and
+9. a one-page decision memo stating which policy you would carry into Lecture 5 and what remains uncertain.
+
+
+> <span id="corpus-model-evidence"></span>**Do not claim model improvement in this assignment.**
+> A corpus can look cleaner under the defined audit while producing no downstream gain—or even hurting a capability. Model-level effects require controlled training experiments later in the course.
+
+### Check your understanding
+
+1. Why is removing HTML tags insufficient to define the main content of a web page?
+2. Two extractors retain the same fraction of reference tokens. What additional evidence might still make one clearly preferable for scientific text?
+3. Why can NFC normalization be a reasonable general-text choice while NFKC still requires separate justification?
+4. Why does idempotence fail to establish that a normalizer is safe?
+5. What is the difference between a language label from page metadata, a script detector, and a language-ID model prediction?
+6. Why can a classifier with a 1% false-positive rate return mostly false positives for a rare target language?
+7. What property is a classifier actually learning when its positive examples are Wikipedia and its negatives are random web pages?
+8. Why is a manual audit of only retained documents insufficient to estimate filter recall?
+9. When can document-weighted and token-weighted quality estimates differ substantially?
+10. Why should threshold selection be reported as a decision rule rather than only as a number such as `0.7`?
+11. A filter improves overall precision while reducing native Armenian science retention from 90% to 40%. What questions should you ask before adopting it?
+12. Why are handpicked failure cases useful but unsuitable for estimating population prevalence?
+13. Under what conditions does ordering a cheap filter before an expensive filter reduce expected cost without changing the final set?
+14. Give an example of two processing stages whose order can change the final result.
+15. What evidence should be retained so that a rejected document can later be reconsidered under a new policy?
+
+### What to remember {#lecture-takeaways}
+
+1. **Extraction defines the document.** Raw bytes do not contain a privileged “training text” waiting to be revealed.
+2. **Preserve structure before flattening.** Technical information can disappear even when prose looks clean.
+3. **Evaluate extraction against explicit reference content and ordering.** Length and visual plausibility are not enough.
+4. **Normalization is a versioned transformation, not cosmetic cleanup.** Test preservation as well as idempotence.
+5. **Language identification is a classifier.** Scores, scripts, metadata, and human labels are different evidence sources.
+6. **There is no universal scalar called quality.** Define the property before training or thresholding a filter.
+7. **Audit rejected material as well as retained material.** Otherwise you cannot estimate how much useful data the filter destroys.
+8. **A threshold changes the corpus distribution.** Measure retention by language, source, origin, register, length, and relevant coverage dimensions.
+9. **Statistics should lead back to examples.** Contextual inspection explains what aggregate shifts actually mean.
+10. **The output of Lecture 4 is an audited candidate corpus, not the final training corpus.** Deduplication, contamination, and privacy are still ahead.
+
+### References and reading
+
+#### Core pretraining-data references
+
+**Common Crawl.** *Get Started.* Official overview of WARC, WAT, and WET representations and data access.
+https://commoncrawl.org/get-started
+
+**Penedo, G., et al. (2024).** *The FineWeb Datasets: Decanting the Web for the Finest Text Data at Scale.* FineWeb provides a documented example of extraction, language filtering, heuristic quality filtering, deduplication, and data-ablation experiments for web pretraining data.
+https://arxiv.org/abs/2406.17557
+https://huggingface.co/datasets/HuggingFaceFW/fineweb
+
+**Penedo, G., et al. (2025).** *FineWeb2: One Pipeline to Scale Them All—Adapting Pre-Training Data Processing to Every Language.* Particularly relevant for language–script labels, language-specific filtering, multilingual failure modes, and the risks of applying one global processing policy to many languages.
+https://arxiv.org/abs/2506.20920
+https://huggingface.co/datasets/HuggingFaceFW/fineweb-2
+
+**Li, J., et al. (2024).** *DataComp-LM: In Search of the Next Generation of Training Sets.* Provides a controlled framework for comparing data-curation strategies through downstream language-model training rather than assuming corpus-level proxies are sufficient.
+https://arxiv.org/abs/2406.11794
+
+#### Language identification and normalization
+
+**Kargaran, A. H., Imani, A., Yvon, F., & Schuetze, H. (2023).** *GlotLID: Language Identification for Low-Resource Languages.* Findings of EMNLP 2023. Discusses low-resource LID, noisy metadata, closely related languages, and variety-level challenges.
+https://aclanthology.org/2023.findings-emnlp.410/
+
+**Kargaran, A. H., Yvon, F., & Schuetze, H. (2024).** *MaskLID: Code-Switching Language Identification through Iterative Masking.* ACL 2024 Short Papers. Useful for understanding why a single dominant sentence-level label can hide multilingual content.
+https://aclanthology.org/2024.acl-short.43/
+
+**The Unicode Consortium.** *Unicode Standard Annex #15: Unicode Normalization Forms.* Normative definitions of NFC, NFD, NFKC, and NFKD and their stability/idempotence properties.
+https://unicode.org/reports/tr15/
+
+#### Corpus-design and audit ideas adapted from the supplied materials
+
+The lecture also adapts several ideas from the supplied corpus-linguistics teaching materials:
+
+* **Corpus Design and Compilation:** sampling frames, representativeness, and documented corpus construction;
+* **Tokenization, POS-Tagging, and Annotation:** annotation as an explicit, fallible layer and the importance of disagreement analysis;
+* **Frequency, Zipf's Law, and Keyness:** normalized comparison and the need to state denominators/reference corpora;
+* **Concordancing and Collocation:** returning from aggregate counts to inspectable contexts;
+* **N-grams and Lexical Bundles:** frequency versus dispersion and the danger of imported thresholds;
+* **Register, Genre, and Language Variation:** per-document variation and confounding;
+* **Statistics for Corpus Linguistics:** observation units, effect sizes, dependence, and multiple comparisons; and
+* **Arkhangelskiy's corpus-compilation workshop:** treating corpus text, metadata, annotation, and searchability as linked parts of an inspectable resource.
+
+These corpus-linguistics methods are used here as **diagnostic tools for pretraining-data engineering**, not as a claim that a linguistic reference corpus and a language-model training corpus should have the same design or sampling proportions.

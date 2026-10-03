@@ -1,0 +1,74 @@
+.future-slide .lp-slide-header { padding-right: 0; }
+.lecture-presentation .future-slide .lp-kicker { max-width: 1030px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; letter-spacing: .13em; }
+.lecture-presentation .future-slide .lp-slide-header h2 { max-width: 1140px; font-size: 38px; line-height: 1.15; }
+.future-slide .lp-slide-body { display: flex; flex-direction: column; justify-content: center; padding-bottom: 24px; }
+.lecture-presentation .future-title h1 { max-width: 1080px; font-size: 68px; line-height: 1.08; }
+.lecture-presentation .future-title .future-subtitle { max-width: 980px; margin-top: 30px; color: var(--lp-accent-dark); font-size: 25px; line-height: 1.45; }
+.lecture-presentation .future-part-title h2 { max-width: 1040px; font-size: 64px; font-weight: 750; line-height: 1.12; }
+.lecture-presentation .future-part-title .future-part-topics { margin-top: 32px; color: var(--lp-muted); font-size: 24px; line-height: 1.5; }
+.lecture-presentation .future-part-outline a { color: var(--lp-ink); text-decoration: none; }
+.lecture-presentation .future-part-outline a:hover { color: var(--lp-accent-dark); text-decoration: underline; }
+.lecture-presentation .future-part-outline a:focus-visible { outline: 2px solid var(--lp-accent); outline-offset: 5px; }
+.future-slide .future-points { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.future-points li { display: grid; grid-template-columns: 55px 1fr; align-items: center; gap: 15px; min-height: 68px; padding: 14px 0; border-bottom: 1px solid var(--lp-border); }
+.future-points li:last-child { border-bottom: 0; }
+.future-points li > span { color: var(--lp-accent); font-size: 24px; font-weight: 700; }
+.future-points li > p { color: var(--lp-ink); font-size: 25px; line-height: 1.35; }
+.future-slide .future-flow { display: flex; gap: 32px; margin: 0; padding: 0; list-style: none; }
+.future-flow li { position: relative; display: flex; flex: 1; flex-direction: column; justify-content: center; gap: 22px; min-height: 215px; padding: 25px 22px; border: 1px solid var(--lp-border); border-radius: 8px; }
+.future-flow li b { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: var(--lp-tint); color: var(--lp-accent-dark); font-size: 16px; }
+.future-flow li span { font-size: 23px; line-height: 1.4; }
+.future-flow li:not(:last-child)::after { position: absolute; top: 50%; right: -29px; color: var(--lp-accent); content: "→"; font-size: 24px; }
+.future-slide .future-flow-wrapped { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px 32px; }
+.future-flow-wrapped li { min-height: 180px; gap: 16px; padding: 20px; }
+.future-flow-wrapped li:nth-child(3n)::after { content: none; }
+.future-flow-wrapped li:nth-child(4) { grid-column: 3; grid-row: 2; }
+.future-flow-wrapped li:nth-child(5) { grid-column: 2; grid-row: 2; }
+.future-flow-wrapped li:nth-child(6) { grid-column: 1; grid-row: 2; }
+.future-flow-wrapped li:nth-child(3)::after { content: "↓"; top: auto; right: 50%; bottom: -24px; height: 24px; font-size: 20px; line-height: 24px; transform: translateX(50%); }
+.future-flow-wrapped li:nth-child(n+4):not(:last-child)::after { content: "←"; right: auto; left: -29px; }
+.future-table-wrap { width: 100%; }
+.lecture-presentation .future-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 22px; }
+.lecture-presentation .future-table th, .lecture-presentation .future-table td { padding: 22px 16px; border: 0; border-bottom: 1px solid var(--lp-border); text-align: left; vertical-align: top; line-height: 1.4; overflow-wrap: break-word; }
+.lecture-presentation .future-table thead th { border-bottom: 2px solid var(--lp-ink); font-size: 18px; color: var(--lp-muted); }
+.lecture-presentation .future-table tbody th { color: var(--lp-accent-dark); font-weight: 650; }
+.future-formula-layout, .future-code-layout { display: grid; gap: 28px; }
+.future-formula { padding: 30px 24px; color: var(--lp-accent-dark); background: var(--lp-tint); border-radius: 8px; font-family: "Cambria Math", "STIX Two Math", Georgia, serif; font-size: 32px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; text-align: center; }
+.future-formula-layout .future-points li, .future-code-layout .future-points li { min-height: 45px; padding: 9px 0; }
+.future-formula-layout .future-points li p, .future-code-layout .future-points li p { font-size: 21px; }
+.lecture-presentation .future-code-layout pre { width: 100%; padding: 24px; margin: 0; border: 1px solid var(--lp-border); border-radius: 8px; box-shadow: none; background: var(--lp-code); color: var(--lp-ink); font-size: 21px; }
+.lecture-presentation .future-code-layout pre code { max-height: none; padding: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: Consolas, "SFMono-Regular", monospace; line-height: 1.5; }
+.future-question { display: flex; flex-direction: column; align-items: flex-start; gap: 24px; }
+.future-question .future-prompt { font-size: 34px; line-height: 1.45; white-space: pre-line; }
+.future-question button { padding: 12px 20px; border: 1px solid var(--lp-accent); border-radius: 6px; background: #fff; color: var(--lp-accent-dark); font-size: 18px; cursor: pointer; }
+.future-question button:hover, .future-question button:focus-visible { background: var(--lp-tint); outline: 2px solid var(--lp-accent); outline-offset: 3px; }
+.future-question .future-answer { width: 100%; padding: 24px; background: var(--lp-tint); border-radius: 8px; font-size: 24px; line-height: 1.5; }
+.lecture-presentation .future-question .future-answer-code { margin: 0; border: 0; box-shadow: none; font-size: 28px; }
+.lecture-presentation .future-answer-code code { max-height: none; padding: 0; font-family: Consolas, "SFMono-Regular", monospace; line-height: 1.5; }
+.future-bars { display: grid; gap: 28px; }
+.future-bar-axis { display: grid; grid-template-columns: 270px 1fr 130px; gap: 24px; color: var(--lp-muted); font-size: 14px; }
+.future-bar-axis > div { display: flex; justify-content: space-between; }
+.future-bar-row { display: grid; grid-template-columns: 270px 1fr 130px; align-items: center; gap: 24px; font-size: 22px; }
+.future-bar-track { height: 32px; background: var(--lp-code); }
+.future-bar-track > div { height: 100%; background: var(--lp-accent); }
+.future-bar-row strong { color: var(--lp-accent-dark); text-align: right; font-variant-numeric: tabular-nums; }
+.future-bar-row strong small { display: block; margin-top: 4px; color: var(--lp-muted); font-size: 13px; font-weight: 500; }
+.future-bars .future-points li p { font-size: 20px; }
+@media (prefers-reduced-motion: reduce) { .future-slide * { transition: none !important; animation: none !important; } }
+.future-specimen-layout { display: grid; gap: 20px; }
+.future-specimens { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.future-specimens figure, .future-image-layout figure { margin: 0; min-width: 0; }
+.future-specimens figcaption { margin-bottom: 12px; color: var(--lp-accent-dark); font-size: 20px; font-weight: 650; }
+.lecture-presentation .future-specimens pre { width: 100%; margin: 0; padding: 20px; background: var(--lp-code); border: 1px solid var(--lp-border); border-radius: 8px; box-shadow: none; font-size: 20px; }
+.lecture-presentation .future-specimens pre code { max-height: none; padding: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: Consolas, "SFMono-Regular", monospace; line-height: 1.5; }
+.future-specimen-layout .future-points li { min-height: 40px; padding: 8px 0; }
+.future-specimen-layout .future-points li p { font-size: 21px; }
+.future-image-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: center; gap: 32px; }
+.lecture-presentation .future-image-layout img { display: block; width: 100%; max-height: 420px; margin: 0; object-fit: contain; }
+.future-image-layout figcaption { margin-top: 12px; color: var(--lp-muted); font-size: 15px; line-height: 1.4; }
+.future-image-layout .future-points li p { font-size: 23px; }
+.future-image-only { grid-template-columns: minmax(0, 1fr); }
+.lecture-presentation .future-image-only img { max-height: 480px; }
+.future-reading-exercise { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; padding: 60px; }
+.lecture-presentation .future-reading-exercise p { max-width: 1080px; margin: 0; color: var(--lp-ink); font-size: 72px; line-height: 1.55; text-align: left; }
+.future-reading-title { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }

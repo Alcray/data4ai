@@ -16,6 +16,7 @@ import "reveal.js/reveal.css";
 import "./Lecture1Presentation.css";
 import { AiMarketMoments } from "./AiMarketMoments";
 import { lecture1Html } from "./generated/lecture-1";
+import { readSlidePosition, rememberSlidePosition, slidePositionHash } from "./lecture-navigation";
 
 type PreferenceExample = {
   answers: Array<{ html: string; label: string }>;
@@ -573,14 +574,21 @@ export default function Lecture1Presentation({
   presentationRootRef,
   slideContent,
   lectureNumber = 1,
+  scrollActivationWidth,
+  onGoToText,
+  rememberPosition = false,
 }: {
   onExit: () => void;
   presentationRootRef?: RefObject<HTMLElement | null>;
   slideContent?: ReactNode;
   lectureNumber?: number;
+  scrollActivationWidth?: number;
+  onGoToText?: (anchor: string, slideHash: string) => void;
+  rememberPosition?: boolean;
 }) {
   const deckRef = useRef<RevealApi | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const hasExplicitSlideHash = useRef(typeof window !== "undefined" && window.location.hash.startsWith("#/"));
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isOverview, setIsOverview] = useState(false);
   const visuals = useMemo(() => parseLectureVisuals(), []);
@@ -702,6 +710,22 @@ export default function Lecture1Presentation({
     onExit();
   }
 
+  function goToText() {
+    const deck = deckRef.current;
+    const anchor = deck?.getCurrentSlide()?.dataset.textAnchor;
+    if (deck && anchor) {
+      const position = deck.getIndices();
+      if (rememberPosition) rememberSlidePosition(lectureNumber, position);
+      onGoToText?.(anchor, slidePositionHash(position));
+    }
+  }
+
+  function rememberCurrentSlide() {
+    if (rememberPosition && deckRef.current) {
+      rememberSlidePosition(lectureNumber, deckRef.current.getIndices());
+    }
+  }
+
   return (
     <div
       aria-label={`Lecture ${lectureNumber} presentation`}
@@ -720,6 +744,9 @@ export default function Lecture1Presentation({
         <button onClick={toggleOverview} type="button">
           {isOverview ? "Close overview" : "Overview"}
         </button>
+        {onGoToText && <button onClick={goToText} type="button" title="Open this slide’s lecture text in a new tab">
+          Go to text
+        </button>}
         <button onClick={() => void toggleFullscreen()} type="button">
           {isFullscreen ? "Exit full screen" : "Full screen"}
         </button>
@@ -743,12 +770,23 @@ export default function Lecture1Presentation({
           transition: "fade",
           transitionSpeed: "fast",
           width: 1280,
+          ...(scrollActivationWidth === undefined ? {} : { scrollActivationWidth }),
         }}
         deckRef={deckRef}
         onReady={(deck) => {
           if (deck.isPaused()) deck.togglePause(false);
+          if (rememberPosition) {
+            if (!hasExplicitSlideHash.current) {
+              const saved = readSlidePosition(lectureNumber);
+              if (saved && saved.h < deck.getTotalSlides()) deck.slide(saved.h, saved.v, saved.f);
+            }
+            rememberSlidePosition(lectureNumber, deck.getIndices());
+          }
           deck.layout();
         }}
+        onSlideChange={rememberCurrentSlide}
+        onFragmentShown={rememberCurrentSlide}
+        onFragmentHidden={rememberCurrentSlide}
         plugins={[RevealNotes]}
       >
         {slideContent ?? <>

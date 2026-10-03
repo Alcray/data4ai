@@ -514,6 +514,10 @@ button {
   line-height: 1.65;
 }
 
+.draft-lecture-content {
+  overflow-x: clip;
+}
+
 .interactive-learning {
   padding: 2rem 0 2.25rem;
   margin-top: 3.5rem;
@@ -6632,6 +6636,54 @@ button {
   font-size: 1.45rem;
 }
 
+/* Lecture 4: acquired representations converge into one audited document contract. */
+.lecture-diagram {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.55rem;
+  margin: 1.5rem 0;
+}
+
+.lecture-diagram-box {
+  display: flex;
+  min-height: 5rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  background: #fafafa;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.lecture-diagram-pair {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.lecture-diagram-box.accent {
+  border-color: var(--accent);
+  background: rgb(114 83 237 / 8%);
+  color: var(--accent);
+}
+
+.lecture-diagram-box em {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.lecture-diagram-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
 @media (max-width: 42rem) {
   .acquisition-state-main {
     flex-direction: column;
@@ -6664,6 +6716,21 @@ button {
     font-size: 0.62rem;
     letter-spacing: 0.02em;
   }
+
+  .lecture-diagram,
+  .lecture-diagram-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .lecture-diagram-box {
+    min-height: 0;
+  }
+
+  .lecture-diagram-arrow {
+    justify-content: center;
+    line-height: 0.5;
+    transform: rotate(90deg);
+  }
 }
 
 @media (min-width: 66.5rem) {
@@ -6689,4 +6756,19 @@ button {
   *::after {
     scroll-behavior: auto !important;
   }
+}
+.lecture-content .slide-text-highlight {
+  background-color: #fff2a8;
+  outline: 2px solid #e5c44e;
+  outline-offset: 2px;
+  border-radius: 2px;
+  scroll-margin-top: 8rem;
+}
+
+.lecture-content .slide-text-highlight > pre {
+  background-color: #fff2a8;
+}
+
+@media (forced-colors: active) {
+  .lecture-content .slide-text-highlight { outline-color: Highlight; }
 }
