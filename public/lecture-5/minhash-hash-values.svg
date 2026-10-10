@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">Apply the same two functions to both shingle sets</title>
+  <desc id="desc">Document A has a,b,c,d and B has a,b,c,e. The two toy hash values for a,b,c,d,e are 7,2; 14,8; 3,6; 20,14; 18,1.</desc>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:27px;font-weight:650}.label{font-size:24px;fill:#6b7280}.value{font-size:29px;text-anchor:middle}.accent{fill:#5b3fd4;font-weight:650}.shared{fill:#f2effe;stroke:#7253ed;stroke-width:1.5}.neutral{fill:#fff;stroke:#e5e7eb;stroke-width:1.5}.result{font-size:34px;text-anchor:middle;fill:#5b3fd4;font-weight:650}</style>
+  <text class="heading" x="20" y="32">Document A</text>
+  <rect class="shared" x="20" y="50" width="68" height="58" rx="5"/>
+  <text class="value" x="54" y="89">a</text>
+  <rect class="shared" x="105" y="50" width="68" height="58" rx="5"/>
+  <text class="value" x="139" y="89">b</text>
+  <rect class="shared" x="190" y="50" width="68" height="58" rx="5"/>
+  <text class="value" x="224" y="89">c</text>
+  <rect class="neutral" x="275" y="50" width="68" height="58" rx="5"/>
+  <text class="value" x="309" y="89">d</text>
+  <text class="heading" x="680" y="32">Document B</text>
+  <rect class="shared" x="680" y="50" width="68" height="58" rx="5"/>
+  <text class="value" x="714" y="89">a</text>
+  <rect class="shared" x="765" y="50" width="68" height="58" rx="5"/>
+  <text class="value" x="799" y="89">b</text>
+  <rect class="shared" x="850" y="50" width="68" height="58" rx="5"/>
+  <text class="value" x="884" y="89">c</text>
+  <rect class="neutral" x="935" y="50" width="68" height="58" rx="5"/>
+  <text class="value" x="969" y="89">e</text>
+  <text class="label" x="20" y="159">Shingle</text>
+  <text class="label" x="660" y="159">Hash 1</text>
+  <text class="label" x="1050" y="159">Hash 2</text>
+  <path d="M20 175H1180" stroke="#e5e7eb"/>
+  <text class="heading" x="20" y="217">a</text>
+  <text class="value" x="700" y="217">7</text>
+  <text class="value" x="1090" y="217">2</text>
+  <path d="M20 234H1180" stroke="#e5e7eb"/>
+  <text class="heading" x="20" y="268">b</text>
+  <text class="value" x="700" y="268">14</text>
+  <text class="value" x="1090" y="268">8</text>
+  <path d="M20 285H1180" stroke="#e5e7eb"/>
+  <text class="heading" x="20" y="319">c</text>
+  <text class="value" x="700" y="319">3</text>
+  <text class="value" x="1090" y="319">6</text>
+  <path d="M20 336H1180" stroke="#e5e7eb"/>
+  <text class="heading" x="20" y="370">d</text>
+  <text class="value" x="700" y="370">20</text>
+  <text class="value" x="1090" y="370">14</text>
+  <path d="M20 387H1180" stroke="#e5e7eb"/>
+  <text class="heading" x="20" y="421">e</text>
+  <text class="value" x="700" y="421">18</text>
+  <text class="value" x="1090" y="421">1</text>
+  <path d="M20 438H1180" stroke="#e5e7eb"/>
+</svg>

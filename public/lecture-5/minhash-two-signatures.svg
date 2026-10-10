@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">Keep the column minimum within each document</title>
+  <desc id="desc">A uses a,b,c,d and keeps 3 from Hash 1 and 2 from Hash 2. B uses a,b,c,e and keeps 3 and 1. Their first coordinates match and the second differ.</desc>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:27px;font-weight:650}.label{font-size:24px;fill:#6b7280}.value{font-size:29px;text-anchor:middle}.accent{fill:#5b3fd4;font-weight:650}.shared{fill:#f2effe;stroke:#7253ed;stroke-width:1.5}.neutral{fill:#fff;stroke:#e5e7eb;stroke-width:1.5}.result{font-size:34px;text-anchor:middle;fill:#5b3fd4;font-weight:650}</style>
+  <text class="heading" x="20" y="36">A = {a,b,c,d}</text>
+  <text class="label" x="20" y="99">Hash 1</text>
+  <text class="value" x="190" y="99">7</text>
+  <text class="value" x="280" y="99">14</text>
+  <rect class="shared" x="336" y="68" width="68" height="43" rx="5"/>
+  <text class="value accent" x="370" y="99">3</text>
+  <text class="value" x="460" y="99">20</text>
+  <text class="label" x="20" y="162">Hash 2</text>
+  <rect class="shared" x="156" y="131" width="68" height="43" rx="5"/>
+  <text class="value accent" x="190" y="162">2</text>
+  <text class="value" x="280" y="162">8</text>
+  <text class="value" x="370" y="162">6</text>
+  <text class="value" x="460" y="162">14</text>
+  <text class="heading" x="650" y="36">B = {a,b,c,e}</text>
+  <text class="label" x="650" y="99">Hash 1</text>
+  <text class="value" x="820" y="99">7</text>
+  <text class="value" x="910" y="99">14</text>
+  <rect class="shared" x="966" y="68" width="68" height="43" rx="5"/>
+  <text class="value accent" x="1000" y="99">3</text>
+  <text class="value" x="1090" y="99">18</text>
+  <text class="label" x="650" y="162">Hash 2</text>
+  <text class="value" x="820" y="162">2</text>
+  <text class="value" x="910" y="162">8</text>
+  <text class="value" x="1000" y="162">6</text>
+  <rect class="shared" x="1056" y="131" width="68" height="43" rx="5"/>
+  <text class="value accent" x="1090" y="162">1</text>
+  <path d="M20 210H1180" stroke="#e5e7eb"/>
+  <text class="heading" x="20" y="257">MinHash signatures</text>
+  <rect class="shared" x="835" y="282" width="90" height="130" rx="5"/>
+  <rect class="neutral" x="995" y="282" width="90" height="53" rx="5"/>
+  <rect class="neutral" x="995" y="359" width="90" height="53" rx="5"/>
+  <text class="heading" x="20" y="318">Document A</text>
+  <text class="result" x="880" y="319">3</text>
+  <text class="result" x="1040" y="319">2</text>
+  <text class="heading" x="20" y="395">Document B</text>
+  <text class="result" x="880" y="396">3</text>
+  <text class="result" x="1040" y="396">1</text>
+  <text class="heading accent" x="230" y="465">First coordinate matches; second differs.</text>
+</svg>

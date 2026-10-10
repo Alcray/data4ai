@@ -3,14 +3,16 @@ export type SlideSpec = {
   section: string;
   /** Manually chosen destination in the lecture text. */
   textAnchor?: string;
-  kind: "points" | "flow" | "comparison" | "table" | "formula" | "code" | "question" | "bars" | "specimen" | "image" | "reading";
+  kind: "points" | "flow" | "comparison" | "table" | "formula" | "code" | "question" | "bars" | "specimen" | "image" | "reading" | "divider";
   items?: string[];
   headers?: string[];
   rows?: string[][];
   formula?: string;
+  /** ID of a trusted, authored MathML block in the rendered lecture chapter. */
+  formulaAnchor?: string;
   code?: string;
   specimens?: { label: string; text: string }[];
-  image?: { src: string; alt: string; caption: string };
+  image?: { src: string; alt: string; caption?: string };
   prompt?: string;
   answer?: string;
   answerCode?: string;
@@ -24,7 +26,7 @@ export type SlideSpec = {
 export type LectureDeck = {
   number: number;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   textAnchor?: string;
   outlineTextAnchor?: string;
   parts?: {

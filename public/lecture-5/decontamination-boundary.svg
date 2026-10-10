@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 450" role="img" aria-labelledby="title desc">
+  <title id="title">Protected benchmark information must not enter training</title>
+  <desc id="desc">A training corpus and protected benchmark collection sit on opposite sides of a vertical boundary. An arrow from the benchmarks toward training is crossed out. Questions, answers, translations, rewrites, and derived solutions covered by the protected policy must remain outside training.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6b7280"/></marker></defs>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:32px;font-weight:650;text-anchor:middle}.label{font-size:26px;fill:#6b7280;text-anchor:middle}.accent{fill:#5b3fd4}.box{fill:#fff;stroke:#e5e7eb;stroke-width:2}.protected{fill:#f2effe;stroke:#7253ed;stroke-width:2}</style>
+  <text class="label accent" x="600" y="40">Protected evaluation boundary</text>
+  <path d="M600 65V385" stroke="#7253ed" stroke-width="3"/>
+  <rect class="box" x="35" y="115" width="435" height="230" rx="10"/>
+  <rect class="protected" x="730" y="115" width="435" height="230" rx="10"/>
+  <text class="heading" x="252" y="170">Training corpus</text>
+  <text class="label" x="252" y="227">Eligible training documents</text>
+  <text class="label" x="252" y="290">Admit only after clearance</text>
+  <text class="heading" x="947" y="170">Protected benchmarks</text>
+  <text class="label" x="947" y="227">Questions + answers</text>
+  <text class="label" x="947" y="275">Translations · rewrites</text>
+  <text class="label" x="947" y="312">Derived solutions</text>
+  <path d="M727 240H474" fill="none" stroke="#6b7280" stroke-width="4" marker-end="url(#arrow)"/>
+  <circle cx="600" cy="240" r="31" fill="#fff"/>
+  <path d="M579 219L621 261M579 261L621 219" stroke="#7253ed" stroke-width="6"/>
+</svg>

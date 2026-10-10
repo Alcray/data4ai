@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 460" role="img" aria-labelledby="title desc">
+  <title id="title">Three grouping policies on the same verified chain</title>
+  <desc id="desc">All panels use verified edges A–B and B–C with no A–C edge. Connected components group A,B,C; choosing A retains A and removes B and C by component membership. Representative-centered processing with A first groups A,B and leaves C, retaining A and C with B removed using A. A stricter all-pairs-consistent policy can also choose groups A,B and C; the full A,B,C group is forbidden because A–C does not match. That strict partition is one possible choice, not a unique result.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#7253ed"/></marker></defs>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:26px;font-weight:650;text-anchor:middle}.label{font-size:23px;fill:#6b7280;text-anchor:middle}.result{font-size:26px;font-weight:650;fill:#5b3fd4;text-anchor:middle}.kept{fill:#7253ed;stroke:#7253ed;stroke-width:3}.removed{fill:#fff;stroke:#6b7280;stroke-width:3}.id{font-size:29px;font-weight:650;dominant-baseline:middle;text-anchor:middle}.white{fill:#fff}.muted{fill:#6b7280}.group{fill:none;stroke:#7253ed;stroke-width:2}.edge{stroke:#7253ed;stroke-width:4;fill:none}.unused{stroke:#9ca3af;stroke-width:3;fill:none}</style>
+  <text class="heading" x="200" y="36">Connected components</text>
+  <text class="heading" x="600" y="36">Representative-centered</text>
+  <text class="heading" x="1000" y="36">All-pairs consistent</text>
+  <text class="label" x="200" y="73">Choose A to retain</text>
+  <text class="label" x="600" y="73">Priority A → B → C</text>
+  <text class="label" x="1000" y="73">Choose {A,B} first</text>
+  <rect class="group" x="35" y="102" width="330" height="159" rx="18"/>
+  <rect class="group" x="435" y="102" width="205" height="159" rx="18"/>
+  <rect class="group" x="670" y="102" width="95" height="159" rx="18"/>
+  <rect class="group" x="835" y="102" width="205" height="159" rx="18"/>
+  <rect class="group" x="1070" y="102" width="95" height="159" rx="18"/>
+  <path class="edge" d="M116 165H169M231 165H284"/>
+  <path class="edge" d="M569 165H516" marker-end="url(#arrow)"/>
+  <path class="unused" d="M631 165H684M1031 165H1084"/>
+  <path class="edge" d="M916 165H969"/>
+  <circle class="kept" cx="85" cy="165" r="31"/><text class="id white" x="85" y="166">A</text>
+  <circle class="removed" cx="200" cy="165" r="31"/><text class="id muted" x="200" y="166">B</text>
+  <circle class="removed" cx="315" cy="165" r="31"/><text class="id muted" x="315" y="166">C</text>
+  <circle class="kept" cx="485" cy="165" r="31"/><text class="id white" x="485" y="166">A</text>
+  <circle class="removed" cx="600" cy="165" r="31"/><text class="id muted" x="600" y="166">B</text>
+  <circle class="kept" cx="715" cy="165" r="31"/><text class="id white" x="715" y="166">C</text>
+  <circle class="kept" cx="885" cy="165" r="31"/><text class="id white" x="885" y="166">A</text>
+  <circle class="removed" cx="1000" cy="165" r="31"/><text class="id muted" x="1000" y="166">B</text>
+  <circle class="kept" cx="1115" cy="165" r="31"/><text class="id white" x="1115" y="166">C</text>
+  <text class="label" x="200" y="231">{A,B,C}</text>
+  <text class="label" x="537" y="231">{A,B}</text><text class="label" x="715" y="231">{C}</text>
+  <text class="label" x="937" y="231">{A,B}</text><text class="label" x="1115" y="231">{C}</text>
+  <text class="result" x="200" y="306">Keep A · remove B, C</text>
+  <text class="result" x="600" y="306">Keep A, C · remove B</text>
+  <text class="result" x="1000" y="306">Keep A, C · remove B</text>
+  <text class="label" x="200" y="355">C removed by chaining</text>
+  <text class="label" x="200" y="388">No direct A–C match</text>
+  <text class="label" x="600" y="355">B → A is the witness</text>
+  <text class="label" x="600" y="388">C does not match A</text>
+  <text class="label" x="1000" y="355">Every group pair must match</text>
+  <text class="label" x="1000" y="388">{A,B,C} is not allowed</text>
+  <text class="label" x="600" y="446">Filled = kept · hollow = removed · outlines = groups · strict partition is one possible choice</text>
+</svg>

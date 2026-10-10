@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 415" role="img" aria-labelledby="title desc">
+  <title id="title">One changed word leaves two shared three-word shingles</title>
+  <desc id="desc">Sentence A ends with acceleration, sentence B ends with velocity. Both contain shingle 1 force equals mass and shingle 2 equals mass times. A contains shingle 3 mass times acceleration, B contains shingle 4 mass times velocity. Their intersection contains two shingles and union contains four, giving Jaccard similarity 0.5.</desc>
+  <style>
+    text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}
+    .heading{font-size:23px;font-weight:650}
+    .shared{fill:#f2effe;stroke:#7253ed;stroke-width:1.5}
+    .unique{fill:#fff;stroke:#e5e7eb;stroke-width:1.5}
+    .shingle{font-family:Consolas,monospace;font-size:27px}
+    .match{fill:#5b3fd4}
+    .summary{font-size:28px;font-weight:650;fill:#5b3fd4}
+  </style>
+  <text class="heading" x="25" y="35">A: force equals mass times acceleration</text>
+  <text class="heading" x="635" y="35">B: force equals mass times velocity</text>
+  <rect class="shared" x="25" y="75" width="540" height="65" rx="6"/>
+  <text class="shingle match" x="45" y="116">1 · force equals mass</text>
+  <rect class="shared" x="635" y="75" width="540" height="65" rx="6"/>
+  <text class="shingle match" x="655" y="116">1 · force equals mass</text>
+  <rect class="shared" x="25" y="165" width="540" height="65" rx="6"/>
+  <text class="shingle match" x="45" y="206">2 · equals mass times</text>
+  <rect class="shared" x="635" y="165" width="540" height="65" rx="6"/>
+  <text class="shingle match" x="655" y="206">2 · equals mass times</text>
+  <rect class="unique" x="25" y="255" width="540" height="65" rx="6"/>
+  <text class="shingle" x="45" y="296">3 · mass times acceleration</text>
+  <rect class="unique" x="635" y="255" width="540" height="65" rx="6"/>
+  <text class="shingle" x="655" y="296">4 · mass times velocity</text>
+  <text class="summary" x="600" y="385" text-anchor="middle">Shared: {1,2} · Union: {1,2,3,4} · J = 2/4 = 0.5</text>
+</svg>

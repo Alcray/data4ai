@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">Hash every shingle and keep the minimum</title>
+  <desc id="desc">Sentence A ends in acceleration and B ends in velocity. Their shingle sets are A={1,2,3} and B={1,2,4}. A shared toy rank function assigns 2,1,4,3 to the four shingle IDs. Both sets keep value 1 from shingle 2.</desc>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.label{font-size:24px;fill:#6b7280}.word{font-size:25px}.number{font-size:28px;text-anchor:middle}.minimum{fill:#5b3fd4;font-weight:650}.result{font-size:30px;fill:#5b3fd4;font-weight:650}</style>
+  <text class="word" x="20" y="36">A: force equals mass times acceleration</text>
+  <text class="word" x="20" y="77">B: force equals mass times velocity</text>
+  <text class="label" x="20" y="137">Shingle ID · three words</text>
+  <text class="label" x="660" y="137" text-anchor="middle">h₁(s)</text>
+  <text class="label" x="850" y="137" text-anchor="middle">A = {1,2,3}</text>
+  <text class="label" x="1080" y="137" text-anchor="middle">B = {1,2,4}</text>
+  <path d="M20 153H1180" stroke="#111827" stroke-width="2"/>
+  <text class="word" x="20" y="197">1 · force equals mass</text>
+  <text class="number" x="660" y="197">2</text>
+  <text class="number" x="850" y="197">2</text>
+  <text class="number" x="1080" y="197">2</text>
+  <path d="M20 214H1180" stroke="#e5e7eb"/>
+  <rect x="615" y="226" width="90" height="43" rx="5" fill="#f2effe" stroke="#7253ed"/>
+  <rect x="805" y="226" width="90" height="43" rx="5" fill="#f2effe" stroke="#7253ed"/>
+  <rect x="1035" y="226" width="90" height="43" rx="5" fill="#f2effe" stroke="#7253ed"/>
+  <text class="word minimum" x="20" y="257">2 · equals mass times</text>
+  <text class="number minimum" x="660" y="257">1</text>
+  <text class="number minimum" x="850" y="257">1</text>
+  <text class="number minimum" x="1080" y="257">1</text>
+  <path d="M20 274H1180" stroke="#e5e7eb"/>
+  <text class="word" x="20" y="317">3 · mass times acceleration</text>
+  <text class="number" x="660" y="317">4</text>
+  <text class="number" x="850" y="317">4</text>
+  <text class="number label" x="1080" y="317">—</text>
+  <path d="M20 334H1180" stroke="#e5e7eb"/>
+  <text class="word" x="20" y="377">4 · mass times velocity</text>
+  <text class="number" x="660" y="377">3</text>
+  <text class="number label" x="850" y="377">—</text>
+  <text class="number" x="1080" y="377">3</text>
+  <path d="M20 394H1180" stroke="#e5e7eb"/>
+  <text class="label" x="20" y="453">Toy hash ranks · — means absent</text>
+  <text class="result" x="850" y="453" text-anchor="middle">min(A) = 1</text>
+  <text class="result" x="1080" y="453" text-anchor="middle">min(B) = 1</text>
+</svg>

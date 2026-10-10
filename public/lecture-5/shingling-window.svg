@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" role="img" aria-labelledby="title desc">
+  <title id="title">A three-word window moves across five tokens</title>
+  <desc id="desc">The tokens force equals mass times acceleration produce three overlapping shingles: force equals mass; equals mass times; mass times acceleration. Each successive window starts one token later.</desc>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif}.label{font-size:23px;fill:#6b7280}.word{font-size:24px;fill:#111827}.selected{fill:#5b3fd4;font-weight:650}.summary{font-size:28px;fill:#5b3fd4;font-weight:650}</style>
+  <text class="label" x="20" y="91">Tokens</text>
+  <rect x="140" y="55" width="190" height="56" rx="5" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text class="word" x="235" y="91" text-anchor="middle">force</text>
+  <rect x="346" y="55" width="190" height="56" rx="5" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text class="word" x="441" y="91" text-anchor="middle">equals</text>
+  <rect x="552" y="55" width="190" height="56" rx="5" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text class="word" x="647" y="91" text-anchor="middle">mass</text>
+  <rect x="758" y="55" width="190" height="56" rx="5" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text class="word" x="853" y="91" text-anchor="middle">times</text>
+  <rect x="964" y="55" width="190" height="56" rx="5" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text class="word" x="1059" y="91" text-anchor="middle">acceleration</text>
+  <text class="label" x="20" y="174">Start 1</text>
+  <rect x="140" y="138" width="190" height="56" rx="5" fill="#f2effe" stroke="#7253ed" stroke-width="1.5"/>
+  <text class="word selected" x="235" y="174" text-anchor="middle">force</text>
+  <rect x="346" y="138" width="190" height="56" rx="5" fill="#f2effe" stroke="#7253ed" stroke-width="1.5"/>
+  <text class="word selected" x="441" y="174" text-anchor="middle">equals</text>
+  <rect x="552" y="138" width="190" height="56" rx="5" fill="#f2effe" stroke="#7253ed" stroke-width="1.5"/>
+  <text class="word selected" x="647" y="174" text-anchor="middle">mass</text>
+  <rect x="758" y="138" width="190" height="56" rx="5" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text class="word" x="853" y="174" text-anchor="middle" opacity="0.3">times</text>
+  <rect x="964" y="138" width="190" height="56" rx="5" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text class="word" x="1059" y="174" text-anchor="middle" opacity="0.3">acceleration</text>
+  <text class="label" x="20" y="257">Start 2</text>
+  <rect x="140" y="221" width="190" height="56" rx="5" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text class="word" x="235" y="257" text-anchor="middle" opacity="0.3">force</text>
+  <rect x="346" y="221" width="190" height="56" rx="5" fill="#f2effe" stroke="#7253ed" stroke-width="1.5"/>
+  <text class="word selected" x="441" y="257" text-anchor="middle">equals</text>
+  <rect x="552" y="221" width="190" height="56" rx="5" fill="#f2effe" stroke="#7253ed" stroke-width="1.5"/>
+  <text class="word selected" x="647" y="257" text-anchor="middle">mass</text>
+  <rect x="758" y="221" width="190" height="56" rx="5" fill="#f2effe" stroke="#7253ed" stroke-width="1.5"/>
+  <text class="word selected" x="853" y="257" text-anchor="middle">times</text>
+  <rect x="964" y="221" width="190" height="56" rx="5" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text class="word" x="1059" y="257" text-anchor="middle" opacity="0.3">acceleration</text>
+  <text class="label" x="20" y="340">Start 3</text>
+  <rect x="140" y="304" width="190" height="56" rx="5" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text class="word" x="235" y="340" text-anchor="middle" opacity="0.3">force</text>
+  <rect x="346" y="304" width="190" height="56" rx="5" fill="#fff" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text class="word" x="441" y="340" text-anchor="middle" opacity="0.3">equals</text>
+  <rect x="552" y="304" width="190" height="56" rx="5" fill="#f2effe" stroke="#7253ed" stroke-width="1.5"/>
+  <text class="word selected" x="647" y="340" text-anchor="middle">mass</text>
+  <rect x="758" y="304" width="190" height="56" rx="5" fill="#f2effe" stroke="#7253ed" stroke-width="1.5"/>
+  <text class="word selected" x="853" y="340" text-anchor="middle">times</text>
+  <rect x="964" y="304" width="190" height="56" rx="5" fill="#f2effe" stroke="#7253ed" stroke-width="1.5"/>
+  <text class="word selected" x="1059" y="340" text-anchor="middle">acceleration</text>
+  <text class="summary" x="600" y="417" text-anchor="middle">3 tokens per window · 3 overlapping shingles</text>
+</svg>

@@ -1,0 +1,3138 @@
+---
+title: "Lecture 5: Corpus integrity—deduplication, contamination, and privacy"
+order: 6
+description: "How exact and approximate duplication, evaluation contamination, and sensitive data are detected, handled, measured, and preserved in an auditable corpus version."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+At the end of Lecture 4 we had an **audited candidate corpus**: raw objects had been extracted into documents, normalization had been versioned, language and quality signals had been measured, and filtering decisions had been inspected rather than treated as magic. That corpus can still be unsuitable for pretraining.
+
+The same article may appear through ten mirrors. A documentation page may contain a paragraph copied from Wikipedia. A benchmark problem may have entered through a translation or a teacher-generated solution even though the exact benchmark string never occurs. A useful forum post may contain an email address, an API credential, or another sensitive span. These are not independent “quality” problems. They are problems about **relationships among records** and about **boundaries the corpus must respect**.
+
+This lecture develops three related integrity tasks:
+
+1. **Deduplication** — controlling redundant exposure under a stated similarity and removal policy.
+2. **Decontamination** — enforcing a protected evaluation boundary using exact, approximate, semantic, and provenance evidence.
+3. **Privacy-oriented processing** — detecting and handling specified sensitive material while measuring both misses and collateral damage.
+
+The word **integrity** is useful because none of these operations has a universal threshold. Similarity is a measurement. “Duplicate” is a policy decision. “Contaminated” is always relative to a protected evaluation artifact. “PII removed” is meaningful only relative to a detector scope, languages, entity types, and audit procedure.
+
+> **Objective**
+>
+> Starting from the candidate corpus produced in Lecture 4, build an integrity pipeline that detects redundancy, protects evaluation families, handles specified sensitive spans, and produces a new corpus version whose removals, retained risks, and measurement errors can be audited.
+
+**Prerequisites.** Lectures 3–4; sets, probability, hashing, graph traversal, precision/recall, and basic asymptotic reasoning.
+
+**Learning outcomes.** By the end of the lecture, you should be able to:
+
+* distinguish byte equality, normalized-text equality, lexical near-duplication, containment, and semantic relatedness;
+* derive the MinHash collision identity and the MinHash-LSH banding probability;
+* explain why candidate generation and duplicate decision are separate stages;
+* reason about non-transitive similarity and representative-selection policies;
+* define benchmark contamination at the correct family/unit level;
+* combine provenance, lexical matching, and semantic retrieval without treating any single method as a proof of independence;
+* evaluate privacy-oriented span detection and transformation;
+* audit what integrity processing removed, what it missed, and how it changed corpus composition.
+
+The implementation sections connect each algorithm to its assumptions, cost, and failure modes. Work through the small examples before changing parameters: derive the required shingle overlap, calculate the LSH retrieval curve, trace a provenance closure, and apply masks to the exact text version that produced their offsets. The numerical examples are constructed, not measurements of the running corpus.
+
+---
+
+## Running example: the Armenian technical-language corpus
+
+We continue the same running project from Lectures 3 and 4: a multilingual base-model corpus intended to strengthen **Armenian scientific and technical exposition** while retaining broad Armenian language coverage and selected English/code material.
+
+Suppose Lecture 4 leaves us with the following candidate inventory. The numbers are constructed for teaching; they are not a recommended recipe.
+
+| Component                         | Candidate documents | Approx. tokens | Notes                                               |
+| --------------------------------- | ------------------: | -------------: | --------------------------------------------------- |
+| Armenian news                     |              78,000 |           310M | Multiple outlets and mirrors                        |
+| Native Armenian science/education |               8,500 |            48M | Universities, educational sites, reference material |
+| Translated Armenian STEM          |              14,200 |            72M | Parent English IDs preserved                        |
+| English science/reference         |              30,000 |           190M | Replay/supporting technical material                |
+| Code                              |        22,000 files |           140M | Repository family and commit preserved              |
+| **Total**                         | **152,700 records** |       **760M** | Before global integrity processing                  |
+
+Lecture 4's audit tells us that these documents are generally readable under the current extraction policy. It does **not** tell us:
+
+* how many are mirrors or revisions of the same content;
+* how many translated records descend from the same source family;
+* whether benchmark questions appear directly or indirectly;
+* whether sensitive data occur in retained text;
+* how the corpus distribution will change if we remove repeated or protected material.
+
+Those are the questions for this lecture.
+
+---
+
+## Part I — Deduplication
+
+### 1. “Repeated” is not one relationship
+
+Before writing a deduplicator, define what kind of repetition matters.
+
+| Relationship            | Example                                         | Typical evidence                         | Possible treatment                                         |
+| ----------------------- | ----------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------- |
+| Same acquired bytes     | Two receipts point to the same stored object    | Content digest                           | Store bytes once; preserve both acquisition records        |
+| Same extracted text     | Two sites mirror the same article exactly       | Hash of a canonical text view            | Keep one training representative; preserve provenance      |
+| Near-identical document | Same article with changed title/date/footer     | High lexical similarity                  | Cluster under a stated policy                              |
+| Partial containment     | A benchmark problem copied into a long tutorial | Directional overlap / span matching      | Remove or quarantine the protected span/document           |
+| Shared template         | Navigation/footer repeated on many pages        | Repeated blocks/spans                    | Fix extraction or remove boilerplate, not whole documents  |
+| Formulaic language      | “In conclusion, the results show…”              | Frequent phrase across independent texts | Usually keep; recurrence is not duplication by itself      |
+| Known derivative        | Original → translation → teacher answer         | Provenance graph                         | Treat as one family for split/boundary purposes            |
+| Same topic              | Two independent explanations of Newton's laws   | Semantic similarity                      | Usually not deduplicate solely for being topically related |
+
+A similarity score does not tell you which relationship a pair belongs to. That interpretation comes from the representation, source metadata, provenance, and corpus policy.
+
+#### Stop and reason
+
+Two Armenian articles share 85% of their words. One is a copied mirror. The other is a later version with a corrected paragraph and an added interview section.
+
+**Question:** Should both pairs receive the same treatment because their similarity score is the same?
+
+No. Similarity retrieves evidence. The retention policy still needs to distinguish mirrored redundancy from meaningful version history.
+
+---
+
+### 2. Exact equality: simple, useful, and narrower than it looks
+
+Let $x_i$ be the byte sequence or text representation associated with record $i$. Exact grouping can use a cryptographic digest as an efficient key:
+
+$$
+k_i = h(x_i).
+$$
+
+For a classroom-scale corpus:
+
+```python
+import hashlib
+
+
+def sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+```
+
+The hash function is an indexing mechanism. **Equality is defined by the representation you choose to hash.**
+
+Hashing acquired WARC bytes answers:
+
+> Are these acquired byte sequences identical?
+
+Hashing extracted text answers:
+
+> Did these two records produce identical extracted text under this extractor version?
+
+Hashing normalized text answers yet another question.
+
+#### 2.1 Record identity must survive deduplication
+
+Suppose two source records have identical article text:
+
+```text
+record A: outlet-x / article-17 / captured 2026-02-10
+record B: mirror-y / story-991 / captured 2026-02-11
+```
+
+Their content hashes may be equal, but their acquisition records are not the same historical object. Keep both source identities and link them to one content-equivalence group.
+
+This is why Lecture 3 separated **record identity** from **content identity**.
+
+#### 2.2 Canonicalization changes the equality relation
+
+Exact byte equality misses harmless formatting differences:
+
+```text
+"Newton's law\n"
+"Newton's law\r\n"
+```
+
+We can define a canonicalization function $N$ and group by
+
+$$
+k_i = h(N(x_i)).
+$$
+
+For example:
+
+```python
+import re
+import unicodedata
+
+
+def canonical_key_text(text: str) -> str:
+    text = unicodedata.normalize("NFC", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+```
+
+This is only an illustrative prose key. It is not safe as a universal canonicalization for code, equations, or every language.
+
+The important principle is:
+
+> **The canonicalization used for duplicate detection is a diagnostic representation, not necessarily the text we train on.**
+
+Do not overwrite original retained text simply because a duplicate key lowercases or simplifies it.
+
+#### Stop and reason
+
+You lowercase all text before hashing and discover that two files now collide. One is a prose article; the other is source code where case distinguishes identifiers.
+
+**Question:** Did you discover a duplicate?
+
+Not necessarily. You discovered equality under a representation that is inappropriate for at least one content type.
+
+---
+
+#### 2.3 Three different ways a duplicate key can go wrong
+
+Suppose two distinct records receive the same key. Before blaming the hash function, distinguish three mechanisms:
+
+| Mechanism | What became identical? | Example | Appropriate response |
+| --- | --- | --- | --- |
+| Canonicalization merge | The normalized text | Lowercasing collapses `US` and `us` | Change or restrict the comparison policy |
+| Serialization ambiguity | The bytes supplied to the hash | Joining tokens with a separator that also occurs inside a token | Use an unambiguous encoding |
+| Hash collision | Only the finite digest | Different byte strings map to one digest | Verify payload equality; choose sufficient digest width |
+
+A stronger hash cannot repair either of the first two problems. Once two inputs have become identical bytes, every deterministic hash must return the same result.
+
+For example, joining tokens with `"\x1f"` maps both `("a\x1fb", "c")` and `("a", "b\x1fc")` to the same bytes. Instead, encode the number of tokens and the byte length of each token before its UTF-8 payload:
+
+```{.python #l5-token-encoding}
+def encode_tokens(tokens):
+    pieces = [len(tokens).to_bytes(4, "big")]
+    for token in tokens:
+        raw = token.encode("utf-8")
+        pieces.append(len(raw).to_bytes(8, "big"))
+        pieces.append(raw)
+    return b"".join(pieces)
+```
+
+The length fields let a decoder recover each boundary even when the token contains whitespace, null bytes, or the old separator. The fixed widths also define limits: fewer than $2^{32}$ tokens and fewer than $2^{64}$ bytes per token. An out-of-range input must fail, not silently wrap.
+
+For $M$ distinct inputs mapped independently and uniformly into $2^w$ digest values, there are $\binom M2$ pairs and each pair collides with probability $2^{-w}$. A union bound gives
+
+$$
+P(\text{at least one collision})
+\leq \min\left(1,\frac{M(M-1)}{2^{w+1}}\right).
+$$
+
+With one billion distinct inputs and 64-bit digests, the expression is approximately $0.027$: a collision somewhere is no longer astronomically unlikely. With 128 bits it is approximately $1.47\times10^{-21}$. These are idealized accidental-collision calculations, not guarantees against maliciously chosen inputs. Also distinguish *corpus-wide* collision probability from the probability that one particular comparison collides.
+
+For exact deduplication, use the digest to find a small group, then compare the actual canonical payloads within that group. Two colliding digests need not cause a false merge. For approximate indexes, retain enough source evidence to verify matches against the original shingles.
+
+#### 2.4 Exact grouping is also a data-movement problem
+
+Let $B$ be the number of input bytes and $N$ the number of records. Hashing requires reading $O(B)$ bytes. An in-memory hash table can group records in expected $O(N)$ insertions, but its keys, IDs, pointers, and provenance may not fit in memory.
+
+Hashing a document and looking up its digest are different operations. SHA-256 processes the input in fixed-size blocks, so hashing an $L$-byte document takes $O(L)$ work. Its output has fixed length, but producing that output still requires reading the input. Looking up or inserting the resulting fixed-size key in an ordinary in-memory hash table takes expected $O(1)$ work.
+
+For $N$ documents of $L$ bytes each, the base grouping cost is therefore expected $O(NL+N)$. If document lengths vary, write it as $O(B+N)$ instead. With document size held fixed, this is linear in the number of documents, not constant for the whole corpus.
+
+In a constructed workload of one million documents, each containing 10,000 bytes:
+
+| Operation | Work |
+| --- | --- |
+| Hash one document | Read its 10,000 input bytes |
+| Look up its digest | One expected constant-time table operation |
+| Hash the corpus | Read $10^6\times10^4=10^{10}$ bytes, or 10 GB |
+| Group the corpus | One million table lookups or insertions |
+
+These use decimal units: 1 KB is 1,000 bytes and 1 GB is one billion bytes. Doubling the document count at the same document size doubles this base work. It does not guarantee an exact doubling of elapsed time: I/O, cache behavior, memory limits, and payload verification can change runtime.
+
+A bounded-memory alternative emits records such as
+
+```text
+(representation_version, digest, document_id, payload_location)
+```
+
+and externally sorts them by the first two fields. Equal keys become adjacent; a streaming reducer verifies equality and writes a representative-to-member mapping. Comparison sorting takes $O(N\log N)$ key comparisons, while actual runtime also depends on disk passes, key width, and network shuffle. Group on the representation version as well as the digest: keys from two different normalizers do not have interchangeable meanings.
+
+Partitioning a distributed job by digest is safe for exact grouping because every equal digest goes to the same partition. Partitioning by source website is not sufficient for a *global* duplicate claim: a mirror on another website would never meet the original.
+
+---
+
+#### 2.5 SHA-256 is a deterministic fingerprint of bytes
+
+A cryptographic hash maps an input byte sequence to a digest of fixed length. [SHA-256 in the Secure Hash Standard](https://csrc.nist.gov/pubs/fips/180-4/upd1/final) [@nist2015sha] produces 256 bits, or 32 bytes. Displaying those bytes in hexadecimal produces 64 characters. It is not a compressed copy of the text from which the original document can be reconstructed.
+
+The exact same input bytes always give the same SHA-256 digest. There is no random seed or per-run salt in the plain SHA-256 operation used here. A text string must first be encoded into bytes; our examples use UTF-8.
+
+For this constructed input:
+
+```text
+force equals mass times acceleration
+```
+
+the full hexadecimal digest is
+
+```text
+5562f586477a939362d861c3841cabef5d6bd2798907a05489ab6af13b9a7f9b
+```
+
+Appending one period produces
+
+```text
+0c3747143d750a76d0dce568f45f8af745b9777fe26002ecaf0210057dbceb18
+```
+
+These are computed digests, not invented identifiers. The diagram labels use twelve-character prefixes for readability, while a real exact-deduplication key uses the full digest. Differences between cryptographic digests do not measure how similar the two texts are.
+
+#### 2.6 A digest key and a hash-table slot have different roles
+
+After computing each digest, a hash table can map it to the IDs of records with that key:
+
+```python
+import hashlib
+
+groups = {}
+for doc in documents:
+    payload = doc["text"].encode("utf-8")
+    key = hashlib.sha256(payload).hexdigest()
+    groups.setdefault(key, []).append(doc["id"])
+```
+
+Two records with identical text enter the same key group. The table does not need to compare every new document against every earlier document. Under ordinary hash-table assumptions, insertion and lookup take expected constant time per fixed-length digest key. Hashing still requires reading the document bytes, and retaining all member IDs still requires space.
+
+The table uses its own indexing mechanism to locate storage for the digest key. Distinct keys can land in the same table slot: this is a **bucket collision**. A correct hash table resolves it by probing or chaining and checking full-key equality. It does not merge the two keys merely because their slots coincide.
+
+A **digest collision** is different: distinct input byte strings produce the same full SHA-256 value. Such collisions are possible in principle because the output space is finite. For collision-safe exact grouping, compare the underlying payloads inside a same-digest group before declaring equality. Section 2.3 explains how canonicalization and ambiguous serialization can also cause false merges without any digest collision.
+
+The key limitation for edited copies is more immediate: a changed title, punctuation mark, or footer generally produces a different digest, even when most of the document is unchanged. Versioned normalization can handle designated formatting differences; lexical near-duplicate methods are needed for broader edits.
+
+![Identical text from two source records shares one digest key; source IDs remain distinct.](lecture-5/exact-hash-groups.svg)
+
+---
+
+### 3. Exact duplicate groups are easy; near-duplicate groups are not
+
+Exact equality under a deterministic canonicalization is an **equivalence relation**:
+
+* reflexive: $x\sim x$;
+* symmetric: if $x\sim y$, then $y\sim x$;
+* transitive: if $x\sim y$ and $y\sim z$, then $x\sim z$.
+
+Therefore records partition cleanly into disjoint exact-equivalence classes.
+
+Thresholded similarity usually does **not** have this property. If we say two documents are “near duplicates” whenever
+
+$$
+S(x,y)\ge \tau,
+$$
+
+we can have
+
+$$
+S(A,B)\ge\tau,
+\qquad
+S(B,C)\ge\tau,
+\qquad
+S(A,C)<\tau.
+$$
+
+This matters later when we cluster candidate pairs.
+
+---
+
+### 4. Why all-pairs comparison does not scale
+
+For $N$ documents, the number of unordered pairs is
+
+$$
+\binom{N}{2}=\frac{N(N-1)}2.
+$$
+
+At $N=1{,}000{,}000$:
+
+$$
+\binom{10^6}{2}
+\approx 5\times 10^{11}.
+$$
+
+Even if each comparison took only 10 microseconds, the comparisons alone would require millions of seconds on one worker, ignoring tokenization, I/O, and memory.
+
+Approximate near-duplicate systems therefore separate two problems:
+
+```text
+candidate retrieval: which pairs are worth checking?
+                 ↓
+exact verification: which retrieved pairs meet the policy?
+```
+
+This separation is conceptually important. A perfect verifier cannot recover a true duplicate pair that candidate generation never retrieved.
+
+---
+
+#### 4.1 Begin with direct comparison
+
+The simplest exact-duplicate search compares every unordered pair of document texts:
+
+```python
+duplicate_pairs = []
+for i in range(len(documents)):
+    for j in range(i + 1, len(documents)):
+        if documents[i]["text"] == documents[j]["text"]:
+            duplicate_pairs.append((documents[i]["id"], documents[j]["id"]))
+```
+
+Starting the inner loop at $i+1$ avoids comparing a document to itself and avoids checking both $(A,B)$ and $(B,A)$. It still visits $N(N-1)/2$ pairs. If full-text equality costs $O(L)$ in the worst case for a document of length $L$, the worst-case comparison work is $O(N^2L)$. The quadratic term counts pairs; the text lengths determine the work inside each comparison.
+
+#### 4.2 Put a time scale on the quadratic term
+
+Assume an illustrative average of 10 microseconds per pair on one worker:
+
+| Documents | Unordered pairs | Comparison time |
+| ---: | ---: | ---: |
+| 1,000 | 499,500 | About 5 seconds |
+| 10,000 | 49,995,000 | About 8.3 minutes |
+| 100,000 | 4,999,950,000 | About 13.9 hours |
+| 1,000,000 | 499,999,500,000 | About 57.9 days |
+
+These are arithmetic projections, not runtime benchmarks. They ignore input/output, normalization, and memory traffic. Increasing document count tenfold multiplies pair work by approximately one hundred. Parallel workers reduce elapsed time but do not remove the quadratic workload.
+
+For exact grouping, reading and hashing $B$ total input bytes and performing $N$ expected constant-time table operations gives approximately $O(B+N)$ basic work, subject to memory and collision-verification costs. For near duplicates, we need candidate retrieval to reduce the number of pairs sent to a more expensive verifier.
+
+---
+
+### 5. Shingling: represent local lexical structure
+
+One common approach represents a document as a set of contiguous $n$-grams called **shingles**.
+
+If the diagnostic token sequence is
+
+$$
+t_1,t_2,\ldots,t_m,
+$$
+
+then the set of $n$-gram shingles is
+
+$$
+S_n(x)=
+\{(t_i,t_{i+1},\ldots,t_{i+n-1}):1\le i\le m-n+1\}.
+$$
+
+A simple implementation:
+
+```python
+
+def shingles(tokens, n=5):
+    if len(tokens) < n:
+        return set()
+    return {
+        tuple(tokens[i:i+n])
+        for i in range(len(tokens) - n + 1)
+    }
+```
+
+#### Worked example: overlapping windows
+
+Use whitespace-delimited word tokens for the constructed sentence:
+
+```text
+force equals mass times acceleration
+```
+
+A width-three window moves one token at a time:
+
+| Start position | Three-word shingle |
+| ---: | --- |
+| 1 | `force equals mass` |
+| 2 | `equals mass times` |
+| 3 | `mass times acceleration` |
+
+Five tokens produce $5-3+1=3$ windows. The windows overlap; `mass` participates in all three. We retain the token tuples as a set for the following similarity example.
+
+![A three-word window moves one token at a time across the five-token sentence.](lecture-5/shingling-window.svg)
+
+#### 5.1 The unit matters
+
+Possible shingle units include:
+
+* normalized word tokens;
+* characters;
+* bytes;
+* model subword tokens.
+
+Each creates a different similarity measure.
+
+Word shingles are interpretable but depend on tokenization. Character shingles are less dependent on linguistic segmentation but more sensitive to normalization and script. Model-token shingles change if the tokenizer changes.
+
+For multilingual corpus integrity, pin the diagnostic tokenizer/normalizer version exactly as you would pin a model version.
+
+#### 5.2 Sets discard multiplicity
+
+Suppose a document repeats the same paragraph ten times. The set of shingles may be almost identical to the version where the paragraph appears once.
+
+Therefore whole-document Jaccard over shingle **sets** is not a detector for every kind of within-document repetition. Lecture 4's repetition features and block-level analysis remain useful.
+
+#### 5.3 Short documents need a separate policy
+
+If $m<n$, the shingle set is empty. If every empty set were treated as matching every other empty set, all very short documents could collapse into one meaningless cluster.
+
+Possible policies include:
+
+* use smaller $n$ for short documents;
+* route them to exact matching only;
+* compare on character shingles;
+* exclude them from near-duplicate clustering but keep them in a separate audit.
+
+The choice should be explicit.
+
+---
+
+#### 5.4 Why shingle width controls sensitivity to edits
+
+Consider a 100-token document with 96 distinct 5-token shingles. Replace one interior token without changing tokenization elsewhere. That position belongs to five windows, so at most five original shingles disappear and at most five new shingles appear.
+
+If all five affected shingles were unique, all replacements are new, and no other shingles change, the two sets share 91 elements and their union has 101:
+
+$$
+J=\frac{96-5}{96+5}=\frac{91}{101}\approx0.901.
+$$
+
+With 10-token shingles, the same assumptions give 91 original shingles, 81 shared shingles, and a union of 101:
+
+$$
+J=\frac{91-10}{91+10}=\frac{81}{101}\approx0.802.
+$$
+
+The same one-token edit is therefore a much larger disturbance to the longer-shingle representation. Longer shingles make accidental local matches less likely, but are less tolerant of edits. Real text contains repeated shingles, and an edit can change token boundaries, so these counts are a controlled example rather than a universal formula for document similarity.
+
+Shingles do not encode unrestricted long-range order. Moving a paragraph preserves its internal shingles and changes mainly the windows around the cut and insertion boundaries. Decide whether that rearrangement should count as a duplicate before selecting a threshold.
+
+---
+
+### 6. Jaccard similarity and directional containment
+
+For two nonempty shingle sets $A$ and $B$, Jaccard similarity is
+
+$$
+J(A,B)=\frac{|A\cap B|}{|A\cup B|}.
+$$
+
+It is symmetric:
+
+$$
+J(A,B)=J(B,A).
+$$
+
+#### Worked example
+
+Let
+
+$$
+A=\{a,b,c,d,e\},
+\qquad
+B=\{a,b,c,d,e,f,g\}.
+$$
+
+Then
+
+$$
+|A\cap B|=5,
+\qquad
+|A\cup B|=7,
+$$
+
+so
+
+$$
+J(A,B)=\frac57\approx0.714.
+$$
+
+Each letter here labels one distinct shingle, not an individual word or a repeated occurrence. The aligned rows expose the five shared IDs and B's two additional IDs:
+
+![Constructed shingle-set example: A contains a through e, B contains a through g, and five of the seven distinct shingles are shared.](lecture-5/jaccard-shared-shingles.svg)
+
+That may or may not exceed a near-duplicate threshold.
+
+#### Worked example: one changed word
+
+Replace the final token `acceleration` with `velocity`. The first two shingles remain the same, while the last shingle changes. Label the four distinct shingles across both sentences:
+
+```text
+1: force equals mass
+2: equals mass times
+3: mass times acceleration
+4: mass times velocity
+
+A = {1, 2, 3}
+B = {1, 2, 4}
+```
+
+The intersection has two elements and the union has four, so $J(A,B)=2/4=0.5$. The sentence with `velocity` expresses a different physical claim: this tiny fixture teaches overlap arithmetic, not a rule that two short scientific statements should be merged. A document-level retention policy must still consider meaningful edits and source context.
+
+![Two shared shingles and two distinct endings give an intersection of two and a union of four.](lecture-5/shingle-overlap.svg)
+
+#### 6.1 Why Jaccard can hide containment
+
+Suppose a protected benchmark problem has 100 shingles and a long tutorial has 2,000 shingles. The tutorial contains every benchmark shingle plus much more text.
+
+Then
+
+$$
+J(A,B)=\frac{100}{2000}=0.05.
+$$
+
+Jaccard says the two documents are globally very different, which is true. But for contamination, the important fact is that the short protected item is fully contained in the longer document.
+
+Directional containment is
+
+$$
+C(A\mid B)=\frac{|A\cap B|}{|A|}.
+$$
+
+For the short protected item $A$:
+
+$$
+C(A\mid B)=1.
+$$
+
+But
+
+$$
+C(B\mid A)=0.05.
+$$
+
+This asymmetry is often exactly what benchmark-overlap detection needs.
+
+#### Stop and reason
+
+A benchmark question is copied verbatim into a 20-page exam-preparation book. Whole-document Jaccard is 0.03.
+
+**Question:** Is the book “clean” because the Jaccard score is low?
+
+No. The similarity measure answered a different question. Use containment or span-level matching for embedded protected material.
+
+---
+
+#### 6.2 Derive an exact verifier and cheap rejection rules
+
+Let $a=|A|$, $b=|B|$, and $c=|A\cap B|$. Since the union has $a+b-c$ elements,
+
+$$
+J=\frac{c}{a+b-c}.
+$$
+
+To pass a threshold $\tau$, the intersection must satisfy
+
+$$
+c\geq\tau(a+b-c)
+\quad\Longleftrightarrow\quad
+c\geq\frac{\tau(a+b)}{1+\tau}.
+$$
+
+Because $c$ is an integer, round the right side upward. For $a=100$, $b=110$, and $\tau=0.8$, at least 94 shared shingles are required. Sharing 93 gives $93/117\approx0.795$; sharing 94 gives $94/116\approx0.810$. There is no possible intersection count giving exactly $0.8$ for these set sizes.
+
+Before reading the sets, use the fact that $c\leq\min(a,b)$:
+
+$$
+J\leq\frac{\min(a,b)}{\max(a,b)}.
+$$
+
+A 100-shingle set and a 200-shingle set cannot reach Jaccard $0.8$, even if the smaller one is fully contained. Rejecting that pair is safe for *Jaccard verification*, but would be wrong for a containment detector.
+
+Represent the threshold as a rational number $p/q$, such as $4/5$, to avoid floating-point ambiguity at the boundary:
+
+```{.python #l5-exact-verifier}
+def jaccard_at_least(a, b, p=4, q=5):
+    """a and b are sets; empty inputs use the separate short-text route."""
+    if not (0 < p <= q):
+        raise ValueError("require 0 < p/q <= 1")
+    if not a or not b:
+        return False
+    if q * min(len(a), len(b)) < p * max(len(a), len(b)):
+        return False
+    required = (p * (len(a) + len(b)) + p + q - 1) // (p + q)
+    small, large = (a, b) if len(a) <= len(b) else (b, a)
+    shared = sum(item in large for item in small)
+    return shared >= required
+```
+
+With hash sets, the membership loop takes expected $O(\min(a,b))$ time and constant additional counting space. The sets themselves still require storage. With sorted arrays, use a two-pointer intersection taking $O(a+b)$ worst-case time without a hash table. During that scan, reject early if the matches already found plus the maximum possible matches among the unscanned suffixes cannot reach the required count.
+
+#### 6.3 The cost of comparing full shingle sets
+
+After shingling, exact Jaccard requires counting the shared shingles and deriving the union size. One direct implementation compares every shingle in A with every shingle in B. With $S$ distinct shingles in each set, a full nested scan performs $S^2$ equality checks. For 1,000 shingles per document, that is one million checks for a single document pair.
+
+This quadratic per-pair cost belongs to the naive scan, not to Jaccard itself. With prebuilt hash sets, test each A shingle for membership in B: about 1,000 lookups, with expected $O(S)$ work under ordinary hash-table behavior. Counting the union then uses $|A|+|B|-|A\cap B|$. A sorted two-pointer intersection is another linear-time option. These operation counts assume fixed-size shingle identifiers; constructing the representations and comparing variable-length text can add work.
+
+The remaining problem is the number of document pairs. One million documents create
+
+$$
+\frac{10^6(10^6-1)}2=499{,}999{,}500{,}000
+$$
+
+unordered pairs, or approximately 500 billion. If each contains 1,000 shingles, the two exhaustive approaches have very different costs, but both remain large:
+
+| Exhaustive approach | Counted operations across the corpus | At $10^8$ operations per second |
+| --- | ---: | ---: |
+| Full nested shingle scan | Approximately $5\times10^{17}$ equality checks | Approximately 158 years |
+| Hash-set intersection | Approximately $5\times10^{14}$ membership lookups | Approximately 58 days |
+
+These are constructed projections for one worker at an assumed sustained rate of 100 million counted operations per second, not measured runtimes. The same illustrative rate is used for both kinds of operation. The counts exclude set construction, I/O, memory overhead, and additional filtering; they do not predict how equality tests and membership lookups perform on a particular machine.
+
+MinHash addresses the representation cost: construct a short signature once per document, then estimate Jaccard by comparing corresponding signature coordinates instead of revisiting the full sets for every pair. Building a $k$-coordinate signature still requires processing the document's shingles, typically $O(kS)$ hash work in the basic construction. Comparing two signatures then takes $O(k)$ coordinate checks. This does not by itself remove the $O(N^2)$ document-pair count. The later LSH step retrieves likely pairs so that verification need not examine every pair.
+
+---
+
+### 7. Near-duplicate similarity is not transitive
+
+Consider:
+
+$$
+A=\{1,2,3,4,5\},
+$$
+
+$$
+B=\{1,2,3,4,5,6\},
+$$
+
+$$
+C=\{2,3,4,5,6\}.
+$$
+
+Then
+
+$$
+J(A,B)=J(B,C)=\frac56\approx0.833,
+$$
+
+while
+
+$$
+J(A,C)=\frac46\approx0.667.
+$$
+
+At threshold $\tau=0.8$:
+
+![Documents are nodes; solid lines are verified near-duplicate edges. A–B and B–C clear 0.8, but A–C does not. The dashed annotation marks the missing edge, not an additional match. Constructed example.](lecture-5/clustering-verified-chain.svg){width=100%}
+
+A connected-component algorithm will place all three in one cluster even though $A$ and $C$ do not directly clear the threshold.
+
+This is not necessarily wrong. It is simply a **cluster policy** with consequences that must be understood.
+
+---
+
+### 8. MinHash: estimate Jaccard without storing full sets in every comparison
+
+The classic MinHash result is one of the most useful probability identities in large-scale data processing.
+
+Let $\pi$ be a uniformly random permutation of the universe of possible shingles. Define
+
+$$
+h_\pi(A)=\min_{a\in A}\pi(a).
+$$
+
+Then
+
+$$
+P\bigl(h_\pi(A)=h_\pi(B)\bigr)=J(A,B).
+$$
+
+#### 8.1 Derivation
+
+Look at the union
+
+$$
+U=A\cup B.
+$$
+
+Under a uniformly random ordering, every member of $U$ is equally likely to appear first.
+
+The minima of $A$ and $B$ are equal exactly when the first element of $U$ belongs to the intersection
+
+$$
+A\cap B.
+$$
+
+Therefore
+
+$$
+P(h_\pi(A)=h_\pi(B))
+=
+\frac{|A\cap B|}{|A\cup B|}
+=J(A,B).
+$$
+
+#### Worked example: two hash functions
+
+Consider two small sets of whole-shingle IDs:
+
+$$
+A=\{a,b,c,d\},\qquad B=\{a,b,c,e\}.
+$$
+
+Each letter identifies an entire shingle, not one word token. Apply the same two functions to the shingles in both documents. The following small numbers are illustrative hash values, not computed BLAKE2b outputs:
+
+| Shingle | Hash 1 | Hash 2 |
+| --- | ---: | ---: |
+| a | 7 | 2 |
+| b | 14 | 8 |
+| c | 3 | 6 |
+| d | 20 | 14 |
+| e | 18 | 1 |
+
+![Two documents share the same two hash functions, applied to each whole-shingle ID.](lecture-5/minhash-hash-values.svg)
+
+For each document, retain the minimum within each function's column over only that document's shingles:
+
+* A retains $\min(7,14,3,20)=3$ and $\min(2,8,6,14)=2$, giving signature $(3,2)$.
+* B retains $\min(7,14,3,18)=3$ and $\min(2,8,6,1)=1$, giving signature $(3,1)$.
+
+![Column minima give document signatures A=(3,2) and B=(3,1); their first coordinate matches and the second differs.](lecture-5/minhash-two-signatures.svg)
+
+Compare corresponding coordinates, not unordered collections of values. One of the two positions matches, giving the tiny sketch's Jaccard estimate $1/2=0.5$. The exact sets have three shared shingles and five in their union, so their exact Jaccard is $3/5=0.6$. A small sampled signature need not equal the exact overlap. Two coordinates make the construction inspectable; they are not a recommended sketch size for a corpus.
+
+#### Worked example: shared random orders
+
+Continue with the shingle IDs $A=\{1,2,3\}$ and $B=\{1,2,4\}$. For each coordinate, use the same ordering of the universe for both sets and find the first member belonging to each set.
+
+The first function assigns ranks $h_1(1)=2$, $h_1(2)=1$, $h_1(3)=4$, and $h_1(4)=3$. Hash each shingle separately, then take the smallest value within the document. For A, that is $\min(2,1,4)=1$; for B, it is $\min(2,1,3)=1$. The matching minimum comes from their shared shingle “equals mass times.” A one-coordinate match is not enough to establish that two documents are duplicates.
+
+![Constructed MinHash example: a shared rank function assigns values to individual shingles, and both sentence variants keep minimum value 1.](lecture-5/minhash-minimum.svg)
+
+Repeat this operation under four shared orderings:
+
+| Ordering, earliest first | First member of A | First member of B | Match? |
+| --- | ---: | ---: | --- |
+| 2, 1, 4, 3 | 2 | 2 | Yes |
+| 1, 4, 3, 2 | 1 | 1 | Yes |
+| 3, 1, 2, 4 | 3 | 1 | No |
+| 4, 2, 1, 3 | 2 | 4 | No |
+
+The selected-member labels are `A=(2,1,3,2)` and `B=(2,1,1,4)`. Equal selected labels correspond to equal minimum ranks under that coordinate's shared permutation. The estimated similarity is the fraction of matching coordinates, $2/4=0.5$.
+
+The corresponding minimum-rank values are $A=(1,1,1,2)$ and $B=(1,1,2,1)$. For example, under the third ordering, shingle 3 has rank 1 and shingle 1 has rank 2: A retains value 1, while B retains value 2. The shingle's ID identifies the input; its rank is the value produced by the shared function. Do not confuse the two.
+
+Its agreement with the exact Jaccard in this four-coordinate fixture is incidental. Other sampled orderings can give a different estimate. Practical implementations store minimum hash/rank values rather than the selected-member display labels and require the same hash recipe for both documents.
+
+#### 8.2 Use several hashes
+
+With $k$ independent MinHash coordinates:
+
+$$
+\widehat J(A,B)
+=
+\frac1k
+\sum_{j=1}^{k}
+\mathbb 1[h_j(A)=h_j(B)].
+$$
+
+Each coordinate uses one shared function across all documents. The signature stores one minimum per function. For the four-coordinate constructed example, the first two coordinates agree and the last two differ, so the estimate is $2/4=0.5$. Compare corresponding positions; averaging the numeric hash values does not estimate text overlap.
+
+![Constructed MinHash signatures: take column minima over each document's shingle rows, then compare matching coordinates. A is (1,1,1,2) and B is (1,1,2,1).](lecture-5/minhash-signature.svg)
+
+Under the ideal independent construction:
+
+$$
+E[\widehat J]=J,
+$$
+
+and
+
+$$
+\operatorname{Var}(\widehat J)
+=
+\frac{J(1-J)}{k}.
+$$
+
+For $J=0.8$ and $k=128$:
+
+$$
+\operatorname{SD}(\widehat J)
+=
+\sqrt{\frac{0.8(0.2)}{128}}
+\approx0.035.
+$$
+
+So a signature estimate near a threshold is noisy. A common design is:
+
+> use MinHash/LSH to retrieve candidate pairs, then recompute exact Jaccard or another deterministic similarity on the candidate pair.
+
+#### 8.3 Practical hashing
+
+Real implementations do not materialize gigantic random permutations. They approximate the construction using seeded hash functions or related schemes.
+
+Pin:
+
+* hash family/algorithm;
+* seeds;
+* integer width;
+* shingle encoding;
+* number of signature coordinates;
+* normalization/tokenization version.
+
+Do not use Python's built-in `hash(str)` as a persistent corpus signature. Its behavior can vary across processes and environments.
+
+An illustrative deterministic shingle hash, using `encode_tokens` from Section 2.3:
+
+```{.python #l5-minhash}
+import hashlib
+
+
+def stable_u64(seed: int, shingle: tuple[str, ...]) -> int:
+    payload = (
+        b"minhash-shingle-v1\0"
+        + seed.to_bytes(8, "big")
+        + encode_tokens(shingle)
+    )
+    digest = hashlib.blake2b(payload, digest_size=8).digest()
+    return int.from_bytes(digest, "big")
+
+
+def minhash_signature(shingle_set, seeds):
+    if not shingle_set:
+        return None
+    return tuple(
+        min(stable_u64(seed, s) for s in shingle_set)
+        for seed in seeds
+    )
+```
+
+This is pedagogical code, not a production-optimized implementation.
+
+The prefix separates this hash's purpose from other record hashes; the seed must be an unsigned 64-bit integer. Different seeds make reproducible coordinates, but do not constitute a proof of the ideal independent-permutation assumptions. This direct implementation hashes every shingle once per coordinate: for $s$ distinct shingles and $k$ coordinates it performs $ks$ shingle-hash evaluations. Compact signatures reduce later comparison storage, not the cost of constructing the signatures for free.
+
+#### Worked example: from three functions to 128 seeds
+
+Signature length is the number of functions or seeds in the recipe, not the number of shingles in the document. Isolate that relationship with a separate toy document containing four shingles:
+
+| Shingle | $H_1$ | $H_2$ | $H_3$ |
+| --- | ---: | ---: | ---: |
+| $s_1$ | 42 | 8 | 31 |
+| $s_2$ | 15 | 63 | 19 |
+| $s_3$ | 83 | 29 | 7 |
+| $s_4$ | 27 | 51 | 44 |
+| Minimum | 15 | 8 | 7 |
+
+All three functions process all four shingles. The first column's minimum comes from $s_2$, the second from $s_1$, and the third from $s_3$. Keeping those minima in function order produces $(15,8,7)$: three coordinates from three functions.
+
+![Three shared functions produce three column minima and the signature (15,8,7) for a separate toy document.](lecture-5/minhash-three-coordinates.svg)
+
+Now choose a recipe with 128 seeds and a document with 10,000 distinct shingles. For every seed, run the seeded shingle hash on all 10,000 shingles and retain one minimum. The first seed contributes coordinate 1, the second coordinate 2, and so on through coordinate 128. A different document uses the same seed list in the same order, so its corresponding positions are comparable.
+
+![A 10,000-shingle document is processed under 128 seeds, retaining one minimum per seed to form a 128-coordinate signature.](lecture-5/minhash-128-coordinates.svg)
+
+The diagram's values `145`, `892`, and `317` illustrate the output format; they are not computed BLAKE2b results. A real signature is an ordered tuple of the 128 minimum integers returned by the pinned recipe. Both a 10,000-shingle document and a 20,000-shingle document still produce 128 coordinates under that recipe.
+
+For the basic implementation, building the 10,000-shingle signature performs $10{,}000\times128=1{,}280{,}000$ shingle-hash evaluations. That is preprocessing done once per document. Comparing two compatible signatures later requires 128 coordinate comparisons, instead of revisiting every original shingle. The sketch estimates overlap; it does not turn approximate similarity into an exact equality decision or eliminate the corpus-wide pair count. LSH supplies the subsequent candidate-retrieval step.
+
+#### 8.4 How many coordinates are enough?
+
+Under the ideal model, the number of matching coordinates $X$ follows
+
+$$
+X\sim\operatorname{Binomial}(k,J),
+\qquad \widehat J=X/k.
+$$
+
+For $J=0.8$, increasing $k$ from 128 to 512 changes the standard deviation from approximately $0.035$ to $0.018$. Four times the signature storage buys roughly half the sampling noise, not four times less noise.
+
+A distribution-free concentration bound for independent coordinates is
+
+$$
+P(|\widehat J-J|\geq\epsilon)\leq2e^{-2k\epsilon^2}.
+$$
+
+To make this bound at most $\delta$, choose
+
+$$
+k\geq\frac{\log(2/\delta)}{2\epsilon^2}.
+$$
+
+For absolute error $\epsilon=0.03$ and failure probability $\delta=0.05$, the bound requires at least 2,050 coordinates. This conservative bound concerns one fixed pair, not simultaneous accuracy for every pair in a billion-record corpus. It also assumes the ideal independence model; correlated practical coordinates can violate its premise.
+
+This explains the role of a short signature: it can be excellent for retrieval without being precise enough to make borderline deletion decisions. Deterministic verification spends more work only on the pairs retrieved.
+
+#### 8.5 Retrieval changes the population you are estimating on
+
+There is a subtler reason to avoid reusing an LSH retrieval score as final evidence. A pair was selected because some signature coordinates happened to match. Conditional on that event, those coordinates are unusually favorable.
+
+In the extreme case, retrieve a pair only when its first coordinate matches. That coordinate estimates $J$ without bias over all fixed pairs and random hashes, but equals 1 for **every retrieved pair**. Selection has destroyed its usefulness as an unbiased estimate within the selected population.
+
+Exact shingle verification avoids this sampling issue. If verification must also use sketches, use additional independent coordinates that did not participate in retrieval, and still report their uncertainty and hash assumptions.
+
+---
+
+### 9. Locality-sensitive hashing: avoid comparing every signature pair
+
+MinHash makes each document compact, but naïvely comparing all signatures is still $O(N^2)$.
+
+**MinHash LSH** uses the signature to retrieve likely-similar pairs.
+
+Let a signature have length
+
+$$
+k=br,
+$$
+
+where it is split into $b$ bands with $r$ rows each.
+
+Two documents become candidates if they match on all $r$ entries in **at least one band**.
+
+If their true Jaccard similarity is $s$, one MinHash coordinate matches with probability $s$. Under the standard idealized independence model, all $r$ entries in a band match with probability
+
+$$
+s^r.
+$$
+
+A band does **not** match with probability
+
+$$
+1-s^r.
+$$
+
+No bands match with probability
+
+$$
+(1-s^r)^b.
+$$
+
+Therefore
+
+$$
+P(\text{candidate}\mid s)
+=
+1-(1-s^r)^b.
+$$
+
+#### 9.1 Worked parameter example
+
+Take
+
+$$
+b=16,
+\qquad r=8.
+$$
+
+For $s=0.8$:
+
+$$
+P(\text{candidate}\mid0.8)
+=
+1-(1-0.8^8)^{16}
+\approx0.947.
+$$
+
+For $s=0.5$:
+
+$$
+P(\text{candidate}\mid0.5)
+\approx0.061.
+$$
+
+For $s=0.2$ the probability is extremely small.
+
+This is not a hard 0.8 threshold. It is a smooth retrieval curve.
+
+#### 9.2 Candidate generation pipeline
+
+A scalable pattern is:
+
+```text
+shingles
+   ↓
+MinHash signature
+   ↓
+band keys
+   ↓
+bucket by band
+   ↓
+candidate pairs
+   ↓
+deduplicate candidate pair IDs
+   ↓
+exact similarity verification
+   ↓
+cluster/removal policy
+```
+
+A pair may collide in several bands. Count it once before expensive verification.
+
+#### 9.3 Bucket skew can destroy your complexity assumptions
+
+For every bucket $g$ with $|g|$ documents, naïvely generating all intra-bucket pairs costs
+
+$$
+\binom{|g|}{2}.
+$$
+
+Total raw bucket pair work is proportional to
+
+$$
+\sum_g \binom{|g|}{2}.
+$$
+
+If a generic template or empty representation puts 100,000 records into one bucket, the candidate explosion is enormous even if most records are not useful near duplicates.
+
+Therefore log:
+
+```text
+bucket-size histogram
+largest buckets
+candidate pairs per document
+candidate pairs before/after pair deduplication
+verified-match rate
+verification time
+```
+
+A bucket cap can protect runtime, but it introduces a recall tradeoff. Report it.
+
+#### Stop and reason
+
+Your LSH system has excellent recall on labeled duplicates but creates 4 billion candidates because one boilerplate-heavy bucket contains many pages.
+
+**Question:** Is this primarily a similarity-quality problem?
+
+Not necessarily. It can be a representation/skew problem. Fix upstream boilerplate, short/empty handling, or bucket policy before merely buying more compute.
+
+---
+
+#### 9.4 Choose parameters from a recall target
+
+Suppose pairs with true similarity $s_0=0.8$ should be retrieved with probability at least $\rho=0.95$. Fix eight rows per band. Starting from
+
+$$
+1-(1-s_0^r)^b\geq\rho,
+$$
+
+take logarithms and remember that $\log(1-s_0^r)<0$:
+
+$$
+b\geq
+\frac{\log(1-\rho)}{\log(1-s_0^r)}.
+$$
+
+The required integer is $b=17$, giving $k=136$ coordinates. The earlier $16\times8$ configuration reaches about $94.7\%$, just below this target.
+
+Now hold the signature budget fixed at 128 coordinates:
+
+| Bands $b$ | Rows $r$ | Candidate probability at $s=0.5$ | Candidate probability at $s=0.8$ |
+| ---: | ---: | ---: | ---: |
+| 8 | 16 | 0.012% | 20.4% |
+| 16 | 8 | 6.07% | 94.7% |
+| 32 | 4 | 87.3% | >99.9999% |
+
+More short bands increase retrieval recall but can flood the verifier with weaker matches. “128-dimensional MinHash” therefore does not specify the retrieval behavior. You also need the banding scheme.
+
+The exact similarity at which retrieval probability is one half is
+
+$$
+s_{50}=\left(1-2^{-1/b}\right)^{1/r}.
+$$
+
+For $b=16,r=8$, this is approximately $0.674$. It is neither a deterministic cutoff nor the final duplicate threshold. Tune the curve against labeled pairs and an actual candidate budget, not only a desired similarity number. The banding construction is explained in [Mining of Massive Datasets](https://www.mmds.org/); the parameter calculations here follow directly from the probability model above.
+
+#### 9.5 A small, inspectable LSH candidate generator
+
+The bucket key must include the band number. Equal tuples in *different* bands are not the same event. A pair can match several bands, so emit a canonical pair ID only once:
+
+```{.python #l5-lsh-candidates}
+from collections import defaultdict
+from itertools import combinations
+
+
+def lsh_candidates(signatures, bands, rows):
+    if bands < 1 or rows < 1:
+        raise ValueError("bands and rows must be positive")
+    buckets = defaultdict(list)
+    for doc_id, signature in sorted(signatures.items()):
+        if signature is None:
+            continue
+        if len(signature) != bands * rows:
+            raise ValueError("signature length does not match banding")
+        for band in range(bands):
+            block = tuple(signature[band * rows:(band + 1) * rows])
+            buckets[(band, block)].append(doc_id)
+    pairs = set()
+    for members in buckets.values():
+        pairs.update(combinations(members, 2))
+    return sorted(pairs)
+```
+
+Document IDs here are comparable strings and each ID occurs once. Sorting makes pair orientation and output order deterministic. `None` signatures follow the explicit empty-document route; malformed lengths fail rather than silently dropping unused coordinates.
+
+For example, signatures `A=(1,2,3,4)`, `B=(1,2,8,9)`, and `C=(3,4,1,2)` with two rows per band retrieve only `(A,B)`. Although C contains both of A's band tuples, they occur at the wrong band positions.
+
+This implementation retains buckets and pairs in memory. It deliberately exposes the algorithm; it is not a claim that a Python `set` can hold every candidate pair from a web crawl. A distributed version emits `(band, block, document_id)` records, groups by band key, emits ordered pairs, and globally sorts or deduplicates those pairs before verification. Pairs must meet across acquisition shards, not only inside each shard.
+
+In the shared-order fixture from Section 8.1, split the minimum-rank signature values into two bands of two coordinates:
+
+```text
+       band 0    band 1
+A      (1, 1)    (1, 2)
+B      (1, 1)    (2, 1)
+C      (3, 2)    (1, 1)   # C = {3,4}, using the same orderings
+```
+
+A and B become candidates through band 0. C matches neither of them in either corresponding band. Its coordinates come from the same four orderings applied to $C=\{3,4\}$. C's band 1 equals A's band 0, but equality across different band positions does not create a candidate. The fixture demonstrates band grouping, not a claim that four coordinates are sufficient for a real corpus.
+
+#### 9.6 Budget the intermediate representations
+
+For one million records, 128 unsigned 64-bit coordinates require
+
+$$
+10^6\times128\times8=1.024\times10^9\text{ bytes}
+$$
+
+of raw signature values, or 1.024 GB in decimal units. This excludes IDs, indexing overhead, shingle storage, allocator overhead, and temporary buffers. A million Python tuples of Python integers can be far larger than this packed-array lower bound.
+
+Sixteen bands produce 16 million bucket memberships. One large bucket can dominate pair generation even if signatures are compact. Track at least the signature bytes, emitted memberships, largest buckets, raw pair emissions, unique candidate pairs, and verified positive pairs. A bucket cap changes retrieval semantics; record which buckets were truncated and audit their misses.
+
+#### 9.7 Runtime depends on the emitted candidates
+
+Analyze the stages separately. Start with $N$ documents, compatible $k$-coordinate MinHash signatures, and their original shingle sets. Divide each signature into $b$ bands of $r$ coordinates, with $k=br$. Use an in-memory hash-based bucket index and hash-based pair deduplication, and treat fixed-size coordinate values and record IDs as constant-cost units.
+
+Constructing and hashing every band key reads $r$ values per band, or $br=k$ values per document. Expected hash-table operations add $b$ bucket memberships per document. Since $b\leq k$, the index-building work is expected $O(Nk)$; for fixed $k$ this stage is linear in the document count.
+
+The candidate-emission term is
+
+$$
+P=\sum_g\binom{|g|}{2},
+$$
+
+where buckets $g$ include their band position. $P$ counts raw emissions: the same document pair may be produced in several bands. Emitting and deduplicating those pairs using an ordinary hash table takes expected $O(P)$ work. Let $C\leq P$ be the number of unique candidate pairs.
+
+If each original shingle set contains at most $S$ elements, hash-set intersection verifies one pair in expected $O(S)$ time, and all unique candidates in expected $O(CS)$ time. A more precise accounting sums the smaller set size over the actual candidate pairs; $CS$ is an upper bound under the stated size limit.
+
+| Stage, after signatures and sets are built | Expected time |
+| --- | --- |
+| Construct band keys and index records | $O(Nk)$ |
+| Emit and hash-deduplicate bucket-local pairs | $O(P)$ |
+| Verify the $C$ unique candidates | $O(CS)$ |
+| Total in this hash-based model | $O(Nk+P+CS)$ |
+
+This separates near-linear indexing from output-sensitive pair work. If all $N$ documents enter the same bucket in every band, then $P=b\binom N2$ and $C=\binom N2$: LSH has not avoided quadratic candidate generation. Small, selective buckets reduce the work in a favorable corpus, but do not provide a universal $O(N)$ runtime guarantee.
+
+MinHash construction is a separate preprocessing cost. The basic implementation performs $kT$ shingle-hash evaluations for $T$ total shingles. With bounded-size shingle representations this contributes $O(kT)$ work; hashing variable-length representations also incurs their byte-processing cost. Including that preprocessing gives expected $O(kT+Nk+P+CS)$ under the bounded-size model.
+
+The teaching code in Section 9.5 also sorts document IDs and the final candidate pairs for deterministic output. Those sorting steps add $O(N\log N+C\log C)$ comparisons; they are not included in the unsorted hash-based bound above. External sorting, network shuffle, disk passes, and rebuilding representations likewise require their own accounting.
+
+Packed signatures occupy $O(Nk)$ values, bucket memberships $O(Nb)$ records, and a materialized unique-pair set $O(C)$ entries, in addition to the original shingle storage. Streaming or externally grouping candidates changes the memory plan, not the need to account for emitted pairs. Runtime and memory claims should therefore name the representation, bucket occupancy, pair counts, and verification method.
+
+---
+
+### 10. Candidate retrieval and duplicate decision must be evaluated separately
+
+Suppose we have 1,000 hand-labeled duplicate pairs.
+
+* LSH retrieves 940 of them.
+* Exact verification accepts 900 of those.
+
+Then candidate recall is
+
+$$
+R_{\mathrm{candidate}}=\frac{940}{1000}=0.94.
+$$
+
+End-to-end duplicate-pair recall is
+
+$$
+R_{\mathrm{end}}=\frac{900}{1000}=0.90.
+$$
+
+The 40 additional losses occurred in the verifier/policy stage.
+
+If you report only 90%, you cannot tell whether to improve LSH retrieval or the final similarity threshold.
+
+Likewise, precision should be evaluated on **retrieved decisions** under an appropriate sample design. A random sample of all document pairs is usually useless because true duplicates are exceedingly rare.
+
+Useful evaluation sets include:
+
+* known exact/near duplicates from source metadata;
+* controlled perturbations of real documents;
+* human-reviewed predicted pairs;
+* random/source-stratified documents searched for missed duplicates;
+* cross-source mirror candidates.
+
+Each set answers a different question.
+
+---
+
+#### 10.1 Decompose recall without assuming independence
+
+Let $D$ mean “a true duplicate under the stated policy,” $C$ mean “retrieved as a candidate,” and $V$ mean “accepted by verification.” Because the verifier only processes candidates,
+
+$$
+P(C\cap V\mid D)=P(C\mid D)\,P(V\mid C,D).
+$$
+
+This is the probability chain rule, not an assumption that the two stages are independent. In the 1,000-pair example, candidate recall is $940/1000$ and conditional verifier recall is $900/940$. Their product is $900/1000$. Dividing 900 by 1,000 and calling that the *verifier's* recall assigns the retriever's 60 misses to the wrong component.
+
+A reference set assembled only from LSH outputs cannot measure LSH misses. Build at least some evaluation pairs independently: exhaustive comparison inside a manageable sampled subset, provenance-linked copies, or controlled edits. Each has limits. Exhaustive comparison inside a subset misses duplicates whose partners lie outside it; synthetic edits may be easier than real revisions. Record those limits with the metric.
+
+Also separate the truth labels. Exact Jaccard verification is exact about the chosen sets, but can still disagree with a human *duplicate policy*: two technical documents may share boilerplate while making different claims. Evaluate both numerical threshold correctness and whether the threshold is appropriate for the intended removal decision.
+
+---
+
+### 11. Clustering: an edge is not the same thing as a family
+
+After verification, create a graph:
+
+$$
+G=(V,E),
+$$
+
+where records are nodes and a verified near-duplicate relation produces an edge.
+
+One convenient clustering choice is connected components.
+
+#### 11.1 Connected components
+
+If
+
+```text
+A -- B -- C
+```
+
+then $A,B,C$ are one connected component even if $A$ and $C$ fail the direct threshold.
+
+This can be desirable when documents form a revision chain:
+
+```text
+v1 -> v2 -> v3
+```
+
+but dangerous when weak chaining bridges distinct texts.
+
+#### 11.2 Alternative cluster policies
+
+**Connected-component policy**
+
+> Keep one representative per connected component.
+
+Advantages:
+
+* simple;
+* deterministic once edges are fixed;
+* cheap to compute.
+
+Risk:
+
+* chaining can make broad clusters.
+
+**Representative-centered policy**
+
+> Select a representative $r$ and remove only documents that directly satisfy the duplicate rule with $r$.
+
+Advantages:
+
+* every removed item has direct evidence against what is retained.
+
+Risk:
+
+* cluster depends on representative choice;
+* may keep several mutually similar alternatives.
+
+**Clique-like / stricter policy**
+
+> Require stronger pairwise consistency before collapsing a group.
+
+Advantages:
+
+* reduces chaining.
+
+Risk:
+
+* much more computationally expensive.
+
+There is no universal best choice. What matters is that the removal semantics are explicit.
+
+![Three policies applied to the same verified A–B–C graph. Filled nodes are retained, hollow nodes are removed, and outlines mark groups. The all-pairs-consistent partition shown is one possible choice. Constructed example.](lecture-5/clustering-policy-groups.svg){width=100%}
+
+Choose A as the retained representative in the connected component: B and C are removed through membership in the same component, even though A–C fails the pair rule. With representative-centered priority `A,B,C`, B is removed using retained A and C survives. A stricter all-pairs-consistent policy may choose the group `{A,B}` and singleton `{C}`, but cannot collapse `{A,B,C}` because its A–C pair fails. It could instead choose `{A}` and `{B,C}`; requiring every within-group pair to match does not uniquely determine a partition. The grouping algorithm and representative priority remain part of the policy.
+
+---
+
+#### 11.3 Deterministic clustering needs an explicit witness
+
+Connected components can be maintained with a disjoint-set structure: each verified edge unions two sets. With path compression and union by rank or size, a sequence of operations has amortized $O(\alpha(N))$ cost per operation, where the inverse Ackermann function $\alpha$ grows extremely slowly. This makes graph grouping cheap relative to finding the edges. It does not make a chained component semantically safe to collapse.
+
+A representative-centered alternative processes documents in a fixed priority order. Keep a document if it has no verified edge to an already kept representative; otherwise record which kept representative justified its removal:
+
+```{.python #l5-representative-policy}
+def choose_representatives(priority_order, verified_neighbors):
+    kept = []
+    removed_by = {}
+    for doc_id in priority_order:
+        representative = next(
+            (r for r in kept
+             if r in verified_neighbors.get(doc_id, set())),
+            None,
+        )
+        if representative is None:
+            kept.append(doc_id)
+        else:
+            removed_by[doc_id] = representative
+    return kept, removed_by
+```
+
+The priority order must contain each document once; the verified-neighbor relation must be symmetric and restricted to the same named policy. In production, order by documented provenance/completeness criteria followed by a stable ID tie-break. This teaching implementation scans retained representatives and can take $O(N^2)$ time; an adjacency index can avoid checking pairs with no verified edge.
+
+For the A—B—C chain, priority `A,B,C` keeps A and C and removes B using A as its witness. Priority `B,A,C` keeps only B because both endpoints directly match B. The policy is reproducible once the priority is fixed, but changing priority can legitimately change membership. Store the witness edge, its score, and the text versions—not merely a cluster number.
+
+![Representative-centered processing of the same graph in two priority orders. Arrows point from removed records to retained witnesses, not in a direction of similarity. A first keeps A and C; B first keeps only B. Constructed example.](lecture-5/clustering-representative-order.svg){width=100%}
+
+#### 11.4 Following a branch versus retaining a witness
+
+Extend the same example with $D=\{1,2,3,4,5,6,7\}$ and $E=\{1,2,3,4,5,6,7,8\}$. At $\tau=0.8$, these are the only verified edges:
+
+| Pair | Exact Jaccard |
+| --- | ---: |
+| A–B | $5/6\approx0.833$ |
+| B–C | $5/6\approx0.833$ |
+| B–D | $6/7\approx0.857$ |
+| D–E | $7/8=0.875$ |
+
+Every other pair is below 0.8. B is a branch point, joining A, C, and D; D also joins E. The graph is undirected: these branches describe verified similarity, not ancestry or a hierarchy.
+
+![Two policies on a branched graph with exactly A–B, B–C, B–D, and D–E edges. Connected components can retain A alone. Representative-centered priority A,B,C,D,E retains A,C,D, with B→A and E→D as removal witnesses. Constructed example.](lecture-5/clustering-branch-policies.svg){width=100%}
+
+A connected-component policy follows all four edges and groups all five records. If A is chosen as the representative, the other four are removed through component membership. This policy permits removal without a direct A–C, A–D, or A–E match.
+
+Representative-centered priority `A,B,C,D,E` has a different trace. Retain A; remove B using A. Retain C because it does not match retained A. Retain D because it matches neither retained A nor retained C. Finally, remove E using retained D. The retained set is `{A,C,D}`, and the witnesses are `B→A` and `E→D`. Removed B cannot act as a retained representative, so its edges to C and D do not justify removing them. Every removal has a direct edge to a record that remains in the corpus.
+
+Priority `B,A,C,D,E` instead retains B, removes A, C, and D using B, and retains E because B–E does not match. The survivors are `{B,E}`. The graph and threshold have not changed; the documented priority has. Neither policy automatically proves that all texts removed through a branch contain the same information.
+
+---
+
+### 12. Choosing a representative is a modeling decision
+
+Suppose a near-duplicate cluster contains:
+
+```text
+A: original university page, 1,850 tokens
+B: mirrored copy, 1,842 tokens
+C: print view, 1,810 tokens
+D: revised version, 2,050 tokens with an extra section
+```
+
+Possible representative policies:
+
+* earliest capture;
+* latest capture;
+* longest successfully extracted document;
+* source-priority rule;
+* highest extraction-integrity score;
+* original-source preference;
+* deterministic record-ID tie-break.
+
+Each changes what training text remains.
+
+A robust policy might be:
+
+```text
+1. prefer reviewed original source over mirror when provenance establishes it;
+2. prefer extraction-complete over incomplete;
+3. prefer latest version when the corpus objective is current knowledge;
+4. deterministic record ID as final tie-break.
+```
+
+But another corpus may prefer historical diversity and keep several meaningful versions.
+
+#### 12.1 Deduplication changes the training distribution
+
+For a small visual example, assume uniform sampling of equal-length records. If article A has four copies and article B has one, a sampled record contains A with probability $4/5=80\%$ and B with probability $1/5=20\%$. Keeping one copy of each changes those probabilities to $50\%$ each. These are exposure probabilities under a declared sampler, not guarantees about how much a trained model will memorize.
+
+If one article appears 1,000 times and another appears once, keeping one representative from each changes their relative exposure from
+
+```text
+1000 : 1
+```
+
+to
+
+```text
+1 : 1.
+```
+
+Therefore deduplication is not only storage compression. It is an **implicit resampling operation**.
+
+Lecture 7 will decide deliberate training exposure. Lecture 5 should remove or annotate accidental redundancy while preserving cluster size/multiplicity so later sampling can make an informed choice.
+
+A cluster record might contain:
+
+```json
+{
+  "cluster_id": "ndup-000391",
+  "representative_id": "doc-01872",
+  "member_ids": ["doc-01872", "doc-29220", "doc-99281"],
+  "policy": "near-dup-v3",
+  "cluster_size": 3,
+  "representative_reason": "original_source_then_completeness"
+}
+```
+
+---
+
+### 13. Whole-document deduplication can miss repeated spans
+
+Two documents can be globally different while sharing a large block.
+
+Examples:
+
+* a tutorial quoting an entire benchmark problem;
+* a textbook reprinting a standards table;
+* documentation pages sharing a long API reference section;
+* news sites copying the first half of a syndicated article and adding local commentary.
+
+Whole-document MinHash may not retrieve these pairs if the unique remainder dominates the union.
+
+#### 13.1 Span-level methods
+
+Possible strategies include:
+
+* exact long-substring search;
+* rolling hashes over fixed windows;
+* suffix-array/suffix-index methods;
+* block-level hashes;
+* n-gram inverted indexes;
+* containment-oriented retrieval.
+
+For a classroom implementation, block-level or fixed-window hashing is enough to expose the issue.
+
+For example:
+
+```python
+import hashlib
+
+
+def window_hashes(tokens, width=50):
+    out = {}
+    for i in range(0, len(tokens) - width + 1):
+        window = "\x1f".join(tokens[i:i+width]).encode("utf-8")
+        h = hashlib.sha256(window).hexdigest()
+        out.setdefault(h, []).append(i)
+    return out
+```
+
+A hash match should be verified against the underlying text/window if collision consequences matter.
+
+#### 13.2 Removing spans can damage structure
+
+Suppose a textbook chapter contains:
+
+```text
+Theorem statement
+Proof
+Discussion
+```
+
+and the theorem statement is repeated elsewhere.
+
+Deleting only the repeated statement may leave a proof with no proposition. Whole-document removal may discard substantial unique material.
+
+Therefore record whether the policy operates at:
+
+```text
+document level
+block level
+span level
+```
+
+and re-run structural audits after transformation.
+
+---
+
+#### 13.3 Rolling hashes: update a window instead of rehashing it
+
+The simple window function above hashes each window independently. With $L$ tokens and window width $n$, directly processing all window contents costs $O(Ln)$ token work. A rolling hash reuses the overlap between neighboring windows.
+
+Map each token to a stable integer $x_i$. For a fixed base $a$ and modulus $p$, define
+
+$$
+H_i=\left(\sum_{j=0}^{n-1}x_{i+j}a^{n-1-j}\right)\bmod p.
+$$
+
+The first token contributes $x_i a^{n-1}$. Subtract it, shift the remaining polynomial by multiplying by $a$, and add the next token:
+
+$$
+H_{i+1}=\left((H_i-x_i a^{n-1})a+x_{i+n}\right)\bmod p.
+$$
+
+Precompute $a^{n-1}\bmod p$. The first window takes $O(n)$ arithmetic operations; each later window takes constant work, so all windows take $O(L)$ operations under fixed-width arithmetic. Stable token encoding, modular multiplication behavior, and parameters are part of the representation version.
+
+With teaching values $a=10$, $p=101$, and tokens `[1,2,3,4]`, the length-three windows give $123\bmod101=22$ and $234\bmod101=32$. Updating the first hash gives $((22-100)\times10+4)\bmod101=32$, the same result as recomputing. These tiny parameters make the arithmetic visible; they are unsuitable collision parameters for a real corpus.
+
+Hash equality is only a seed. Read the original token windows to confirm equality, then extend left and right until the tokens disagree or a document boundary is reached. Otherwise a hash collision can manufacture a supposedly copied span.
+
+#### 13.4 Winnowing: retain fingerprints with a local coverage guarantee
+
+Storing every window hash can itself be expensive. **Winnowing** selects a subset: slide a window over $w$ consecutive shingle hashes, select its minimum, and break ties by taking the rightmost occurrence. Emit a selected position only once when consecutive windows choose it. This construction comes from [Schleimer, Wilkerson, and Aiken's document-fingerprinting algorithm](https://theory.stanford.edu/~aiken/publications/papers/sigmod03.pdf) [@schleimer2003winnowing].
+
+For constructed hashes `[8,3,5,2,2,7]` and $w=3$:
+
+| Hash window | Selected hash | Original zero-based position |
+| --- | ---: | ---: |
+| `8,3,5` | 3 | 1 |
+| `3,5,2` | 2 | 3 |
+| `5,2,2` | 2 | 4 |
+| `2,2,7` | 2 | 4, already emitted |
+
+The output is `[(1,3), (3,2), (4,2)]`. Keep positions as well as values: they support later span alignment.
+
+```{.python #l5-winnowing}
+def winnow(hashes, width):
+    if width < 1:
+        raise ValueError("width must be positive")
+    selected = []
+    previous = None
+    for start in range(len(hashes) - width + 1):
+        pos = min(
+            range(start, start + width),
+            key=lambda i: (hashes[i], -i),
+        )
+        if pos != previous:
+            selected.append((pos, hashes[pos]))
+            previous = pos
+    return selected
+```
+
+Here is the coverage argument. If two documents share an exact run of $n+w-1$ tokens, that run contains $w$ consecutive identical $n$-token shingles. Both documents therefore contain the same full window of hash values. The local selection rule chooses the same relative minimum in both windows, so at least one fingerprint matches.
+
+This guarantees a *candidate seed* for an unchanged run under identical tokenization and hashing. It does not guarantee that a paraphrase will match, that the whole documents are duplicates, or that a hash match is genuine. A later bucket cap or suppressed fingerprint can also break end-to-end retrieval coverage.
+
+The straightforward code takes $O(Lw)$ time for $L$ hashes. A monotonic deque reduces minimum selection to amortized $O(L)$ time: discard expired indices at the front, discard larger or equal hash values at the back, append the new index, then read the front. Removing equal values preserves the rightmost-tie rule. Inputs shorter than $w$ hashes have no full window and need a separate short-input policy.
+
+---
+
+## Part II — Contamination
+
+### 14. Contamination is not “similarity with a benchmark”
+
+A benchmark is not contaminated merely because training and evaluation discuss the same topic. Nor is a training record necessarily clean because the exact benchmark string is absent.
+
+Define a **protected evaluation boundary** first.
+
+For each benchmark or evaluation collection, record:
+
+* immutable version/revision;
+* protected split(s);
+* question/prompt IDs;
+* answers/solutions when relevant;
+* family identifiers;
+* source-language and translated variants;
+* any known upstream source;
+* unit of exclusion.
+
+Possible protected units include:
+
+```text
+exact row
+problem family
+book/chapter
+repository
+conversation
+source document
+time period
+```
+
+The boundary should be chosen before scanning whenever possible.
+
+![Protected benchmarks and the candidate training corpus are separated by an evaluation boundary. A crossed-out arrow marks the forbidden flow of protected questions, answers, and covered derivatives into training.](lecture-5/decontamination-boundary.svg){width=100%}
+
+The two collections have different roles. The candidate corpus supplies training material; the protected benchmark supplies evaluation evidence that must remain held out under the chosen protocol. Decontamination checks for prohibited information crossing from the protected collection into the training collection. The exclusion rule can cover a task's answers and known derivatives even when their surface text changes. Material about the same subject is not automatically a derivative of the protected task.
+
+---
+
+### 15. Why family-level protection matters
+
+Suppose an evaluation problem is:
+
+```text
+seed: English math problem #742
+```
+
+and your data pipeline contains:
+
+```text
+seed #742
+   ├── Armenian translation
+   ├── paraphrase
+   ├── teacher solution A
+   └── teacher solution B
+```
+
+If only the exact English row is held out, the model can still train on the Armenian translation or a worked solution.
+
+Lecture 3's provenance graph gives a stronger rule:
+
+> reserve the family before generating or admitting descendants.
+
+For protected source nodes $S$:
+
+$$
+A=S\cup\operatorname{Descendants}(S).
+$$
+
+Every known descendant in $A$ can be blocked from new training builds.
+
+![A protected task points to a collected mirror through source metadata and to a logged Armenian translation; that translation points to a synthetic solution generated from it. The protected closure includes the root and all known descendants. Constructed dependency graph.](lecture-5/decontamination-provenance.svg){width=100%}
+
+Provenance can come from acquisition metadata, such as an original-source ID attached to a mirror, or from transformations controlled by the pipeline. When translating a document, record its parent ID. When generating a solution or other synthetic output, record every input ID. These are directed dependency edges: input record to dependent output. Resolve collected metadata to the protected source and verify what relationship it records; an arbitrary hyperlink alone is not proof of derivation. Known dependence establishes exclusion under the protected-family policy without requiring a lexical or semantic similarity threshold.
+
+#### 15.1 Provenance is powerful but incomplete
+
+Known provenance can prove a dependency without relying on text similarity.
+
+But missing provenance does not prove independence. A benchmark may have been mirrored on the web, paraphrased, translated independently, or included in a teacher's undisclosed training set.
+
+That motivates layered detection.
+
+---
+
+#### 15.2 Traverse dependency edges, not just matching strings
+
+Represent a transformation as directed edges from every input record to the output record. A solution generated from both a protected question and an unprotected reference document has **two parents**. One protected parent is enough to establish dependence.
+
+The following traversal includes the protected seeds themselves and all known reachable descendants:
+
+```{.python #l5-protected-closure}
+from collections import deque
+
+
+def protected_closure(seeds, children):
+    protected = set(seeds)
+    queue = deque(protected)
+    while queue:
+        parent = queue.popleft()
+        for child in children.get(parent, ()):
+            if child not in protected:
+                protected.add(child)
+                queue.append(child)
+    return protected
+```
+
+Each reachable node is added once, and each outgoing edge from those nodes is inspected once: $O(V_R+E_R)$ work on the reachable subgraph. The visited set also prevents an accidental cycle from causing an infinite loop, although a cycle in a derivation graph should separately trigger a provenance validation error.
+
+Suppose the graph contains
+
+```text
+seed-742 → hy-translation → worked-solution
+seed-742 → paraphrase
+reference-19 → worked-solution
+```
+
+Protecting `seed-742` protects its translation, paraphrase, and worked solution. It does not automatically protect `reference-19`: traversing dependencies forward is different from excluding every co-parent.
+
+Conversely, protecting only `hy-translation` would not reach its English parent or its sibling paraphrase. If the evaluation protocol protects the *whole source family*, resolve the family root first and traverse from that root. The definition of the protected unit determines the traversal seeds.
+
+Deduplication must not discard this evidence. If a retained representative stands for several source records, preserve all member-to-family links and evaluate protection across those members. A representative with a clean-looking local ID can still stand for a known protected derivative.
+
+---
+
+### 16. A layered decontamination strategy
+
+A practical scan begins with known protected IDs and provenance, then uses four complementary text-detection layers:
+
+```text
+protected IDs / known provenance → direct dependency evidence
+
+1. exact normalized text matching
+2. substring / containment matching
+3. approximate lexical retrieval
+4. semantic / cross-lingual retrieval
+
+retrieved evidence → verification / review → decision → audit
+```
+
+This is a logical organization, not a requirement to run every detector as a serial filter. Layers may run in parallel, and a miss in one layer does not prevent another from retrieving evidence. Keep candidate retrieval, verified evidence, and the policy decision separate.
+
+#### 16.1 Known source IDs and provenance
+
+This is the strongest evidence when available.
+
+Example:
+
+```text
+training record parent_id = benchmark-family-742
+```
+
+No similarity threshold is required.
+
+#### 16.2 Detection layer 1: exact normalized matching
+
+Create a benchmark-specific normalization that is intentionally narrow:
+
+```{.python #l5-contamination-key}
+import re
+import unicodedata
+
+
+def contamination_key(text: str) -> str:
+    text = unicodedata.normalize("NFC", text)
+    text = text.casefold()
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+```
+
+Do not automatically strip every number or punctuation mark. In math/code evaluations, those symbols may carry the key content.
+
+![A protected prompt and a training copy with extra whitespace produce the same normalized text and SHA-256 digest. The displayed prefix is computed from the full constructed tank prompt; the figure shows excerpts.](lecture-5/decontamination-exact-matching.svg){width=100%}
+
+The exact-key mechanism is the same one used for deduplication, but the two sides are now the protected collection and the training collection rather than two training records. Apply the same declared normalization to both, compute a stable digest of its UTF-8 bytes, and look up training keys in the protected index. Verify the underlying normalized text when keys agree. For the complete tank prompt in Section 17, `contamination_key` followed by SHA-256 gives digest prefix `87efa3b8f082`; extra spaces and line breaks do not change it. Changing `liters` to `L` is not performed by this key function, so that variant needs other evidence.
+
+#### 16.3 Detection layer 2: substring / containment matching
+
+Exact full-question matching can fail when a page prepends instructions, includes the answer, or embeds the question in a longer article.
+
+Possible rules:
+
+* fixed-length token windows;
+* longest exact substrings;
+* high containment over benchmark shingles;
+* benchmark-specific rare n-grams.
+
+Generic phrases such as “Which of the following is correct?” are not useful evidence by themselves.
+
+![A full protected tank question is highlighted inside a longer training tutorial. The documents differ, but the protected passage is present. Constructed example.](lecture-5/decontamination-substring.svg){width=100%}
+
+Here the query is the protected passage, not the whole training document. Local fingerprints, positional indexes, or verified substrings can find the exposure between an introduction and a longer discussion. Whole-document keys differ, and whole-document Jaccard may be low because the tutorial contains substantial unrelated material. Measure coverage of the protected item and inspect whether its question, answer, or solution was exposed. A unit rewrite is not an exact substring match unless the declared representation explicitly makes the units equivalent.
+
+#### 16.4 Detection layer 3: approximate lexical retrieval
+
+Use MinHash, BM25-like retrieval, or other lexical methods to retrieve reformatted or lightly edited variants.
+
+The threshold should be calibrated on constructed and naturally occurring examples, including false positives from common instructional language.
+
+![Protected and training task variants share informative words despite different exact keys. Shingles with MinHash-LSH, or BM25-like retrieval, propose candidate passages that still need task-level verification. Constructed example; no retrieval scores are asserted.](lecture-5/decontamination-lexical.svg){width=100%}
+
+Reuse lexical similarity search with a different query boundary: protected tasks query training records or local passages. The `40 liters` / `40 L` rewrite preserves useful words and quantities while changing exact text. Lexical methods may retrieve it, but coverage depends on tokenization, passage size, parameters, and the surrounding corpus. Retrieval is not a guarantee of equivalent tasks or a permission to remove every candidate. Verify the paired texts and the protected policy before deciding.
+
+::: {#l5-bm25-retrieval}
+
+**BM25: inverted index and term weighting.** A typical search engine builds an **inverted index** before queries arrive: each analyzed term points to the documents containing it. For example, these are selected postings from a constructed eight-document collection, A–H:
+
+| Term | Documents containing the term |
+| --- | --- |
+| `tank` | A, B, F, G |
+| `40` | A, F |
+| `liters` | A, B, F |
+| `hour` | A, F, H |
+
+For a query containing these terms, the engine accesses their postings rather than reading every full document again. Ranked retrieval can combine evidence from any matching query terms; it does not require every term to appear. A BM25 index also needs term frequencies and document lengths, not just the document IDs displayed here. Frequent terms can still have long postings lists, so indexing does not promise constant-time retrieval. The indexing structure and BM25 term weighting are explained in [Introduction to Information Retrieval](https://nlp.stanford.edu/IR-book/html/htmledition/okapi-bm25-a-non-binary-model-1.html) [@manning2008ir].
+
+Let $f(t,D)$ count occurrences of term $t$ in document $D$, $N$ be the number of indexed documents, and $\operatorname{df}(t)$ count the documents containing $t$. Raw **term frequency (TF)** is a count. **Inverse document frequency (IDF)** gives more weight to terms appearing in fewer documents. The familiar TF–IDF convention uses $\ln(N/\operatorname{df}(t))$; the BM25 variant below uses the nonnegative, smoothed IDF convention documented by [Apache Lucene's BM25Similarity](https://lucene.apache.org/core/9_12_3/core/org/apache/lucene/search/similarities/BM25Similarity.html).
+
+::: {#l5-bm25-formulas}
+
+$$
+\mathrm{TF}(t,D)=f(t,D)
+$$
+
+$$
+\mathrm{IDF}(t)=\ln\left(1+\frac{N-\operatorname{df}(t)+0.5}{\operatorname{df}(t)+0.5}\right)
+$$
+
+$$
+\mathrm{TF}_{\mathrm{norm}}(t,D)=
+\frac{f(t,D)(k_1+1)}
+{f(t,D)+k_1\left(1-b+b\,|D|/\mathrm{avgdl}\right)}
+$$
+
+$$
+\mathrm{BM25}(D,Q)=\sum_{t\in Q}\mathrm{IDF}(t)\,\mathrm{TF}_{\mathrm{norm}}(t,D)
+$$
+
+:::
+
+Here $|D|$ is document length in analyzed tokens and $\mathrm{avgdl}$ is the mean indexed document length. Parameter $k_1>0$ controls term-frequency saturation: repeating a term adds diminishing weight. Parameter $0\leq b\leq1$ controls document-length normalization. This score uses distinct analyzed query terms $Q$ with unit query weights; implementations may add boosts or query-frequency weights and may omit a query-independent scale factor. BM25 is not simply raw TF multiplied by IDF: its term-frequency contribution saturates and adjusts for document length. For decontamination, a high score proposes a training record or passage for verification; it does not establish protected-task dependence.
+
+:::
+
+#### 16.5 Detection layer 4: semantic / cross-lingual retrieval
+
+Embeddings can retrieve paraphrases and translations with low lexical overlap.
+
+But semantic similarity is particularly dangerous to over-interpret:
+
+```text
+same concept ≠ same problem
+same topic   ≠ contamination
+```
+
+Use embeddings as **candidate retrieval**, followed by stronger evidence or review.
+
+For multilingual benchmarks, cross-lingual retrieval is useful precisely because a translated derivative can have near-zero string overlap with the source.
+
+![A protected question and multilingual training passages are encoded into compatible query and document vectors. Cosine-similarity search retrieves top-k nearest candidates for verification and human review. The shown coordinates illustrate vector format, not measured embeddings.](lecture-5/decontamination-semantic.svg){width=100%}
+
+Precompute vectors for training records or passages, then encode each protected question as a query using a compatible multilingual representation. Compare the query vector with the indexed document vectors and retrieve the **top-$k$** nearest candidates. With nonzero vectors $q$ and $v$, cosine similarity is
+
+$$
+\operatorname{cos}(q,v)=\frac{q\cdot v}{\|q\|\,\|v\|}.
+$$
+
+Larger cosine values indicate nearer directions. The [Sentence Transformers semantic-search documentation](https://www.sbert.net/examples/sentence_transformer/applications/semantic-search/README.html) describes query/corpus encoding and top-$k$ retrieval; [Faiss's metric documentation](https://github.com/facebookresearch/faiss/wiki/MetricType-and-distances) explains the equivalence to inner-product search when both sides are normalized. Here $k$ sets the retrieval budget, not a contamination confidence threshold. An approximate vector index may miss close neighbors. Pass the returned texts and source evidence to verification rather than automatically excluding every top-$k$ hit.
+
+Use a compatible embedding model and representation on both collections, with multilingual support when comparing languages. Review the retrieved task's quantities, operation, requested answer, and available source relationships. [Rethinking Benchmark and Contamination for Language Models with Rephrased Samples](https://arxiv.org/abs/2311.04850) [@yang2023rephrased] gives empirical examples of paraphrases and translations escaping string-overlap checks. It motivates looking beyond exact text; it does not make an embedding match a proof of contamination.
+
+---
+
+#### 16.6 Build a positional index for embedded protected text
+
+To find a short protected problem inside a long document, index local evidence rather than relying solely on whole-document similarity:
+
+```text
+fingerprint → [(document_id, text_version, token_start), ...]
+```
+
+For each protected item, compute compatible fingerprints, look up their postings, verify candidate token windows, and extend matching runs. Two hits at protected positions 4 and 12 and document positions 104 and 112 have the same displacement, 100. They may support one longer aligned passage. Keep separate intervals when positions do not support a continuous match.
+
+Measure coverage as the length of the **union** of verified intervals on the protected item. If one detector matches positions `[0,30)` and another matches `[20,50)`, the covered length is 50 tokens, not 60. Divide by the protected item's token length for directional coverage; also inspect whether the question, answer, or explanation was exposed.
+
+A common shingle such as “find the value of” can have an enormous posting list. One retrieval priority is
+
+$$
+\operatorname{priority}(g)=
+\log\frac{N+1}{\operatorname{df}(g)+1},
+$$
+
+where $\operatorname{df}(g)$ counts distinct documents containing shingle $g$. Rare shingles receive higher priority because they tend to generate fewer candidate documents. This is a candidate-ordering heuristic, not evidence by itself that copying occurred. If frequent fingerprints are skipped or posting lists truncated, log that decision: the complete-index coverage argument no longer applies.
+
+After finding one match, inspect the paired text, source relationship, and protected unit. A copied generic instruction and a copied answer key are not equivalent exposures.
+
+#### 16.7 A low per-comparison false-positive rate can still overwhelm review
+
+Suppose a scan makes ten million comparisons against genuinely independent items and its false-positive probability is $10^{-4}$ per comparison. The expected number of false positives is
+
+$$
+10^7\times10^{-4}=1{,}000.
+$$
+
+Linearity of expectation gives this count without assuming independent errors. Correlation changes how those errors are distributed: one common template might produce hundreds of related flags.
+
+Now suppose the scan also retrieves 90 genuine exposures. Its 1,090 flagged pairs are only about $90/1090=8.3\%$ genuine in this constructed case. A detector can therefore have a seemingly small false-positive rate and still require substantial review. Estimate precision on the actual retrieved population, group repeated evidence into cases where appropriate, and never treat a similarity score as a calibrated probability of contamination without validation.
+
+#### 16.8 Verification and human review
+
+Bring the paired text and its context to the decision stage. Confirm the protected artifact/version, the matched question or answer, and any verified dependency path. For a numerical task, compare quantities, units, operations, and the requested result. Consider these two constructed questions:
+
+| Protected task | Retrieved candidate |
+| --- | --- |
+| A tank contains 40 L of water. It loses 5 L each hour. How much remains after 6 hours? | A reservoir contains 100 L. It gains 5 L each hour. How much is present after 6 hours? |
+| $40-5\times6=10$ L | $100+5\times6=130$ L |
+
+Both texts describe water in a container, an hourly change, and a six-hour question, so an embedding model may retrieve them as near neighbors. This example asserts no measured similarity score. Their quantities and direction of change differ; a vector match does not establish that they are the same protected task. Conversely, changing numbers or operations does not prove independence: a parameterized rewrite can still descend from a protected source or fall inside a protected task family. Check provenance and the declared boundary, review unresolved cases, and record the evidence supporting the conclusion.
+
+#### 16.9 Apply a declared decision policy
+
+Use the verified evidence and the protected unit to choose an action:
+
+| Action | Basis |
+| --- | --- |
+| Exclude | Verified protected exposure or known protected derivation |
+| Retain | Independent material under the declared boundary |
+| Quarantine | Ambiguous case awaiting review; not eligible for this training build |
+
+The policy must state whether exclusion applies to a passage, record, or source family. Store the evidence IDs, protected item/version, chosen action, and policy version. A retrieval method proposes cases; the policy determines their membership in the training corpus. Lack of a known edge or match is not, by itself, evidence of independence.
+
+#### 16.10 Audit the decontamination boundary
+
+Audit both excluded cases and material that remained eligible. Inspect whether independent examples were wrongly removed, whether protected derivatives were missed, and whether collection or generation metadata was lost. Record protected artifact versions, normalization, retrieval settings, skipped or truncated searches, review rules, decisions, and remaining limitations. Use independent or source-stratified checks of retained material to look for misses; reviewing only retrieved candidates cannot establish retrieval recall. Freeze the final evaluation boundary and avoid repeated final-test-driven threshold tuning. An audit supports a bounded claim about the named scan and evidence, not an unlimited claim that the corpus is uncontaminated.
+
+---
+
+### 17. Worked contamination example
+
+Suppose protected benchmark problem `eval-101` has this English prompt:
+
+> A tank contains 40 liters of water and loses 5 liters per hour. How much remains after 6 hours?
+
+![Three constructed variants of the protected task: liters becomes L, the English wording is rephrased, and the prompt is translated into Armenian. All preserve the original quantity, rate, and requested time.](lecture-5/decontamination-task-variants.svg){width=100%}
+
+These examples represent the same task in different surface forms. The unit rewrite is “A tank contains 40 L of water and loses 5 L per hour. How much remains after 6 hours?” The rephrasing is “Start with 40 liters in a tank. Drain 5 liters each hour. How much is left after 6 hours?” The Armenian translation asks the same question with the same quantities. Under a boundary that protects this task and its derivatives, all three are prohibited training exposures when that dependence is established. An independent water-flow problem is not excluded simply because it uses the same general mathematics.
+
+Our training corpus contains four candidates:
+
+**A. Exact copy**
+
+```text
+A tank contains 40 liters of water and loses 5 liters per hour...
+```
+
+**B. Reformatted copy**
+
+```text
+Problem 18 — A tank contains 40 L of water. It loses 5 L/hour...
+```
+
+**C. Armenian translation**
+
+```text
+Բաքում կա 40 լիտր ջուր ...
+```
+
+**D. Independent related example**
+
+```text
+A reservoir starts with 100 liters and gains 2 liters per minute...
+```
+
+A plausible evidence table is:
+
+| Candidate | Exact |    Lexical containment | Cross-lingual semantic | Known family | Decision                        |
+| --------- | ----: | ---------------------: | ---------------------: | -----------: | ------------------------------- |
+| A         |   yes |                   high |                   high |           no | exclude                         |
+| B         |    no |                   high |                   high |           no | exclude/review depending policy |
+| C         |    no |                    low |                   high |      **yes** | exclude by provenance           |
+| D         |    no | moderate topic overlap |               moderate |           no | retain unless stronger evidence |
+
+The point is not that these particular thresholds are universal. The point is that **evidence types answer different questions**.
+
+#### Stop and reason
+
+Candidate D is semantically close to the benchmark but clearly a different arithmetic problem.
+
+**Question:** Should a semantic similarity threshold automatically remove it?
+
+No. Doing so would remove independent material about the same concept and could systematically erase whole domains from training.
+
+---
+
+### 18. Decontamination cannot prove independence
+
+A report such as
+
+> “No exact normalized matches to benchmark version X were found.”
+
+is a useful claim.
+
+A report such as
+
+> “The corpus is uncontaminated.”
+
+is much stronger and usually unsupported.
+
+Why?
+
+A scan may miss:
+
+* translations;
+* paraphrases;
+* OCR-altered copies;
+* answer-only leakage;
+* benchmark-derived tutorials;
+* hidden mirrors;
+* teacher-generated descendants;
+* material in undisclosed upstream model training data.
+
+Therefore report:
+
+```text
+protected artifact/version
+protected unit
+match representations
+retrieval methods
+thresholds
+human-review protocol
+known provenance exclusions
+limitations
+```
+
+#### 18.1 Development leakage versus final-test leakage
+
+Not every benchmark split plays the same role.
+
+A development set may be intentionally used to choose methods. A final protected evaluation should not become a repeated target for data-pipeline tuning.
+
+If you repeatedly inspect the final test set and change thresholds until model performance improves, you have transformed it into development data even if you never put its labels into training.
+
+Preserve a distinction among:
+
+```text
+training data
+pipeline-development data
+development evaluation
+protected final evaluation
+```
+
+---
+
+## Part III — Privacy-oriented processing
+
+### 19. Define the privacy scope before building detectors
+
+“Remove PII” is not a complete specification.
+
+Possible sensitive categories include:
+
+* email addresses;
+* phone numbers;
+* physical addresses;
+* government identifiers;
+* financial identifiers;
+* authentication secrets/API keys;
+* personally identifying combinations of names and context;
+* private conversation metadata;
+* health or other sensitive personal information depending on project scope and governing rules.
+
+A detector's supported entity types, languages, and source formats define only part of the coverage.
+
+For this course, the coding fixture should use **fabricated** sensitive examples. The exercise is about detection and transformation mechanics, not collecting real sensitive data.
+
+::: {#l5-privacy-transformation-examples}
+
+**Two transformations of fabricated text.** An email span can be replaced with a type placeholder while the surrounding sentence stays intact: `Contact: physlab@example.org` becomes `Contact: <EMAIL>`. The address uses an [IANA example domain](https://www.iana.org/help/example-domains). This classroom policy masks email-format spans; a role mailbox is not automatically a personal identifier merely because it resembles an email address.
+
+A name can instead be replaced with a **synthetic alias**: `Mariam Petrosyan joined the lab.` becomes `Anna Harutyunyan joined the lab.` Both names are fictional here; the replacement does not assert that a different real person joined the lab. Keep repeated references consistent within the chosen scope, and protect any retained identity-to-alias mapping. Neither a placeholder nor an alias guarantees that the remaining context cannot identify someone. [Presidio's transformation operators](https://presidio.dataprivacystack.org/anonymizer/) illustrate placeholder replacement and customizable substitutions.
+
+![Before and after two fabricated transformations: the lab contact email becomes the EMAIL placeholder; fictional Mariam Petrosyan becomes the synthetic alias Anna Harutyunyan. The surrounding text is unchanged.](lecture-5/privacy-transformation-examples.svg){width=100%}
+
+:::
+
+---
+
+### 20. Regex detectors: useful and easy to overclaim
+
+An email-like pattern can be a useful first layer:
+
+```python
+import re
+
+EMAIL_RE = re.compile(
+    r"(?<![\w.+-])"
+    r"[A-Za-z0-9._%+-]+@"
+    r"[A-Za-z0-9.-]+\."
+    r"[A-Za-z]{2,}"
+)
+```
+
+This does not detect every valid email address and may match strings that are not personal data in context.
+
+Likewise, phone-number patterns can collide with:
+
+* scientific measurements;
+* model/version numbers;
+* catalog identifiers;
+* dates;
+* coordinates;
+* code literals.
+
+Therefore rule-based recognizers need type-specific validation.
+
+#### 20.1 Context-aware and learned detectors
+
+NER-style or context-aware systems can recognize categories that are difficult to express as regular expressions. They also introduce:
+
+* model-version dependence;
+* language coverage limits;
+* false positives on domain vocabulary;
+* calibration problems;
+* distribution shift.
+
+A practical system may combine:
+
+```text
+regex recognizers
+checksum/secret patterns
+named-entity models
+context rules
+allow lists / deny lists
+source-specific policies
+human review for high-risk cases
+```
+
+The result is still a detector under a stated scope, not proof that every sensitive item has been removed.
+
+::: {#l5-privacy-detector-families}
+
+![One input document feeds two detector families: rule-based detection using regex, checksums, lists, and context rules; and model-based detection using named-entity recognition and context-aware models. Their span detections are combined before policy decisions and transformation.](lecture-5/privacy-detector-families.svg){width=100%}
+
+Rule-based and model-based methods can inspect the same text and contribute span candidates. Preserve their entity types, offsets, scores, and detector identities when combining results; resolve overlapping or conflicting suggestions against the same text version. Context rules and learned models can work together, so these families are not mutually exclusive. [Presidio Analyzer](https://presidio.dataprivacystack.org/analyzer/) provides examples of recognizers based on regex, named-entity recognition, and other logic. Combining detections still leaves the policy responsible for deciding which spans require action.
+
+:::
+
+---
+
+### 21. Span detection and document detection are different metrics
+
+Suppose a reference document contains three sensitive spans and the system detects two correctly plus one false positive.
+
+At the span level:
+
+$$
+P_{\mathrm{span}}
+=
+\frac{TP}{TP+FP}
+=
+\frac{2}{3},
+$$
+
+$$
+R_{\mathrm{span}}
+=
+\frac{TP}{TP+FN}
+=
+\frac{2}{3}.
+$$
+
+At the document level, the system might still correctly classify the document as “contains sensitive data.”
+
+If 99% of documents contain no sensitive spans, document-level accuracy can look excellent even when span recall is poor.
+
+Therefore evaluate:
+
+* exact-span precision/recall;
+* partial-overlap span scores if useful;
+* document-level presence;
+* entity-type-specific metrics;
+* language/source-specific metrics;
+* transformation side effects.
+
+#### 21.1 Partial-span matches
+
+Reference:
+
+```text
+alex@example.org
+```
+
+Prediction:
+
+```text
+example.org
+```
+
+Is that correct?
+
+It depends on the evaluation rule. Exact-span metrics say no. An overlap metric may give partial credit. The policy should still ask whether the transformed output leaves identifying information behind.
+
+---
+
+#### 21.2 Matching predictions to references is an algorithm
+
+For exact-span evaluation, a match requires the same document version, entity type, start offset, and end offset. For a relaxed metric, define an overlap threshold explicitly. One possible interval score is
+
+$$
+\operatorname{IoU}([a,b),[c,d))
+=
+\frac{\max(0,\min(b,d)-\max(a,c))}
+{\max(b,d)-\min(a,c)}
+$$
+
+for overlapping nonempty intervals; disjoint intervals have score zero. This interval intersection-over-union is not automatically the correct privacy metric. It is a precisely defined diagnostic.
+
+Matching must be one-to-one. If three detectors return the same email span, they have not recovered three different reference entities. Aggregate identical predictions before evaluating the deployed combined detector, or count unmatched duplicate predictions as false positives when evaluating raw outputs.
+
+For a relaxed metric, build a bipartite graph: predictions on one side, reference spans on the other, and an edge when the declared type/overlap rule allows a match. A maximum-cardinality matching gives the number of matched entities without allowing one prediction to explain several references. If several maximum matchings exist, use a documented secondary criterion such as total overlap. A naïve greedy match can depend on input order.
+
+Then
+
+$$
+TP=|\text{matching}|,\qquad
+FP=|\text{predictions}|-TP,\qquad
+FN=|\text{references}|-TP.
+$$
+
+Evaluate the transformed text as well. A partial detection can receive overlap credit while leaving the informative part of an identifier untouched. Conversely, an over-wide mask may remove the whole identifier but also delete an equation next to it. Report residual reference coverage and collateral removal as separate measurements; neither alone establishes that the resulting text is non-identifying.
+
+#### 21.3 Offset coordinates are part of the detector contract
+
+The integer 3 is not a complete text position. It might mean UTF-8 byte offset 3, Unicode code-point offset 3, or UTF-16 code-unit offset 3. These are different after non-ASCII text.
+
+Consider the prefix `"\u0531\U0001F642 "`, written in Python escape notation: the Armenian letter Ա, the smiley code point U+1F642, and a space before a fabricated identifier.
+
+| Coordinate system | Length of the prefix | Start of the following identifier |
+| --- | ---: | ---: |
+| Python `str` / Unicode code points | 3 | 3 |
+| UTF-8 bytes | 7 | 7 |
+| UTF-16 code units | 4 | 4 |
+
+The Armenian letter takes two UTF-8 bytes, the emoji takes four, and the space takes one. The emoji also takes two UTF-16 code units. Code-point indexing and encoded-byte indexing are distinct operations in the [Python Unicode model](https://docs.python.org/3/howto/unicode.html).
+
+Using a byte offset directly in Python string slicing can miss the sensitive span even though both the detector and the slicing code appear to work on English-only tests. Store `offset_unit`, `text_version`, and a content digest with every span. Convert coordinates against that exact text before applying the action.
+
+Normalization creates another mismatch: `"e\u0301"` contains two code points, while its NFC form `"é"` contains one. A span found before normalization is not automatically valid afterward. Either detect on the exact version you will transform or maintain an explicit alignment map between versions. Bounds checks alone do not catch a valid-looking offset applied to the wrong version.
+
+---
+
+### 22. Detection and action are separate decisions
+
+A sensitive-span detector may produce:
+
+```json
+{
+  "start": 117,
+  "end": 134,
+  "entity_type": "EMAIL",
+  "detector": "privacy-detector-v3",
+  "score": 0.99
+}
+```
+
+The corpus policy then chooses an action:
+
+```text
+allow
+mask span
+remove block
+remove document
+quarantine for review
+restrict access
+```
+
+Do not hide the distinction by turning every detection into unconditional deletion.
+
+::: {#l5-privacy-action-examples}
+
+**Different actions on fabricated text.** The policy can transform an approved span or exclude a larger unit when preserving the surrounding context is inappropriate.
+
+| Action | Before | After |
+| --- | --- | --- |
+| Masking | `maya@example.org` | `<EMAIL>` |
+| Synthetic replacement | `Mariam joined the lab.` | `Anna joined the lab.` |
+| Sentence removal | `The lab is open. Email: maya@example.org.` | `The lab is open.` |
+| Document removal | `Private chat: Mariam’s diagnosis…` | Not admitted to training |
+
+The names and private-chat excerpt are fictional, and the email uses a [reserved example domain](https://www.iana.org/help/example-domains). Synthetic replacement substitutes a fabricated alias; it does not attribute the event to another real person or establish anonymity. Keep repeated mentions consistent within the chosen scope. Placeholder replacement and customized substitutions are illustrated in [Presidio's transformation operators](https://presidio.dataprivacystack.org/anonymizer/).
+
+Sentence removal deletes the whole contact sentence, not only its email address. Document removal excludes the entire record from the training corpus; retain only the restricted evidence needed for the decision instead of exposing its contents in an audit log. Choose the action under the declared policy and inspect what useful content or identifying context remains. Excluding a record from future training does not undo earlier training on it.
+
+:::
+
+#### 22.1 Safe span replacement
+
+When applying several non-overlapping span replacements, replace from the end of the string backward so earlier offsets remain valid:
+
+```python
+
+def apply_masks(text, spans):
+    """Spans are dicts with start, end, entity_type."""
+    out = text
+    for s in sorted(spans, key=lambda x: x["start"], reverse=True):
+        placeholder = f"<{s['entity_type']}>"
+        out = out[:s["start"]] + placeholder + out[s["end"]:]
+    return out
+```
+
+Before this step, resolve overlapping/conflicting predicted spans under a documented rule.
+
+#### 22.2 Do not leak sensitive spans into the audit system
+
+A pipeline can paradoxically remove sensitive content from training while copying the raw span into:
+
+* debugging logs;
+* public dashboards;
+* issue trackers;
+* model-evaluation artifacts.
+
+Logs should generally store identifiers, entity types, counts, hashes, or restricted references rather than duplicating the sensitive payload unnecessarily.
+
+---
+
+#### 22.3 Resolve overlap before replacing text
+
+Suppose one detector marks `[10,25)` and another marks `[20,35)`. Applying both replacements independently can shift or partially overwrite the other detection. Once the policy has decided that *both complete intervals must be masked*, a conservative action is to merge their union into `[10,35)`.
+
+The following function validates half-open code-point intervals, merges overlaps, and uses one generic placeholder. It is an executable complement to the typed, non-overlapping replacement function above:
+
+```{.python #l5-overlap-masking}
+def mask_union(text, intervals, placeholder="<SENSITIVE>"):
+    spans = list(intervals)
+    for start, end in spans:
+        if type(start) is not int or type(end) is not int:
+            raise ValueError("offsets must be integers")
+        if not 0 <= start < end <= len(text):
+            raise ValueError("invalid span for this text")
+    merged = []
+    for start, end in sorted(spans):
+        if merged and start < merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    out = text
+    for start, end in reversed(merged):
+        out = out[:start] + placeholder + out[end:]
+    return out, merged
+```
+
+Merging takes $O(S\log S)$ time for $S$ spans because of the sort. Repeated string slicing can copy much of the document for each replacement, so the replacement loop can cost $O(SL)$ for text length $L$. A high-throughput implementation instead appends untouched segments and placeholders from left to right and joins once. Right-to-left replacement is a simple correctness technique, not necessarily the fastest string-construction strategy.
+
+This function leaves adjacent non-overlapping spans separate. A different policy could merge them, but should specify why. It also deliberately loses entity-type distinctions in the output placeholder; retain the contributing detector IDs, original types, and decision evidence in the restricted action record.
+
+If one overlapping detection is allowed and another must be masked, resolve that policy conflict *before* calling this function. Merging every raw detector suggestion would silently turn an uncertain prediction into a removal decision.
+
+#### 22.4 Combining detectors does not multiply away their misses
+
+If detector A has recall 0.8 and detector B has recall 0.7 on the same set of reference entities, the recall of their union is
+
+$$
+P(A\cup B)=P(A)+P(B)-P(A\cap B).
+$$
+
+It can lie anywhere from 0.8 to 1.0. The often tempting calculation $1-(1-0.8)(1-0.7)=0.94$ requires independent detection events on that population. Two recognizers using similar patterns can miss exactly the same unusual Armenian format.
+
+Measure the joint error table on shared fixtures: A-only hits, B-only hits, both, and neither. Audit false positives of the combined action policy too. Adding a detector may improve recall while sharply increasing unnecessary masks.
+
+---
+
+### 23. False positives are not harmless
+
+An aggressive privacy rule can destroy useful technical content.
+
+Example strings:
+
+```text
+192.168.1.10
+3.1415926535
+v2.10.4
+2026-09-18
++12.5 V
+```
+
+Some may resemble sensitive patterns but are legitimate technical content.
+
+If false positives disproportionately affect code, science, or one writing system, privacy processing can introduce a systematic domain or language bias.
+
+Audit both:
+
+```text
+sensitive spans missed
+legitimate spans removed
+```
+
+and examine them by corpus stratum.
+
+---
+
+### 24. Deduplication is not a privacy guarantee
+
+Repeated sensitive strings can create high exposure, so deduplication can reduce one source of repeated memorization pressure. But:
+
+```text
+deduplicated ≠ private
+```
+
+A unique sensitive string can still be learned. A detector can miss it. A context can identify a person even after an obvious field is masked.
+
+Similarly:
+
+```text
+redacted corpus ≠ differential privacy
+```
+
+Formal privacy guarantees concern a defined randomized training mechanism and its assumptions. This lecture covers corpus-side processing only.
+
+Likewise, deleting a document from future corpus versions does not reverse parameter updates in already-trained checkpoints.
+
+---
+
+#### 24.1 Exposure probability is not extraction probability
+
+To isolate what deduplication changes, consider a simplified sampler with $M$ equal-probability records, $m$ of which contain a particular sensitive string. With $T$ independent draws with replacement, the probability of seeing that string at least once is
+
+$$
+P(\text{seen})=1-\left(1-\frac mM\right)^T.
+$$
+
+For $M=1{,}000{,}000$, $m=100$, and $T=10{,}000$, this is about $63.2\%$. With one copy in a one-million-record pool it is about $1.0\%$. These examples hold pool size fixed to isolate multiplicity; an actual deduplication pass changes the pool and may change sampling weights.
+
+“Seen at least once” is not “memorized,” and “memorized” is not “recoverable by a particular attacker.” Training dynamics, context, model capacity, sampling, and the attack all matter. [Lee et al.](https://aclanthology.org/2022.acl-long.577/) [@lee2022dedup] study deduplication's empirical effects, while [Carlini et al.](https://www.usenix.org/conference/usenixsecurity21/presentation/carlini-extracting) [@carlini2021extracting] demonstrate training-data extraction in a specific model/attack setting. Neither converts the elementary sampling equation into a privacy guarantee.
+
+A privacy audit should name the attacker capability and the observable failure: detecting a raw identifier in retained text, eliciting a sensitive continuation, or linking apparently separate records to one person are different tests. Masking direct identifiers addresses only part of that space.
+
+---
+
+## Part IV — Integrating and auditing the pipeline
+
+### 25. Ordering matters
+
+There is no single universal ordering, but every order has consequences.
+
+A simplified integrity pipeline might be:
+
+```text
+Lecture 4 candidate documents
+        ↓
+exact/canonical duplicate grouping
+        ↓
+near-duplicate candidate retrieval
+        ↓
+verification + cluster policy
+        ↓
+protected-family / contamination scans
+        ↓
+privacy detection + transformation
+        ↓
+final structural re-audit
+        ↓
+curated corpus lock
+```
+
+Another system may run privacy processing earlier because sensitive spans should not enter intermediate indexes. Another may run contamination before global deduplication so benchmark matches are preserved as evidence even if a representative later changes.
+
+The correct question is:
+
+> **What information does each stage need, and could an earlier transformation destroy it?**
+
+#### 25.1 Examples of ordering interactions
+
+**Privacy before hashing**
+
+Two documents differing only by an email address may become exact matches after redaction.
+
+**Dedup before provenance family protection**
+
+If representative selection discards the record carrying the known benchmark-family ID, a poorly designed pipeline can lose important ancestry evidence.
+
+**Span removal before contamination scanning**
+
+Deleting text can reduce the lexical evidence needed to detect a protected benchmark copy.
+
+Preserve intermediate evidence and do not let physical text transformations erase relational metadata.
+
+---
+
+### 26. One record through Lecture 5
+
+Take a candidate Armenian technical document from Lecture 4:
+
+```json
+{
+  "document_id": "doc-hy-04192",
+  "source": "edu-site-A",
+  "origin": "native",
+  "text_version": "norm-v2",
+  "language": "hy",
+  "domain": "physics",
+  "quality_status": "admitted_candidate"
+}
+```
+
+#### Stage 1 — exact key
+
+Canonical-text digest:
+
+```text
+sha256:7b2...
+```
+
+No exact match.
+
+#### Stage 2 — near-duplicate retrieval
+
+Five-word shingles → 128-coordinate MinHash → 16 bands × 8 rows.
+
+LSH retrieves:
+
+```text
+doc-hy-01991
+doc-hy-08500
+```
+
+Exact Jaccard verification gives:
+
+```text
+J(doc-hy-04192, doc-hy-01991) = 0.91
+J(doc-hy-04192, doc-hy-08500) = 0.42
+```
+
+Only the first pair passes the near-duplicate verification threshold used in this example.
+
+#### Stage 3 — provenance/context inspection
+
+`doc-hy-01991` is a mirror of the same university article. `doc-hy-04192` is from the original domain and has a more complete extraction.
+
+Representative decision:
+
+```text
+retain doc-hy-04192
+map doc-hy-01991 -> doc-hy-04192
+```
+
+#### Stage 4 — protected-evaluation scan
+
+A paragraph retrieves strongly against `eval-family-physics-22`, but provenance shows that it is a generic definition from a public textbook, not a descendant of the benchmark item. Human review classifies the match as shared generic content, not prohibited overlap under the current boundary.
+
+#### Stage 5 — privacy scan
+
+A contact footer contains a fabricated example email in our fixture:
+
+```text
+physlab@example.edu
+```
+
+The block is site contact metadata rather than the instructional article body. The policy removes the footer block rather than masking inside the document.
+
+#### Stage 6 — final record
+
+```json
+{
+  "document_id": "doc-hy-04192",
+  "duplicate_cluster": "ndup-00391",
+  "cluster_size": 2,
+  "representative": true,
+  "contamination_status": "reviewed_clear_under_eval-policy-v2",
+  "privacy_transform": "footer_removed",
+  "final_text_version": "integrity-v1",
+  "admission": "curated"
+}
+```
+
+The point is not the particular decision. The point is that every decision has inspectable evidence.
+
+---
+
+### 27. Audit removals, not only retained data
+
+A corpus can become smaller and look cleaner while silently losing important coverage.
+
+For every integrity stage, ask two questions:
+
+1. **What problematic material did we successfully remove?**
+2. **What legitimate material did we remove by mistake?**
+
+#### 27.1 Duplicate-removal audit
+
+Sample from:
+
+```text
+removed exact duplicates
+removed near duplicates
+retained predicted-near-duplicates below threshold
+random retained documents
+```
+
+Inspect whether:
+
+* removed members truly satisfy the policy;
+* representative selection preserved the best/required version;
+* chained clusters contain distinct content;
+* one source/language is disproportionately removed.
+
+#### 27.2 Contamination audit
+
+Maintain categories such as:
+
+```text
+confirmed prohibited overlap
+likely prohibited overlap
+shared generic content
+related but independent content
+unresolved
+```
+
+Report candidates and reviewed decisions separately.
+
+#### 27.3 Privacy audit
+
+Sample both predicted-sensitive and predicted-clean material. The latter is necessary to estimate residual misses.
+
+Stratify by:
+
+```text
+language
+source
+content type
+entity type
+document length
+```
+
+where relevant.
+
+---
+
+#### 27.4 Stratified audits need population weights
+
+Suppose a removal audit contains 10,000 decisions. You deliberately inspect the same number from each source type to give a small code stratum enough attention:
+
+| Source stratum | Population decisions $N_h$ | Audited $n_h$ | Incorrect removals found | Sample error rate $\widehat p_h$ |
+| --- | ---: | ---: | ---: | ---: |
+| News | 8,000 | 100 | 2 | 2% |
+| Science | 1,500 | 100 | 1 | 1% |
+| Code | 500 | 100 | 10 | 10% |
+
+The pooled sample contains 13 errors out of 300, or $4.33\%$. But code makes up one third of the audit and only $5\%$ of the removal population. The pooled percentage does not estimate the population error rate under this sampling design.
+
+With independent simple random samples inside each stratum, weight by the population share $W_h=N_h/N$:
+
+$$
+\widehat p=\sum_h W_h\widehat p_h
+=0.8(0.02)+0.15(0.01)+0.05(0.10)
+=0.0225.
+$$
+
+The estimated population error rate is $2.25\%$, corresponding to $8{,}000(0.02)+1{,}500(0.01)+500(0.10)=225$ incorrect removals. The 10% code error still deserves investigation; a weighted aggregate is not a reason to hide a vulnerable stratum.
+
+If $s_h^2$ is the sample variance of the binary error indicator inside stratum $h$, an estimated variance for the weighted mean under sampling without replacement is
+
+$$
+\widehat{\operatorname{Var}}(\widehat p)
+=\sum_h W_h^2
+\left(1-\frac{n_h}{N_h}\right)\frac{s_h^2}{n_h}.
+$$
+
+The factor $1-n_h/N_h$ accounts for inspecting a finite fraction of the stratum. When you inspect every decision in a stratum, there is no sampling uncertainty about that stratum's error rate—although annotation mistakes can remain.
+
+Do not use this formula unchanged for convenience samples or a sample that chooses clusters and then inspects all their members. The sampling unit and inclusion probabilities determine the estimator. A cluster sample needs cluster-aware uncertainty; hundreds of near-identical mirrors should not masquerade as hundreds of independent audit observations.
+
+#### 27.5 What does zero observed failure establish?
+
+Suppose $n$ independently sampled documents produce zero observed instances of a defined failure, and assume the audit labels are correct. Under a Bernoulli model with failure probability $p$,
+
+$$
+P(0\text{ observed failures})=(1-p)^n.
+$$
+
+Set this probability to $\alpha=0.05$ and solve for the one-sided 95% upper confidence bound:
+
+$$
+p_{\mathrm{upper}}=1-\alpha^{1/n}.
+$$
+
+For $n=300$, the bound is about $0.00994$, or $0.994\%$. The familiar approximation $3/n$ follows from $-\log(0.05)\approx3$. Zero failures in 300 observations is therefore compatible with a residual failure rate near 1%; it does not establish zero risk.
+
+This bound concerns the specified event and sampling population. “No in-scope identifier found in sampled retained documents” does not bound missed protected translations, every possible sensitive attribute, or attacks against a trained model. If the human audit also misses identifiers, the calculation bounds observed audit failures rather than the full latent error rate.
+
+---
+
+### 28. Measure how the corpus changed
+
+Before Lecture 5, suppose the candidate corpus had:
+
+| Component                | Documents | Tokens |
+| ------------------------ | --------: | -----: |
+| Armenian news            |    78,000 |   310M |
+| Native Armenian science  |     8,500 |    48M |
+| Translated Armenian STEM |    14,200 |    72M |
+| English science          |    30,000 |   190M |
+| Code                     |    22,000 |   140M |
+
+After integrity processing:
+
+| Component                | Documents | Tokens | % tokens removed |
+| ------------------------ | --------: | -----: | ---------------: |
+| Armenian news            |    49,000 |   205M |            33.9% |
+| Native Armenian science  |     7,900 |    45M |             6.3% |
+| Translated Armenian STEM |    12,300 |    63M |            12.5% |
+| English science          |    27,000 |   174M |             8.4% |
+| Code                     |    19,500 |   126M |            10.0% |
+
+These invented numbers immediately raise a question:
+
+> Why did Armenian news lose one-third of its tokens while native science lost only 6%?
+
+Possible explanations:
+
+* syndicated/mirrored news;
+* repeated templates;
+* clustering thresholds that behave differently by document length;
+* source-specific extraction artifacts;
+* an erroneous representation collapsing distinct short articles.
+
+Do not conclude “news was lower quality.” Investigate the mechanism.
+
+#### 28.1 Track more than totals
+
+Compare before/after distributions for:
+
+* source;
+* language and variety;
+* domain;
+* register;
+* origin (native/translated/generated);
+* publication period;
+* document length;
+* unique family count;
+* model tokens under a fixed tokenizer;
+* duplicate cluster sizes;
+* missing metadata.
+
+A useful integrity report includes both **absolute** and **relative** changes.
+
+#### 28.2 Family counts matter
+
+Suppose 12,300 translated STEM records survive, but they descend from only 4,100 unique English seed problems.
+
+Report both:
+
+```text
+retained records = 12,300
+unique source families = 4,100
+```
+
+Otherwise output multiplicity can masquerade as independent coverage.
+
+---
+
+### 29. A minimal integrity data model
+
+One workable schema separates evidence from decisions.
+
+#### 29.1 Similarity edge
+
+```json
+{
+  "left_id": "doc-001",
+  "right_id": "doc-002",
+  "representation": "word5-nfc-v1",
+  "retriever": "minhash-lsh-v2",
+  "verifier": "jaccard",
+  "score": 0.91,
+  "decision": "near_duplicate",
+  "policy": "ndup-policy-v3"
+}
+```
+
+#### 29.2 Contamination evidence
+
+```json
+{
+  "document_id": "doc-010",
+  "evaluation_family": "eval-family-742",
+  "method": "containment-word8-v2",
+  "score": 0.97,
+  "review": "confirmed_prohibited_overlap",
+  "policy": "eval-boundary-v2"
+}
+```
+
+#### 29.3 Sensitive-span evidence
+
+```json
+{
+  "document_id": "doc-019",
+  "text_version": "norm-v2",
+  "start": 117,
+  "end": 134,
+  "entity_type": "EMAIL",
+  "detector": "privacy-v3",
+  "action": "mask"
+}
+```
+
+#### 29.4 Final membership row
+
+```json
+{
+  "document_id": "doc-019",
+  "duplicate_cluster": "ndup-223",
+  "representative": true,
+  "evaluation_status": "clear_under_eval-boundary-v2",
+  "privacy_status": "transformed",
+  "final_text_version": "integrity-v1",
+  "admitted": true
+}
+```
+
+The final corpus lock lists exact membership. The evidence tables explain **why** each record is or is not there.
+
+---
+
+#### 29.5 Make dependencies explicit enough to invalidate stale results
+
+A similarity score is a function of more than two document IDs:
+
+$$
+e_{ij}
+=f(x_i^{(v_i)},x_j^{(v_j)},N,T,n,H,\theta),
+$$
+
+where $v_i,v_j$ identify the input text versions; $N$ is the normalization recipe; $T$ is the diagnostic tokenizer; $n$ is shingle width; $H$ is the hash/signature recipe; and $\theta$ contains comparison parameters. Here $N$ denotes a normalizer, not a document count.
+
+Changing the tokenizer can change shingles, signatures, buckets, verified scores, clusters, representatives, and final membership. Changing only the representative priority may reuse the verified graph, but must recompute representative assignments. Changing a protected-family list may reuse unchanged text fingerprints, but must rerun the relevant exclusion decisions.
+
+Store a dependency manifest with input digests, code/configuration versions, and output artifact digests. A cache hit is valid only when the dependencies for that particular result match. A file named `latest-signatures.parquet` is not sufficient evidence of compatibility.
+
+For a reproducible membership digest, sort rows by a stable document ID and hash an unambiguous serialization of the IDs, final text digests, and decision-version references. Hashing only the unordered set of document IDs misses changed text. Hashing filesystem enumeration order makes an unchanged corpus appear different across machines.
+
+#### 29.6 Incremental additions and deletions have different costs
+
+When new documents arrive, reuse an old LSH index only if the complete representation and banding recipe are unchanged. Query new records against the old index and against one another. Searching only new–new pairs misses mirrors of the old corpus; searching only new–old pairs misses duplicates introduced together.
+
+Representative selection may also change: a newly acquired complete original can outrank an old truncated mirror. Decide whether releases freeze old representatives or recompute the declared global priority. Either is a policy, but the resulting membership and provenance must record it.
+
+Deleting evidence is harder than adding an edge to a connected-component structure. Suppose verified edges form A—B—C, with no A—C edge. Removing B splits the surviving graph into two components. A union-find structure remembers that A and C were joined; deleting B from its record table does not undo the union.
+
+To support withdrawals or corrected false-positive edges, preserve the verified graph and recompute affected components, or use a data structure designed for dynamic connectivity. Likewise, if a removed representative was the sole witness for other removals, revisit those decisions. Do not keep discarding C merely because a now-invalid witness once justified it.
+
+#### 29.7 Preserve overlapping reasons without double-counting removals
+
+A record can be an exact duplicate, a protected derivative, and contain a sensitive span at the same time. Store independent evidence flags plus the final action. A single `reason="duplicate"` field loses information about the other boundaries.
+
+For summary counts, the number excluded by either duplication or contamination is
+
+$$
+|D\cup C|=|D|+|C|-|D\cap C|.
+$$
+
+Do not add reason-specific counts and call their sum the number of unique removed documents. For a processing waterfall, count newly removed records at each stage and state the stage order. For an order-independent risk report, show overlapping flags on the common input population. These are different summaries of the same evidence.
+
+---
+
+### 30. Regression tests for corpus integrity
+
+A serious data pipeline deserves tests just like model code.
+
+Useful tests include:
+
+#### Exact matching
+
+* identical bytes group together;
+* distinct bytes do not group under byte equality;
+* canonicalization merges only intended fixtures;
+* input order does not change group membership.
+
+#### Shingling / MinHash / LSH
+
+* controlled identical sets estimate similarity near 1;
+* disjoint sets estimate near 0;
+* measured candidate rates on synthetic overlaps roughly follow the theoretical LSH curve;
+* candidate pair IDs are deduplicated across bands;
+* empty/short documents follow the declared policy;
+* bucket caps, if used, are logged.
+
+#### Clustering
+
+* A–B–C nontransitivity is reproduced;
+* representative selection is deterministic;
+* removed records map to an existing retained representative;
+* input shuffling does not change the final deterministic result.
+
+#### Contamination
+
+* exact protected copies are excluded;
+* known descendants are excluded by family/provenance;
+* embedded protected strings are retrieved by containment tests;
+* generic phrases do not automatically trigger full-document removal;
+* translated fixture descendants are excluded when ancestry is known.
+
+#### Privacy
+
+* fabricated sensitive spans are transformed as specified;
+* benign technical digit strings are preserved;
+* multiple spans are replaced without offset corruption;
+* logs do not contain the raw fabricated span unless intentionally restricted.
+
+#### Corpus lock
+
+* every admitted record resolves to a final text version;
+* no excluded protected descendant is present;
+* no duplicate cluster has more than the allowed number of representatives under the policy;
+* all removal reasons reference versioned policies.
+
+---
+
+## Practical checkpoint — Build an integrity report, not just a smaller corpus
+
+Use the constructed fixtures first, then apply the pipeline to the audited candidate corpus from Lecture 4.
+
+### Part A — Exact and canonical duplicates
+
+1. Compute byte/content keys for the selected text representation.
+2. Define a separate canonical key for prose.
+3. Find at least one pair merged only under canonicalization.
+4. Inspect whether the merge is legitimate.
+5. Preserve all source record IDs even if training text is shared.
+
+**Submit:** exact-group table, canonicalization policy, and two inspected examples.
+
+### Part B — Near-duplicate retrieval
+
+Implement:
+
+```text
+word/character shingles
+→ MinHash signatures
+→ banding
+→ unique candidate pairs
+→ exact Jaccard verification
+```
+
+Then:
+
+1. create controlled set-overlap fixtures;
+2. compare empirical candidate frequencies with
+
+$$
+1-(1-s^r)^b;
+$$
+
+3. record bucket-size distribution;
+4. inspect the largest bucket;
+5. report candidate recall on known/labeled duplicate pairs.
+
+**Submit:** code, theoretical-vs-measured table, bucket diagnostics, and labeled-pair retrieval results.
+
+### Part C — Cluster policy
+
+Use the A–B–C example to demonstrate nontransitivity.
+
+Compare:
+
+* connected components;
+* representative-centered removal.
+
+Define and justify your representative-selection policy.
+
+**Submit:** cluster mapping and one case where the cluster policy materially changes what would be removed.
+
+### Part D — Protected evaluation families
+
+The instructor provides a small protected fixture containing:
+
+* exact copies;
+* reformatted copies;
+* one embedded question;
+* one known translation descendant;
+* one topically similar but independent problem.
+
+Run layered detection and classify each candidate.
+
+**Submit:** evidence table, final decisions, and a statement of what your scan cannot prove.
+
+### Part E — Privacy-oriented transformation
+
+Use fabricated sensitive strings only.
+
+1. detect at least one supported entity type;
+2. include benign lookalikes;
+3. measure exact-span precision/recall on the fixture;
+4. apply masking/removal without corrupting offsets;
+5. list unsupported categories/languages.
+
+**Submit:** detector scope, confusion/error table, transformed fixtures, and limitations.
+
+### Part F — Before/after corpus audit
+
+Compare the Lecture 4 candidate corpus with the new curated corpus by:
+
+* documents;
+* bytes/text length;
+* model tokens under one fixed tokenizer;
+* source;
+* language/variety;
+* domain/register;
+* native/translated/generated origin;
+* unique family count;
+* duplicate-cluster distribution.
+
+Inspect at least:
+
+```text
+10 removed exact/near duplicates
+10 retained near-threshold cases
+all protected-overlap decisions in the fixture
+10 privacy false-positive/false-negative audit examples where available
+```
+
+Write a short interpretation of the largest composition change.
+
+### Technical checkpoint — Verify the implementation assumptions
+
+Use small, fully inspectable fixtures before scaling the report:
+
+1. Construct the two separator-containing token sequences in Section 2.3. Show that delimiter joining aliases them and that length-prefixed encoding does not.
+2. For all pairs of subsets of a small universe, compare `jaccard_at_least` with exact rational Jaccard. Include equality at the threshold, very different set sizes, and empty inputs.
+3. Enumerate the banding choices that divide 128 coordinates. Compute candidate probabilities at similarities 0.5 and 0.8, then identify a configuration meeting a stated recall and candidate-cost budget. Explain if no configuration meets both.
+4. Verify that equal blocks in different band positions do not create an LSH candidate. Verify that a pair matching every band still appears once.
+5. Apply both representative priority orders to A—B—C. For every removed record, resolve its direct witness against a record that remains.
+6. Use a shared run of $n+w-1$ tokens with different prefixes and suffixes to test winnowing's candidate guarantee. Then insert an edit into the run and explain why that guarantee no longer applies.
+7. Traverse a multi-parent provenance fixture. Protect a root, then only one child, and explain the difference in the resulting exclusion sets.
+8. Mask overlapping fabricated spans after an Armenian letter and an emoji. Test invalid bounds, byte/code-point mismatch, and a changed text version.
+9. Recompute the weighted audit estimate and the zero-failure upper bound. State the sampling assumptions next to each result.
+
+The Python reference functions in this chapter are checked directly from their source blocks by `python3 tests/lecture5-algorithms.test.py`. Their readable implementations prioritize inspectability; the complexity discussions identify where a larger system needs different storage or algorithms.
+
+### Final deliverable
+
+Submit:
+
+```text
+integrity_policy.md
+similarity_edges.parquet/jsonl
+clusters.parquet/jsonl
+contamination_report.md
+privacy_report.md
+before_after_audit.md
+corpus-v2.lock.json
+regression_tests/
+```
+
+A passing submission is not one that removes the most data. It is one that can explain and reproduce **why each category of material was removed, how errors were measured, and what limitations remain**.
+
+---
+
+## Check your understanding
+
+1. Why can two identical byte strings still require two distinct source records?
+2. What changes when exact matching is performed after canonicalization?
+3. Why can Jaccard similarity be low even when a protected short document is fully embedded in a long document?
+4. Derive the identity $P(h_\pi(A)=h_\pi(B))=J(A,B)$ for MinHash.
+5. Why does LSH use a probabilistic retrieval curve rather than a hard similarity threshold?
+6. How can a single large LSH bucket recreate quadratic work?
+7. What does connected-component membership guarantee about pairwise similarity? What does it not guarantee?
+8. Why is representative selection a modeling decision rather than merely a storage decision?
+9. Why should provenance-based benchmark exclusions be applied even if lexical similarity is low?
+10. Why can a semantic-similarity detector create false contamination positives?
+11. Why must a privacy audit sample predicted-clean material as well as predicted-sensitive material?
+12. Why does successful redaction not imply a formal privacy guarantee?
+13. What evidence would you inspect if deduplication removes 40% of one language but only 5% of another?
+14. What should a final corpus lock contain that a directory of remaining text does not?
+
+---
+
+## What to remember
+
+1. **Similarity is evidence; duplication is a policy.** Define the representation, threshold, scope, and removal rule separately.
+2. **Exact equality and near similarity have different mathematics.** Exact equality partitions records cleanly; thresholded similarity is not generally transitive.
+3. **MinHash estimates Jaccard; LSH retrieves candidates.** Neither by itself decides what should be removed.
+4. **Candidate generation and verification have separate error budgets.** Measure both.
+5. **Deduplication changes exposure.** Preserve cluster multiplicity so later mixture design can distinguish accidental repetition from deliberate sampling.
+6. **Contamination is boundary-relative.** Protect exact records, families, descendants, and embedded material according to the evaluation claim.
+7. **A clean scan is not proof of independence.** Translations, paraphrases, hidden mirrors, and unknown ancestry remain possible.
+8. **Privacy-oriented processing needs a declared scope and audit.** False positives can destroy useful technical data; false negatives leave residual risk.
+9. **Do not let transformations erase evidence.** Keep provenance, versioned similarity records, decisions, and final membership separately.
+10. **The final product is an auditable curated corpus version.** Lecture 6 will tokenize and serialize these documents into actual training examples.
+
+---
+
+## References and further reading
+
+The references below support the technical directions used in this chapter. They are examples and evidence, not universal parameter recommendations.
+
+**[C0] Supplied Lecture 3 draft.** *Corpus acquisition, licensing, and provenance.* The identity, provenance, protected-family, and withdrawal concepts in this lecture extend that supplied material.
+
+**Lee, K., Ippolito, D., Nystrom, A., et al. (2022).** *Deduplicating Training Data Makes Language Models Better.* Proceedings of ACL 2022. Provides empirical evidence on exact/approximate deduplication, memorization, and train/evaluation overlap in the studied settings.
+https://aclanthology.org/2022.acl-long.577/
+
+**Broder, A. Z. (1997).** *On the Resemblance and Containment of Documents.* Compression and Complexity of Sequences. Classic treatment of resemblance/containment and MinHash-style document similarity.
+
+**NIST (2015).** *Secure Hash Standard (SHS), FIPS 180-4.* Defines SHA-256 and its digest size.
+https://csrc.nist.gov/pubs/fips/180-4/upd1/final
+
+**Schleimer, S., Wilkerson, D. S., & Aiken, A. (2003).** *Winnowing: Local Algorithms for Document Fingerprinting.* SIGMOD. Defines the local fingerprint-selection rule and its exact-run detection guarantee.
+https://theory.stanford.edu/~aiken/publications/papers/sigmod03.pdf
+
+**Leskovec, J., Rajaraman, A., & Ullman, J. D.** *Mining of Massive Datasets*, chapters on locality-sensitive hashing. Useful derivation and systems perspective for MinHash/LSH.
+http://www.mmds.org/
+
+**datasketch documentation.** *MinHash LSH.* Practical reference for approximate candidate retrieval; implementation details should still be pinned and evaluated for the actual corpus.
+https://ekzhu.com/datasketch/lsh.html
+
+**Penedo, G., Malartic, Q., Hesslow, D., et al. (2024).** *The FineWeb Datasets: Decanting the Web for the Finest Text Data at Scale.* Useful as a real large-scale example of extraction, filtering, and deduplication decisions.
+https://arxiv.org/abs/2406.17557
+
+**Penedo, G., et al. (2025).** *FineWeb2: One Pipeline to Scale Them All — Adapting Pre-Training Data Processing to Every Language.* Useful for multilingual processing and for seeing why one filtering/deduplication policy may not transfer uniformly across languages.
+https://arxiv.org/abs/2506.20920
+
+**Carlini, N., Tramer, F., Wallace, E., et al. (2021).** *Extracting Training Data from Large Language Models.* USENIX Security 2021. Motivates the distinction between corpus cleanup and guarantees against memorization.
+https://arxiv.org/abs/2012.07805
+
+**Microsoft Presidio / Data Privacy Stack.** Practical recognizer and de-identification framework illustrating pattern, context, and transformation components. It should not be interpreted as a guarantee that all sensitive material will be detected.
+https://github.com/data-privacy-stack/presidio
+
+**Corpus-linguistics materials supplied with the course design.** The discussions of frequency versus dispersion and contextual inspection motivate several audit habits used here: repeated counts must be traced back to documents and contexts rather than interpreted from aggregate frequency alone.

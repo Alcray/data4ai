@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 450" role="img" aria-labelledby="title desc">
+  <title id="title">Multilingual embeddings, vector similarity, and top-k candidates</title>
+  <desc id="desc">A protected English question and Armenian, Russian, or English training passages use a compatible multilingual embedding model. The query vector and indexed document vectors feed cosine-similarity search, which retrieves top-k candidate passages for verification and human review. Coordinates are illustrative, not computed text embeddings. A nearest-neighbor match is not proof of protected dependence.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#7253ed"/></marker></defs>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827;text-anchor:middle}.heading{font-size:27px;font-weight:650}.label{font-size:23px;fill:#6b7280}.vector{font-family:Consolas,monospace;font-size:25px;fill:#5b3fd4}.box{fill:#fff;stroke:#e5e7eb;stroke-width:2}.edge{fill:none;stroke:#7253ed;stroke-width:3;marker-end:url(#arrow)}</style>
+  <text class="heading" x="300" y="31">Protected question</text>
+  <text class="label" x="300" y="62">English benchmark task</text>
+  <text class="heading" x="900" y="31">Training documents</text>
+  <text class="label" x="900" y="62">Armenian · Russian · English</text>
+  <path class="edge" d="M300 73V97"/><path class="edge" d="M900 73V97"/>
+  <rect class="box" x="100" y="100" width="1000" height="62" rx="8"/>
+  <text class="heading" x="600" y="126">Multilingual embedding model</text>
+  <text class="label" x="600" y="152">Compatible numeric vectors</text>
+  <path class="edge" d="M300 164V190"/><path class="edge" d="M900 164V190"/>
+  <text class="heading" x="300" y="221">Query vector</text>
+  <text class="vector" x="300" y="254">q = [0.12, −0.38, …]</text>
+  <text class="heading" x="900" y="221">Document vectors</text>
+  <text class="vector" x="900" y="254">v₁ = [0.10, −0.35, …]</text>
+  <path class="edge" d="M300 264V289"/><path class="edge" d="M900 264V289"/>
+  <rect class="box" x="100" y="292" width="1000" height="58" rx="8"/>
+  <text class="heading" x="600" y="329">Vector similarity search · cosine</text>
+  <path class="edge" d="M425 352V372"/>
+  <rect x="100" y="375" width="650" height="65" rx="8" fill="#f2effe" stroke="#7253ed" stroke-width="2"/>
+  <text class="heading" x="425" y="403">Top-k semantic candidates</text>
+  <text class="label" x="425" y="430">Ranked nearest passages</text>
+  <path class="edge" d="M752 407H857"/>
+  <rect class="box" x="860" y="375" width="240" height="65" rx="8"/>
+  <text class="heading" x="980" y="403">Verification</text>
+  <text class="label" x="980" y="430">Human review</text>
+</svg>

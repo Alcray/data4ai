@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Slide } from "@revealjs/react";
 import Presentation from "./Lecture1Presentation";
 import lecture4 from "./future-decks/lecture-4";
+import lecture5 from "./future-decks/lecture-5";
+import { lecture5Html } from "./generated/lecture-5";
 import type { LectureDeck, SlideSpec } from "./future-decks/types";
 import { parseSlidePosition, setReturnSlidePosition } from "./lecture-navigation";
 import "./FutureLecturePresentation.css";
 
-const decks: Record<number, LectureDeck> = { 4: lecture4 };
+const decks: Record<number, LectureDeck> = { 4: lecture4, 5: lecture5 };
 
 function Question({ slide }: { slide: SlideSpec }) {
   const [revealed, setRevealed] = useState(false);
@@ -27,20 +29,48 @@ function Points({ items = [] }: { items?: string[] }) {
   )}</ol>;
 }
 
-function Content({ slide }: { slide: SlideSpec }) {
+const formulaChapters: Record<number, string> = { 5: lecture5Html };
+const formulaDocuments = new Map<number, Document>();
+
+function chapterFormulas(lectureNumber: number, anchor: string) {
+  const html = formulaChapters[lectureNumber];
+  if (!html) return "";
+  let chapter = formulaDocuments.get(lectureNumber);
+  if (!chapter) {
+    chapter = new DOMParser().parseFromString(html, "text/html");
+    formulaDocuments.set(lectureNumber, chapter);
+  }
+  // Only native math from our generated chapter; never user-supplied HTML.
+  return [...(chapter.getElementById(anchor)?.querySelectorAll("math") ?? [])].map(math => math.outerHTML).join("");
+}
+
+function Table({ slide }: { slide: SlideSpec }) {
+  return <div className="future-table-wrap"><table className="future-table">
+    <thead><tr>{slide.headers?.map((header, index) => <th key={index} scope="col">{header}</th>)}</tr></thead>
+    <tbody>{slide.rows?.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, column) =>
+      column === 0 ? <th key={column} scope="row">{cell}</th> : <td key={column}>{cell}</td>
+    )}</tr>)}</tbody>
+  </table></div>;
+}
+
+function Content({ slide, lectureNumber }: { slide: SlideSpec; lectureNumber: number }) {
   switch (slide.kind) {
     case "question": return <Question slide={slide} />;
     case "flow": return <ol className={`future-flow${(slide.items?.length ?? 0) > 4 ? " future-flow-wrapped" : ""}`}>
       {slide.items?.map((item, index) => <li key={index}><b>{String(index + 1).padStart(2, "0")}</b><span>{item}</span></li>)}
     </ol>;
     case "comparison":
-    case "table": return slide.rows ? <div className="future-table-wrap"><table className="future-table">
-      <thead><tr>{slide.headers?.map((header, index) => <th key={index} scope="col">{header}</th>)}</tr></thead>
-      <tbody>{slide.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, column) =>
-        column === 0 ? <th key={column} scope="row">{cell}</th> : <td key={column}>{cell}</td>
-      )}</tr>)}</tbody>
-    </table></div> : <Points items={slide.items} />;
-    case "formula": return <div className="future-formula-layout"><div className="future-formula" role="math" aria-label={slide.formula}>{slide.formula}</div><Points items={slide.items} /></div>;
+    case "table": return slide.rows ? <Table slide={slide} /> : <Points items={slide.items} />;
+    case "formula": {
+      const math = slide.formulaAnchor ? chapterFormulas(lectureNumber, slide.formulaAnchor) : "";
+      const formula = math
+        ? <div className="future-formula future-formula-native" dangerouslySetInnerHTML={{ __html: math }} />
+        : <div className="future-formula" role="math" aria-label={slide.formula}>{slide.formula}</div>;
+      return <div className="future-formula-layout">
+        {slide.rows ? <div className="future-formula-table-layout"><Table slide={slide} />{formula}</div> : formula}
+        <Points items={slide.items} />
+      </div>;
+    }
     case "code": return <div className="future-code-layout"><pre><code>{slide.code}</code></pre><Points items={slide.items} /></div>;
     case "specimen": return <div className="future-specimen-layout">
       <div className="future-specimens">{slide.specimens?.map((specimen, index) =>
@@ -67,7 +97,7 @@ function Content({ slide }: { slide: SlideSpec }) {
 export default function FutureLecturePresentation({ lectureNumber, onExit }: { lectureNumber: number; onExit: () => void }) {
   const deck = decks[lectureNumber];
   if (!deck) return null;
-  const isDraft = deck.number !== 4;
+  const isDraft = deck.number > 5;
   const openText = deck.number === 4 ? (anchor: string, slideHash: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set("lecture", "4");
@@ -83,10 +113,10 @@ export default function FutureLecturePresentation({ lectureNumber, onExit }: { l
     startIndex: deck.slides.findIndex((slide) => slide.title === part.startAt),
   }));
   const slideContent = <>
-    <Slide className="lecture-presentation-slide lp-title-slide future-slide" data-text-anchor={deck.textAnchor} notes={`Lecture ${deck.number}: ${deck.title}. ${deck.subtitle} Use the chapter for the complete derivations and the practical exercise; pause at the question slides before revealing the explanation.`}>
+    <Slide className="lecture-presentation-slide lp-title-slide future-slide" data-text-anchor={deck.textAnchor} notes={`Lecture ${deck.number}: ${deck.title}. ${deck.subtitle ?? ""} Use the chapter for the complete derivations and the practical exercise; pause at the question slides before revealing the explanation.`}>
       <div className="lp-title-shell future-title">
         <p className="lp-kicker">DATA FOR AI · LECTURE {deck.number} OF 16{isDraft && " · DRAFT"}</p>
-        <h1>{deck.title}</h1><p className="future-subtitle">{deck.subtitle}</p>
+        <h1>{deck.title}</h1>{deck.subtitle && <p className="future-subtitle">{deck.subtitle}</p>}
         <p className="lp-title-hint">→ arrows to navigate · O overview · S speaker view · F full screen · Q exit</p>
       </div>
     </Slide>
@@ -105,12 +135,15 @@ export default function FutureLecturePresentation({ lectureNumber, onExit }: { l
     {deck.slides.flatMap((slide, index) => {
       const part = parts.findLast((candidate) => candidate.startIndex <= index);
       const contentSlide = <Slide className={`lecture-presentation-slide future-slide future-slide-${slide.kind}`} key={`${deck.number}-${index}`} data-part={part?.id} data-text-anchor={slide.textAnchor} notes={slide.notes}>
-        {slide.kind === "reading" ? <div className="future-reading-exercise">
+        {slide.kind === "divider" ? <div className="lp-title-shell future-part-title">
+          <p className="lp-kicker">{isDraft && "DRAFT · "}LECTURE {deck.number}</p>
+          <h2>{slide.title}</h2>
+        </div> : slide.kind === "reading" ? <div className="future-reading-exercise">
           <h2 className="future-reading-title">{slide.title}</h2>
           <p lang="hy">{slide.readingText}</p>
         </div> : <div className="lp-slide-shell">
           <header className="lp-slide-header"><p className="lp-kicker">{isDraft && "DRAFT · "}LECTURE {deck.number} · {part ? `${part.label.toUpperCase()} · ${part.title}` : slide.section}</p><h2>{slide.title}</h2></header>
-          <div className="lp-slide-body"><Content slide={slide} /></div>
+          <div className="lp-slide-body"><Content slide={slide} lectureNumber={deck.number} /></div>
           <footer className="lp-source">{slide.source?.url ? <a href={slide.source.url} target="_blank" rel="noreferrer">{slide.source.label}</a> : slide.source?.label ?? `Lecture ${deck.number} · ${slide.section}`}</footer>
         </div>}
       </Slide>;

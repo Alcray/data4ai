@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 450" role="img" aria-labelledby="title desc">
+  <title id="title">Compare exact keys across the protected and training collections</title>
+  <desc id="desc">A protected tank prompt and its training copy differ only in whitespace. Both use the same declared NFC, casefold, whitespace-collapse normalization, then SHA-256. Their canonical bytes and digest match. The displayed digest prefix 87efa3b8f082 is computed from the full constructed prompt; an equal key is verified against the underlying canonical text.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#7253ed"/></marker></defs>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:28px;font-weight:650;text-anchor:middle}.body{font-size:25px}.label{font-size:24px;fill:#6b7280;text-anchor:middle}.key{font-family:Consolas,monospace;font-size:31px;fill:#5b3fd4;font-weight:650;text-anchor:middle}.box{fill:#fff;stroke:#e5e7eb;stroke-width:2}.edge{fill:none;stroke:#7253ed;stroke-width:3;marker-end:url(#arrow)}</style>
+  <text class="heading" x="280" y="37">Protected prompt</text><text class="heading" x="920" y="37">Training copy</text>
+  <rect class="box" x="20" y="60" width="520" height="115" rx="8"/><rect class="box" x="660" y="60" width="520" height="115" rx="8"/>
+  <text class="body" x="45" y="108">A tank contains 40 liters of water…</text>
+  <text class="label" x="280" y="149">Original whitespace</text>
+  <text class="body" x="685" y="108" xml:space="preserve">A tank  contains  40 liters of water…</text>
+  <text class="label" x="920" y="149">Extra spaces / newlines</text>
+  <path class="edge" d="M280 177V215"/><path class="edge" d="M920 177V215"/>
+  <text class="label" x="280" y="257">NFC · casefold · collapse whitespace</text>
+  <text class="label" x="920" y="257">Same normalization policy</text>
+  <text class="key" x="280" y="326">87efa3b8f082…</text><text class="key" x="920" y="326">87efa3b8f082…</text>
+  <text class="label" x="600" y="326">=</text>
+</svg>

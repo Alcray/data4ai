@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 450" role="img" aria-labelledby="title desc">
+  <title id="title">A protected question embedded inside a longer training document</title>
+  <desc id="desc">The protected tank question appears verbatim inside a longer training tutorial between independent introduction and discussion. Highlighted spans show the matched question. Local substring or containment detection can find this exposure even when full-document hashes differ and whole-document Jaccard is low.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#7253ed"/></marker></defs>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:28px;font-weight:650}.body{font-size:25px}.label{font-size:24px;fill:#6b7280}.match{fill:#f2effe;stroke:#7253ed;stroke-width:2}.edge{fill:none;stroke:#7253ed;stroke-width:3;marker-end:url(#arrow)}</style>
+  <text class="heading" x="20" y="38">Protected question</text>
+  <rect class="match" x="20" y="70" width="460" height="230" rx="8"/>
+  <text class="body" x="42" y="119">A tank contains 40 liters of water</text>
+  <text class="body" x="42" y="160">and loses 5 liters per hour.</text>
+  <text class="body" x="42" y="216">How much remains</text><text class="body" x="42" y="256">after 6 hours?</text>
+  <text class="heading" x="650" y="38">Long training document</text>
+  <rect x="650" y="60" width="530" height="310" rx="8" fill="#fff" stroke="#e5e7eb" stroke-width="2"/>
+  <text class="label" x="675" y="108">Introduction and unrelated material…</text>
+  <rect class="match" x="670" y="133" width="490" height="160" rx="5"/>
+  <text class="body" x="690" y="170">A tank contains 40 liters of water</text>
+  <text class="body" x="690" y="207">and loses 5 liters per hour.</text>
+  <text class="body" x="690" y="257">How much remains after 6 hours?</text>
+  <text class="label" x="675" y="338">Answer, explanation, more material…</text>
+  <path class="edge" d="M482 213H667"/>
+</svg>

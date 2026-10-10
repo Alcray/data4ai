@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">Identical document texts enter the same SHA-256 key group</title>
+  <desc id="desc">Documents A and C both say force equals mass times acceleration and share digest prefix 5562f586477a. The hash table links that full key to both record IDs. Document B ends with velocity and has a different key and group. Displayed digests are abbreviated.</desc>
+  <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#7253ed"/></marker></defs>
+  <style>
+    text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}
+    .heading{font-size:25px;font-weight:650}
+    .label{font-size:23px;font-weight:650;fill:#5b3fd4}
+    .body{font-size:22px}
+    .mono{font-family:Consolas,monospace;font-size:23px}
+    .small{font-size:19px;fill:#6b7280}
+    .box{fill:#fff;stroke:#e5e7eb;stroke-width:1.5}
+    .shared{fill:#f2effe;stroke:#7253ed;stroke-width:1.5}
+    .edge{fill:none;stroke:#7253ed;stroke-width:2;marker-end:url(#arrow)}
+  </style>
+  <text class="heading" x="30" y="35">Document text</text>
+  <text class="heading" x="545" y="35">SHA-256 key</text>
+  <text class="heading" x="860" y="35">Hash table: key → IDs</text>
+  <rect class="box" x="30" y="65" width="380" height="102" rx="7"/>
+  <text class="label" x="50" y="95">doc-A</text>
+  <text class="body" x="50" y="125">force equals mass times</text>
+  <text class="body" x="50" y="152">acceleration</text>
+  <rect class="box" x="30" y="205" width="380" height="102" rx="7"/>
+  <text class="label" x="50" y="235">doc-C</text>
+  <text class="body" x="50" y="265">force equals mass times</text>
+  <text class="body" x="50" y="292">acceleration</text>
+  <path class="edge" d="M410 116H462L525 149H545"/>
+  <path class="edge" d="M410 256H462L525 224H545"/>
+  <rect class="shared" x="545" y="110" width="260" height="160" rx="7"/>
+  <text class="mono" x="565" y="165">5562f586477a…</text>
+  <text class="small" x="565" y="209">Same full digest</text>
+  <path class="edge" d="M805 190H860"/>
+  <rect class="shared" x="860" y="110" width="310" height="160" rx="7"/>
+  <text class="label" x="882" y="150">One exact-key group</text>
+  <text class="mono" x="882" y="200">[doc-A, doc-C]</text>
+  <text class="small" x="882" y="240">Keep both source identities</text>
+  <rect class="box" x="30" y="345" width="380" height="102" rx="7"/>
+  <text class="label" x="50" y="375">doc-B</text>
+  <text class="body" x="50" y="405">force equals mass times</text>
+  <text class="body" x="50" y="432">velocity</text>
+  <path class="edge" d="M410 396H545"/>
+  <rect class="box" x="545" y="345" width="260" height="102" rx="7"/>
+  <text class="mono" x="565" y="387">e1d8167dafda…</text>
+  <text class="small" x="565" y="423">Different key</text>
+  <path class="edge" d="M805 396H860"/>
+  <rect class="box" x="860" y="345" width="310" height="102" rx="7"/>
+  <text class="label" x="882" y="382">Another key group</text>
+  <text class="mono" x="882" y="425">[doc-B]</text>
+</svg>

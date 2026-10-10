@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 450" role="img" aria-labelledby="title desc">
+  <title id="title">Five shared shingles out of seven distinct shingles</title>
+  <desc id="desc">Document A contains shingle IDs a,b,c,d,e. Document B contains a,b,c,d,e,f,g. Both rows highlight a through e, while f and g appear only in B. The intersection has five elements and the union seven, so Jaccard is 5/7, approximately 0.714.</desc>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:28px;font-weight:650}.id{font-size:34px;text-anchor:middle}.shared{fill:#f2effe;stroke:#7253ed;stroke-width:1.5}.unique{fill:#fff;stroke:#e5e7eb;stroke-width:1.5}.match{fill:#5b3fd4}.legend{font-size:25px;fill:#6b7280}.summary{font-size:32px;fill:#5b3fd4;font-weight:650}</style>
+  <text class="heading" x="30" y="38">Document A</text>
+  <rect class="shared" x="30" y="70" width="102" height="80" rx="6"/><text class="id match" x="81" y="122">a</text>
+  <rect class="shared" x="158" y="70" width="102" height="80" rx="6"/><text class="id match" x="209" y="122">b</text>
+  <rect class="shared" x="286" y="70" width="102" height="80" rx="6"/><text class="id match" x="337" y="122">c</text>
+  <rect class="shared" x="414" y="70" width="102" height="80" rx="6"/><text class="id match" x="465" y="122">d</text>
+  <rect class="shared" x="542" y="70" width="102" height="80" rx="6"/><text class="id match" x="593" y="122">e</text>
+  <text class="heading" x="30" y="218">Document B</text>
+  <rect class="shared" x="30" y="250" width="102" height="80" rx="6"/><text class="id match" x="81" y="302">a</text>
+  <rect class="shared" x="158" y="250" width="102" height="80" rx="6"/><text class="id match" x="209" y="302">b</text>
+  <rect class="shared" x="286" y="250" width="102" height="80" rx="6"/><text class="id match" x="337" y="302">c</text>
+  <rect class="shared" x="414" y="250" width="102" height="80" rx="6"/><text class="id match" x="465" y="302">d</text>
+  <rect class="shared" x="542" y="250" width="102" height="80" rx="6"/><text class="id match" x="593" y="302">e</text>
+  <rect class="unique" x="670" y="250" width="102" height="80" rx="6"/><text class="id" x="721" y="302">f</text>
+  <rect class="unique" x="798" y="250" width="102" height="80" rx="6"/><text class="id" x="849" y="302">g</text>
+  <rect class="shared" x="30" y="357" width="26" height="26" rx="3"/><text class="legend" x="73" y="379">Shared shingles: 5</text>
+  <rect class="unique" x="470" y="357" width="26" height="26" rx="3"/><text class="legend" x="513" y="379">Only in B: 2</text>
+  <text class="summary" x="600" y="438" text-anchor="middle">Jaccard = 5 / 7 ≈ 0.714</text>
+</svg>

@@ -24,7 +24,7 @@ test("Lecture 4 has published labels in the chapter, navigation, curriculum, and
   assert.ok(read("app/page.tsx").includes('const lecture4Name = "' + label + '"'));
   assert.doesNotMatch(read("app/generated/lecture-4.ts"), /Lecture 4 \(draft\)/);
   const presentation = read("app/FutureLecturePresentation.tsx");
-  assert.ok(presentation.includes("const isDraft = deck.number !== 4;"));
+  assert.ok(presentation.includes("const isDraft = deck.number > 5;"));
   assert.ok(presentation.includes('{isDraft && " · DRAFT"}'));
   assert.ok(presentation.includes('{isDraft && "DRAFT · "}LECTURE {deck.number}'));
 });

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
+  <title id="title">Rule-based and model-based detection</title>
+  <desc id="desc">One input document branches into two detector families. Rule-based detection uses regex, checksums, lists, and context rules. Model-based detection uses named-entity recognition and context-aware models. Both feed combined sensitive span detections, which remain candidates for policy review, overlap resolution, and transformation. The families can be combined and do not guarantee complete detection.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#7253ed"/></marker></defs>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827;text-anchor:middle}.heading{font-size:31px;font-weight:650}.group{font-size:37px;font-weight:650;fill:#5b3fd4}.label{font-size:26px;fill:#6b7280}.box{fill:#fff;stroke:#e5e7eb;stroke-width:2}.edge{fill:none;stroke:#7253ed;stroke-width:3;marker-end:url(#arrow)}</style>
+  <text class="heading" x="600" y="48">Input document</text>
+  <path class="edge" d="M600 72V104H300V137"/>
+  <path class="edge" d="M600 104H900V137"/>
+  <rect class="box" x="25" y="140" width="550" height="165" rx="8"/>
+  <rect class="box" x="625" y="140" width="550" height="165" rx="8"/>
+  <text class="group" x="300" y="205">Rule-based detection</text>
+  <text class="label" x="300" y="252">Regex · checksums · lists</text>
+  <text class="label" x="300" y="288">Context rules</text>
+  <text class="group" x="900" y="205">Model-based detection</text>
+  <text class="label" x="900" y="252">NER · context-aware models</text>
+  <path class="edge" d="M300 307V343H500V365"/>
+  <path class="edge" d="M900 307V343H700V365"/>
+  <rect x="100" y="368" width="1000" height="53" rx="8" fill="#f2effe"/>
+  <text class="heading" x="600" y="402">Combined sensitive span detections</text>
+</svg>

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Email masking and synthetic-name substitution</title>
+  <desc id="desc">Two before-and-after examples use fabricated text. A laboratory contact at physlab@example.org is replaced with the EMAIL placeholder, while the sentence about physics is preserved. Fictional Mariam Petrosyan is replaced with the synthetic alias Anna Harutyunyan, with joined the lab unchanged. Neither transformation guarantees anonymity.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#7253ed"/></marker></defs>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:29px;font-weight:650}.label{font-size:27px;fill:#5b3fd4;font-weight:650}.body{font-size:26px}.change{fill:#5b3fd4;font-weight:650}.mono{font-family:Consolas,monospace}.box{fill:#fff;stroke:#e5e7eb;stroke-width:2}.edge{fill:none;stroke:#7253ed;stroke-width:3;marker-end:url(#arrow)}</style>
+  <text class="heading" x="270" y="39" text-anchor="middle">Before</text>
+  <text class="heading" x="940" y="39" text-anchor="middle">After</text>
+  <text class="label" x="20" y="96">Email masking</text>
+  <rect class="box" x="20" y="115" width="500" height="110" rx="8"/>
+  <rect class="box" x="700" y="115" width="480" height="110" rx="8"/>
+  <text class="body" x="40" y="154">The lab studies physics.</text>
+  <text class="body" x="40" y="195">Contact: <tspan class="change">physlab@example.org</tspan></text>
+  <text class="body" x="720" y="154">The lab studies physics.</text>
+  <text class="body" x="720" y="195">Contact: <tspan class="change mono">&lt;EMAIL&gt;</tspan></text>
+  <path class="edge" d="M523 171H697"/>
+  <text class="label" x="20" y="290">Name → synthetic alias</text>
+  <rect class="box" x="20" y="312" width="500" height="90" rx="8"/>
+  <rect class="box" x="700" y="312" width="480" height="90" rx="8"/>
+  <text class="body change" x="40" y="351">Mariam Petrosyan</text>
+  <text class="body" x="40" y="388">joined the lab.</text>
+  <text class="body change" x="720" y="351">Anna Harutyunyan</text>
+  <text class="body" x="720" y="388">joined the lab.</text>
+  <path class="edge" d="M523 357H697"/>
+</svg>

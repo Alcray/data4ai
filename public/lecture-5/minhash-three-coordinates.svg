@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">Three functions create three signature coordinates</title>
+  <desc id="desc">One document has four whole shingles. Their values under three toy functions are 42,8,31; 15,63,19; 83,29,7; and 27,51,44. Column minima are 15,8,7.</desc>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:27px;font-weight:650}.label{font-size:24px;fill:#6b7280}.value{font-size:29px;text-anchor:middle}.accent{fill:#5b3fd4;font-weight:650}.shared{fill:#f2effe;stroke:#7253ed;stroke-width:1.5}.neutral{fill:#fff;stroke:#e5e7eb;stroke-width:1.5}.result{font-size:34px;text-anchor:middle;fill:#5b3fd4;font-weight:650}</style>
+  <text class="label" x="20" y="34">Shingle</text>
+  <text class="label" x="620" y="34">H₁</text>
+  <text class="label" x="850" y="34">H₂</text>
+  <text class="label" x="1080" y="34">H₃</text>
+  <path d="M20 51H1180" stroke="#e5e7eb"/>
+  <text class="heading" x="20" y="91">s₁</text>
+  <text class="value" x="620" y="91">42</text>
+  <rect class="shared" x="806" y="61" width="88" height="42" rx="5"/>
+  <text class="value accent" x="850" y="91">8</text>
+  <text class="value" x="1080" y="91">31</text>
+  <path d="M20 106H1180" stroke="#e5e7eb"/>
+  <text class="heading" x="20" y="138">s₂</text>
+  <rect class="shared" x="576" y="108" width="88" height="42" rx="5"/>
+  <text class="value accent" x="620" y="138">15</text>
+  <text class="value" x="850" y="138">63</text>
+  <text class="value" x="1080" y="138">19</text>
+  <path d="M20 153H1180" stroke="#e5e7eb"/>
+  <text class="heading" x="20" y="185">s₃</text>
+  <text class="value" x="620" y="185">83</text>
+  <text class="value" x="850" y="185">29</text>
+  <rect class="shared" x="1036" y="155" width="88" height="42" rx="5"/>
+  <text class="value accent" x="1080" y="185">7</text>
+  <path d="M20 200H1180" stroke="#e5e7eb"/>
+  <text class="heading" x="20" y="232">s₄</text>
+  <text class="value" x="620" y="232">27</text>
+  <text class="value" x="850" y="232">51</text>
+  <text class="value" x="1080" y="232">44</text>
+  <path d="M20 247H1180" stroke="#e5e7eb"/>
+  <text class="heading accent" x="20" y="293">Minimum</text>
+  <text class="result" x="620" y="293">15</text>
+  <text class="result" x="850" y="293">8</text>
+  <text class="result" x="1080" y="293">7</text>
+<path d="M620 310V324M850 310V324M1080 310V324M620 324H1080M850 324V337H600V350M594 344L600 350L606 344" fill="none" stroke="#7253ed" stroke-width="2"/>
+  <text class="label" x="465" y="376">MinHash signature</text>
+  <rect class="shared" x="432" y="391" width="104" height="62" rx="5"/>
+  <text class="result" x="484" y="433">15</text>
+  <rect class="shared" x="548" y="391" width="104" height="62" rx="5"/>
+  <text class="result" x="600" y="433">8</text>
+  <rect class="shared" x="664" y="391" width="104" height="62" rx="5"/>
+  <text class="result" x="716" y="433">7</text>
+</svg>

@@ -24,3 +24,5 @@ The published course material begins with the architectural background and then 
 **Lecture 3: Corpus design, acquisition, and provenance.** Target populations and acquisition frames; reproducible snapshots; multilingual and teacher-generated source portfolios; acquisition yield and coverage audits; record identity, rights, and provenance.
 
 **Lecture 4: Document extraction, quality filtering, and corpus auditing.** Recovering text and structure from acquired objects; explicit extraction references; normalization and language identification; quality decisions; retained and rejected audits; and pipeline order, cost, and evidence.
+
+**Lecture 5: Corpus integrity—deduplication, contamination, and privacy.** Exact and canonical equality; shingling, Jaccard, MinHash/LSH, clustering, and representative selection; family-aware benchmark decontamination; sensitive-span handling; integrity audits; and reproducible corpus locks.

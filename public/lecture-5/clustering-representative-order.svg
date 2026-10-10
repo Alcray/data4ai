@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
+  <title id="title">The representative priority changes the survivors</title>
+  <desc id="desc">The same A–B–C verified graph is processed in two orders. A,B,C keeps A and C, and removes B with A as a retained witness. B,A,C keeps B, and removes A and C with B as their retained witness. Arrows point from removed records to retained witnesses; a plain gray line is a verified edge not used for removal.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#7253ed"/></marker></defs>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:30px;font-weight:650;text-anchor:middle}.label{font-size:25px;fill:#6b7280;text-anchor:middle}.result{font-size:31px;font-weight:650;fill:#5b3fd4;text-anchor:middle}.kept{fill:#7253ed;stroke:#7253ed;stroke-width:3}.removed{fill:#fff;stroke:#6b7280;stroke-width:3}.id{font-size:36px;font-weight:650;dominant-baseline:middle;text-anchor:middle}.white{fill:#fff}.muted{fill:#6b7280}.edge{stroke:#7253ed;stroke-width:4;fill:none}</style>
+  <text class="heading" x="300" y="42">Priority A → B → C</text>
+  <text class="heading" x="940" y="42">Priority B → A → C</text>
+  <path class="edge" d="M255 150H145" marker-end="url(#arrow)"/>
+  <path d="M345 150H455" stroke="#9ca3af" stroke-width="3"/>
+  <path class="edge" d="M785 150H895" marker-end="url(#arrow)"/>
+  <path class="edge" d="M1095 150H985" marker-end="url(#arrow)"/>
+  <circle class="kept" cx="100" cy="150" r="45"/><text class="id white" x="100" y="151">A</text>
+  <circle class="removed" cx="300" cy="150" r="45"/><text class="id muted" x="300" y="151">B</text>
+  <circle class="kept" cx="500" cy="150" r="45"/><text class="id white" x="500" y="151">C</text>
+  <circle class="removed" cx="740" cy="150" r="45"/><text class="id muted" x="740" y="151">A</text>
+  <circle class="kept" cx="940" cy="150" r="45"/><text class="id white" x="940" y="151">B</text>
+  <circle class="removed" cx="1140" cy="150" r="45"/><text class="id muted" x="1140" y="151">C</text>
+  <text class="label" x="100" y="236">keep</text><text class="label" x="300" y="236">remove</text><text class="label" x="500" y="236">keep</text>
+  <text class="label" x="740" y="236">remove</text><text class="label" x="940" y="236">keep</text><text class="label" x="1140" y="236">remove</text>
+  <text class="result" x="300" y="300">Keep A and C</text><text class="result" x="940" y="300">Keep B</text>
+  <text class="label" x="300" y="344">B → A is a direct retained witness</text>
+  <text class="label" x="940" y="344">A → B and C → B are direct witnesses</text>
+  <text class="label" x="600" y="419">Same verified edges · different priority · arrows point to retained witnesses</text>
+</svg>

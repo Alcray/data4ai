@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 450" role="img" aria-labelledby="title desc">
+  <title id="title">Retrieve lexical variants, then verify the task</title>
+  <desc id="desc">A protected prompt with 40 liters and a training variant with 40 L share informative words but are not exact normalized copies. Shingles with MinHash-LSH, or BM25-like retrieval, propose candidate training passages. Candidates still need task-level verification; no retrieval score or guarantee is assumed.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#7253ed"/></marker></defs>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:27px;font-weight:650}.body{font-size:28px}.label{font-size:24px;fill:#6b7280;text-anchor:middle}.shared{fill:#5b3fd4;font-weight:650}.box{fill:#fff;stroke:#e5e7eb;stroke-width:2}.edge{fill:none;stroke:#7253ed;stroke-width:3;marker-end:url(#arrow)}</style>
+  <text class="heading" x="20" y="36">Protected</text><text class="heading" x="20" y="135">Training</text>
+  <text class="body" x="245" y="36">A <tspan class="shared">tank contains 40</tspan> liters of <tspan class="shared">water</tspan></text>
+  <text class="body" x="245" y="76">and <tspan class="shared">loses 5</tspan> liters per hour…</text>
+  <text class="body" x="245" y="135">A <tspan class="shared">tank contains 40</tspan> L of <tspan class="shared">water</tspan>.</text>
+  <text class="body" x="245" y="175">It <tspan class="shared">loses 5</tspan> L/hour…</text>
+  <rect class="box" x="20" y="255" width="390" height="110" rx="8"/>
+  <text class="heading" x="215" y="297" text-anchor="middle">Shingles / word index</text>
+  <text class="label" x="215" y="337">MinHash-LSH or BM25</text>
+  <rect class="box" x="485" y="255" width="280" height="110" rx="8"/>
+  <text class="heading" x="625" y="299" text-anchor="middle">Candidates</text><text class="label" x="625" y="337">Verify, then decide</text>
+  <rect class="box" x="840" y="255" width="340" height="110" rx="8"/>
+  <text class="heading" x="1010" y="299" text-anchor="middle">Verify the task</text><text class="label" x="1010" y="337">Task + source evidence</text>
+  <path class="edge" d="M412 310H482"/><path class="edge" d="M767 310H837"/>
+</svg>

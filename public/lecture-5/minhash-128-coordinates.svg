@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">One minimum per seed produces a 128-coordinate signature</title>
+  <desc id="desc">A document contains 10,000 unique shingles. Every one of 128 seeds hashes all shingles with BLAKE2b and retains a minimum. Illustrative outputs 145,892,...,317 form 128 coordinates; these numbers are not computed hash results.</desc>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:27px;font-weight:650}.label{font-size:24px;fill:#6b7280}.value{font-size:29px;text-anchor:middle}.accent{fill:#5b3fd4;font-weight:650}.shared{fill:#f2effe;stroke:#7253ed;stroke-width:1.5}.neutral{fill:#fff;stroke:#e5e7eb;stroke-width:1.5}.result{font-size:34px;text-anchor:middle;fill:#5b3fd4;font-weight:650}</style>
+  <text class="heading" x="263" y="37">Document: 10,000 unique shingles</text>
+<path d="M600 53V80H200V110M600 80H1000V110M600 80V110" fill="none" stroke="#7253ed" stroke-width="2"/>
+  <rect class="neutral" x="30" y="112" width="340" height="185" rx="5"/>
+  <text class="heading" x="154" y="153">Seed 1</text>
+  <text class="label" x="68" y="198">BLAKE2b · every shingle</text>
+  <text class="label" x="119" y="237">Keep minimum</text>
+  <text class="result" x="200" y="278">145</text>
+  <rect class="neutral" x="430" y="112" width="340" height="185" rx="5"/>
+  <text class="heading" x="554" y="153">Seed 2</text>
+  <text class="label" x="468" y="198">BLAKE2b · every shingle</text>
+  <text class="label" x="519" y="237">Keep minimum</text>
+  <text class="result" x="600" y="278">892</text>
+  <rect class="neutral" x="830" y="112" width="340" height="185" rx="5"/>
+  <text class="heading" x="954" y="153">… Seed 128</text>
+  <text class="label" x="868" y="198">BLAKE2b · every shingle</text>
+  <text class="label" x="919" y="237">Keep minimum</text>
+  <text class="result" x="1000" y="278">317</text>
+<path d="M200 298V319H600V347M1000 298V319H600M600 298V347M594 341L600 347L606 341" fill="none" stroke="#7253ed" stroke-width="2"/>
+  <rect class="shared" x="330" y="358" width="540" height="62" rx="5"/>
+  <text class="result" x="600" y="401">[145, 892, …, 317]</text>
+  <text class="label" x="428" y="460">128 integer coordinates</text>
+</svg>

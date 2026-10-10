@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 450" role="img" aria-labelledby="title desc">
+  <title id="title">Different surface forms of the same protected task</title>
+  <desc id="desc">The protected problem starts with 40 liters, loses 5 liters per hour, and asks what remains after 6 hours. Three examples preserve the task: liters changed to L, a rephrased English prompt, and an Armenian translation. They are constructed derivatives, not independent problems that only share a topic.</desc>
+  <style>text{font-family:"Segoe UI","Noto Sans Armenian",Arial,sans-serif;fill:#111827}.heading{font-size:25px;font-weight:650;fill:#5b3fd4}.body{font-size:25px}.label{font-size:26px;fill:#6b7280;text-anchor:middle}.change{fill:#5b3fd4;font-weight:650}</style>
+  <rect x="20" y="12" width="1160" height="105" rx="8" fill="#f2effe"/>
+  <text class="heading" x="40" y="43">Protected</text>
+  <text class="body" x="245" y="49">A tank contains 40 liters of water and loses 5 liters per hour.</text>
+  <text class="body" x="245" y="88">How much remains after 6 hours?</text>
+  <text class="heading" x="40" y="165">Unit rewrite</text>
+  <text class="body" x="245" y="157">A tank contains <tspan class="change">40 L</tspan> of water and loses <tspan class="change">5 L</tspan> per hour.</text>
+  <text class="body" x="245" y="191">How much remains after 6 hours?</text>
+  <path d="M40 212H1160" stroke="#e5e7eb"/>
+  <text class="heading" x="40" y="253">Rephrasing</text>
+  <text class="body" x="245" y="244">Start with 40 liters in a tank. Drain 5 liters each hour.</text>
+  <text class="body" x="245" y="278">How much is left after 6 hours?</text>
+  <path d="M40 299H1160" stroke="#e5e7eb"/>
+  <text class="heading" x="40" y="349">Translation</text>
+  <text class="body" x="245" y="333">Բաքում կա 40 լիտր ջուր։ Ամեն ժամ դրանից հոսում է 5 լիտր։</text>
+  <text class="body" x="245" y="372">Որքա՞ն ջուր կմնա 6 ժամ անց։</text>
+</svg>

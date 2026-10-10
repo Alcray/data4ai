@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" role="img" aria-labelledby="title desc">
+  <title id="title">Verified similarity forms an A–B–C chain</title>
+  <desc id="desc">At threshold 0.8, A–B and B–C are verified edges with Jaccard 5/6, approximately 0.833. A–C has Jaccard 4/6, approximately 0.667, so there is no A–C edge. Nodes are documents, not shingles.</desc>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.label{font-size:26px;fill:#6b7280}.score{font-size:31px;text-anchor:middle;fill:#5b3fd4;font-weight:650}.node{fill:#f2effe;stroke:#7253ed;stroke-width:3}.id{font-size:38px;text-anchor:middle;dominant-baseline:middle;font-weight:650;fill:#5b3fd4}.set{font-size:25px;text-anchor:middle}.edge{stroke:#7253ed;stroke-width:5}</style>
+  <text class="label" x="30" y="36">Documents = nodes · verified similarity = solid edge · threshold τ = 0.8</text>
+  <path class="edge" d="M270 160H550M650 160H930"/>
+  <text class="score" x="410" y="99">5/6 ≈ 0.833</text>
+  <text class="score" x="790" y="99">5/6 ≈ 0.833</text>
+  <circle class="node" cx="220" cy="160" r="50"/><text class="id" x="220" y="161">A</text>
+  <circle class="node" cx="600" cy="160" r="50"/><text class="id" x="600" y="161">B</text>
+  <circle class="node" cx="980" cy="160" r="50"/><text class="id" x="980" y="161">C</text>
+  <path d="M220 238Q600 365 980 238" fill="none" stroke="#9ca3af" stroke-width="3" stroke-dasharray="9 9"/>
+  <rect x="270" y="295" width="660" height="45" fill="#fff"/>
+  <text class="label" x="600" y="327" text-anchor="middle">No A–C edge: 4/6 ≈ 0.667 &lt; 0.8</text>
+  <text class="set" x="220" y="410">A = {1,2,3,4,5}</text>
+  <text class="set" x="600" y="410">B = {1,2,3,4,5,6}</text>
+  <text class="set" x="980" y="410">C = {2,3,4,5,6}</text>
+</svg>

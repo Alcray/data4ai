@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">Chaining and retained witnesses on a branched graph</title>
+  <desc id="desc">Both panels have exactly the verified edges A–B, B–C, B–D and D–E. Connected components form one A,B,C,D,E group and can retain only A. Representative-centered priority A,B,C,D,E retains A,C,D, removes B with A as its witness, and removes E with D as its witness. A removed B cannot act as a retained witness to remove C or D. Arrows are removal witnesses, not document ancestry.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#7253ed"/></marker></defs>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:27px;font-weight:650;text-anchor:middle}.label{font-size:24px;fill:#6b7280;text-anchor:middle}.result{font-size:27px;font-weight:650;fill:#5b3fd4;text-anchor:middle}.kept{fill:#7253ed;stroke:#7253ed;stroke-width:3}.removed{fill:#fff;stroke:#6b7280;stroke-width:3}.id{font-size:29px;font-weight:650;dominant-baseline:middle;text-anchor:middle}.white{fill:#fff}.muted{fill:#6b7280}.edge{stroke:#7253ed;stroke-width:4;fill:none}.unused{stroke:#9ca3af;stroke-width:3;fill:none}</style>
+  <text class="heading" x="300" y="34">Connected component · choose A</text>
+  <text class="heading" x="900" y="34">Representative-centered</text>
+  <text class="label" x="900" y="70">Priority A → B → C → D → E</text>
+  <rect x="35" y="66" width="545" height="325" rx="22" fill="none" stroke="#7253ed" stroke-width="2"/>
+  <path class="edge" d="M122 130L188 190M122 310L188 230M240 210H340M400 210H500"/>
+  <path class="unused" d="M722 310L788 230M840 210H940"/>
+  <path class="edge" d="M788 190L722 130" marker-end="url(#arrow)"/>
+  <path class="edge" d="M1100 210H1000" marker-end="url(#arrow)"/>
+  <circle class="kept" cx="100" cy="110" r="30"/><text class="id white" x="100" y="111">A</text>
+  <circle class="removed" cx="210" cy="210" r="30"/><text class="id muted" x="210" y="211">B</text>
+  <circle class="removed" cx="100" cy="330" r="30"/><text class="id muted" x="100" y="331">C</text>
+  <circle class="removed" cx="370" cy="210" r="30"/><text class="id muted" x="370" y="211">D</text>
+  <circle class="removed" cx="530" cy="210" r="30"/><text class="id muted" x="530" y="211">E</text>
+  <circle class="kept" cx="700" cy="110" r="30"/><text class="id white" x="700" y="111">A</text>
+  <circle class="removed" cx="810" cy="210" r="30"/><text class="id muted" x="810" y="211">B</text>
+  <circle class="kept" cx="700" cy="330" r="30"/><text class="id white" x="700" y="331">C</text>
+  <circle class="kept" cx="970" cy="210" r="30"/><text class="id white" x="970" y="211">D</text>
+  <circle class="removed" cx="1130" cy="210" r="30"/><text class="id muted" x="1130" y="211">E</text>
+  <text class="label" x="392" y="340">One group: {A,B,C,D,E}</text>
+  <text class="label" x="963" y="300">B is removed, not retained</text>
+  <text class="label" x="963" y="340">B cannot remove C or D</text>
+  <text class="result" x="300" y="430">Keep A · remove B, C, D, E</text>
+  <text class="result" x="900" y="430">Keep A, C, D · B → A; E → D</text>
+  <text class="label" x="600" y="474">Filled = kept · hollow = removed · plain edges = matches · arrows = retained witnesses</text>
+</svg>

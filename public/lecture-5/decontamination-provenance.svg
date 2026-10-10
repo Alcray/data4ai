@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">Collected and generated provenance define a protected closure</title>
+  <desc id="desc">A protected benchmark task has a collected mirror connected by source metadata and an Armenian translation connected by a logged parent ID. That translation is an input to a synthetic solution. Directed arrows go from parent to dependent output. The protected closure includes the root and all three known descendants.</desc>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#7253ed"/></marker></defs>
+  <style>text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}.heading{font-size:27px;font-weight:650;text-anchor:middle}.label{font-size:23px;fill:#6b7280;text-anchor:middle}.accent{fill:#5b3fd4}.node{fill:#f2effe;stroke:#7253ed;stroke-width:2}.edge{fill:none;stroke:#7253ed;stroke-width:3;marker-end:url(#arrow)}</style>
+  <text class="label" x="600" y="32">Directed dependency: parent → dependent output</text>
+  <rect class="node" x="25" y="168" width="290" height="110" rx="8"/>
+  <text class="heading" x="170" y="211">Protected task</text><text class="label" x="170" y="250">Benchmark / family ID</text>
+  <rect class="node" x="440" y="70" width="290" height="100" rx="8"/>
+  <text class="heading" x="585" y="111">Collected mirror</text><text class="label" x="585" y="149">Metadata: source ID</text>
+  <rect class="node" x="440" y="295" width="290" height="100" rx="8"/>
+  <text class="heading" x="585" y="336">Translation</text><text class="label" x="585" y="374">Armenian · parent ID</text>
+  <rect class="node" x="885" y="295" width="290" height="100" rx="8"/>
+  <text class="heading" x="1030" y="336">Synthetic solution</text><text class="label" x="1030" y="374">Logged input IDs</text>
+  <path class="edge" d="M315 223H375V120H437"/>
+  <path class="edge" d="M315 223H375V345H437"/>
+  <path class="edge" d="M730 345H882"/>
+</svg>
