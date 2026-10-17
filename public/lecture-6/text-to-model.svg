@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 440" role="img" aria-labelledby="title desc">
+  <title id="title">Text becomes six token pieces, their IDs, and model inputs</title>
+  <desc id="desc">The pinned Qwen3.8-27B tokenizer encodes Café prices change. as C, af, é, a space followed by prices, a space followed by change, and a period. The respective IDs are 34, 2492, 933, 7336, 2222, and 13. Six matching colors and aligned arrows connect pieces to IDs. The ID sequence enters an embedding lookup and then the transformer inside the language model. The visible space symbol is a display aid, not an extra input character. Model internals are schematic, not measured weights.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#7253ed"/></marker>
+  </defs>
+  <style>
+    text{font-family:"Segoe UI",Arial,sans-serif;fill:#111827}
+    .label{font-size:25px;fill:#6b7280}.piece{font-size:31px;text-anchor:middle;font-weight:600}
+    .id{font-family:Consolas,monospace;font-size:27px;text-anchor:middle}
+    .edge{fill:none;stroke:#7253ed;stroke-width:2.5;marker-end:url(#arrow)}
+    .token{stroke-width:1.5}.violet{fill:#f2effe;stroke:#b6a4f2}.teal{fill:#e4f4ee;stroke:#8ac8b3}
+    .amber{fill:#fff2d8;stroke:#e4bf73}.blue{fill:#e9f1fe;stroke:#9ebce9}
+    .rose{fill:#fcebf0;stroke:#dfa4b8}.slate{fill:#edf1f5;stroke:#acb9c8}
+  </style>
+  <text class="label" x="12" y="65">Text</text>
+  <text x="216" y="65" font-size="42">Café prices change.</text>
+  <path class="edge" d="M570 88V140"/>
+  <text x="590" y="122" font-size="21" fill="#6b7280">Tokenizer</text>
+  <text class="label" x="12" y="204">Token pieces</text>
+  <g data-piece="C" data-id="34"><rect class="token violet" x="216" y="160" width="70" height="72" rx="8"/><text class="piece" x="251" y="206">C</text><path class="edge" d="M251 234V266"/><rect class="token violet" x="216" y="276" width="70" height="64" rx="8"/><text class="id" x="251" y="317">34</text></g>
+  <g data-piece="af" data-id="2492"><rect class="token teal" x="298" y="160" width="80" height="72" rx="8"/><text class="piece" x="338" y="206">af</text><path class="edge" d="M338 234V266"/><rect class="token teal" x="298" y="276" width="80" height="64" rx="8"/><text class="id" x="338" y="317">2492</text></g>
+  <g data-piece="é" data-id="933"><rect class="token amber" x="390" y="160" width="80" height="72" rx="8"/><text class="piece" x="430" y="206">é</text><path class="edge" d="M430 234V266"/><rect class="token amber" x="390" y="276" width="80" height="64" rx="8"/><text class="id" x="430" y="317">933</text></g>
+  <g data-piece=" prices" data-id="7336"><rect class="token blue" x="482" y="160" width="160" height="72" rx="8"/><text class="piece" x="562" y="206">·prices</text><path class="edge" d="M562 234V266"/><rect class="token blue" x="482" y="276" width="160" height="64" rx="8"/><text class="id" x="562" y="317">7336</text></g>
+  <g data-piece=" change" data-id="2222"><rect class="token rose" x="654" y="160" width="174" height="72" rx="8"/><text class="piece" x="741" y="206">·change</text><path class="edge" d="M741 234V266"/><rect class="token rose" x="654" y="276" width="174" height="64" rx="8"/><text class="id" x="741" y="317">2222</text></g>
+  <g data-piece="." data-id="13"><rect class="token slate" x="840" y="160" width="70" height="72" rx="8"/><text class="piece" x="875" y="206">.</text><path class="edge" d="M875 234V266"/><rect class="token slate" x="840" y="276" width="70" height="64" rx="8"/><text class="id" x="875" y="317">13</text></g>
+  <text class="label" x="12" y="317">Token IDs</text>
+  <text x="1124" y="103" text-anchor="middle" font-size="25" font-weight="600">Language model</text>
+  <rect x="994" y="122" width="260" height="238" rx="10" fill="#fff" stroke="#e5e7eb" stroke-width="2"/>
+  <rect x="1012" y="154" width="224" height="66" rx="8" fill="#f2effe" stroke="#b6a4f2" stroke-width="1.5"/>
+  <text x="1124" y="195" text-anchor="middle" font-size="23">Embedding lookup</text>
+  <path class="edge" d="M916 308H960V187H1010"/>
+  <path class="edge" d="M1124 224V248"/>
+  <rect x="1012" y="258" width="224" height="66" rx="8" fill="#f6f7f9" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text x="1124" y="300" text-anchor="middle" font-size="28">Transformer</text>
+  <text x="216" y="406" font-size="23" fill="#6b7280">One word can span several tokens | · = space</text>
+</svg>

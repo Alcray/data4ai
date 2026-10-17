@@ -1,0 +1,130 @@
+{
+  "inspected_on": "2026-10-17",
+  "jinja2": "3.1.6",
+  "scope": "Short text-format fixtures; no model generation, tool execution, media processing or remote Python execution.",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Be concise."
+    },
+    {
+      "role": "user",
+      "content": "Hello"
+    },
+    {
+      "role": "assistant",
+      "content": "Hi."
+    }
+  ],
+  "models": [
+    {
+      "name": "Qwen3.8-27B",
+      "repository": "Qwen/Qwen3.8-27B",
+      "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+      "sha256": {
+        "chat_template.jinja": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041"
+      },
+      "verification": "sandboxed Jinja render",
+      "options": {
+        "enable_thinking": false,
+        "preserve_thinking": false,
+        "clear_thinking": true,
+        "add_generation_prompt": false
+      },
+      "serialized": "<|im_start|>system\nBe concise.<|im_end|>\n<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\nHi.<|im_end|>\n",
+      "tool_call": "<tool_call>\n<function=clock>\n</function>\n</tool_call>",
+      "thinking_open": "<think>",
+      "thinking_close": "</think>",
+      "display_parts": [
+        "<|im_start|>system\nBe concise.<|im_end|>\n",
+        "<|im_start|>user\nHello<|im_end|>\n",
+        "<|im_start|>assistant\n<think>\n\n</think>\n\nHi.<|im_end|>\n"
+      ],
+      "tool_result": "<|im_start|>user\n<tool_response>\n12:00\n</tool_response><|im_end|>\n",
+      "tool_result_label": "user + <tool_response>",
+      "call_label": "<tool_call> + <function=...>",
+      "display_code": "<|im_start|>system\\nBe concise.<|im_end|>\\n\n\n<|im_start|>user\\nHello<|im_end|>\\n\n\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\nHi.<|im_end|>\\n"
+    },
+    {
+      "name": "DeepSeek-V4-Pro",
+      "repository": "deepseek-ai/DeepSeek-V4-Pro",
+      "revision": "b5968e9190ef611bbf34a7229255be88a0e937c1",
+      "sha256": {
+        "encoding/encoding_dsv4.py": "bdbd57c132a1b3725042323d02b98b9d1df28e5f388f134399555d041f5055e0"
+      },
+      "verification": "reviewed simple text branch reconstructed from AST-read literals; not publisher Python execution",
+      "options": {
+        "thinking_mode": "chat",
+        "drop_thinking": true
+      },
+      "serialized": "<｜begin▁of▁sentence｜>Be concise.<｜User｜>Hello<｜Assistant｜></think>Hi.<｜end▁of▁sentence｜>",
+      "display_parts": [
+        "<｜begin▁of▁sentence｜>Be concise.",
+        "<｜User｜>Hello",
+        "<｜Assistant｜></think>Hi.<｜end▁of▁sentence｜>"
+      ],
+      "tool_call": "<｜DSML｜tool_calls>\n<｜DSML｜invoke name=\"clock\">\n\n</｜DSML｜invoke>\n</｜DSML｜tool_calls>",
+      "tool_result": "<｜User｜><tool_result>12:00</tool_result>",
+      "tool_result_label": "<｜User｜> + <tool_result>",
+      "call_label": "<｜DSML｜tool_calls>",
+      "thinking_open": "<think>",
+      "thinking_close": "</think>",
+      "display_code": "<｜begin▁of▁sentence｜>Be concise.\n\n<｜User｜>Hello\n\n<｜Assistant｜></think>Hi.<｜end▁of▁sentence｜>"
+    },
+    {
+      "name": "GLM-5.3",
+      "repository": "zai-org/GLM-5.3",
+      "revision": "c5087a76d148760811ffbdedfe6ff9f194e46e38",
+      "sha256": {
+        "chat_template.jinja": "3740abcea51c45830cb3ca562084ad5fb2ef53589376f73332e9886f93ade41c"
+      },
+      "verification": "sandboxed Jinja render",
+      "options": {
+        "enable_thinking": false,
+        "preserve_thinking": false,
+        "clear_thinking": true,
+        "add_generation_prompt": false
+      },
+      "serialized": "[gMASK]<sop><|system|>Reasoning Effort: Max<|system|>Be concise.<|user|>Hello<|assistant|><think></think>Hi.",
+      "tool_call": "<tool_call>clock</tool_call>",
+      "thinking_open": "<think>",
+      "thinking_close": "</think>",
+      "display_parts": [
+        "[gMASK]<sop>",
+        "<|system|>Reasoning Effort: Max",
+        "<|system|>Be concise.",
+        "<|user|>Hello",
+        "<|assistant|><think></think>Hi."
+      ],
+      "tool_result": "<|observation|><tool_response>12:00</tool_response>",
+      "tool_result_label": "<|observation|>",
+      "call_label": "<tool_call> + <arg_key>",
+      "display_code": "[gMASK]<sop>\n\n<|system|>Reasoning Effort: Max\n\n<|system|>Be concise.\n\n<|user|>Hello\n\n<|assistant|><think></think>Hi."
+    },
+    {
+      "name": "Kimi-K3",
+      "repository": "moonshotai/Kimi-K3",
+      "revision": "f831ab66814297da540d832a5235f8e904f29d06",
+      "sha256": {
+        "encoding_k3.py": "49ff03305fdc4be26867972788d36150b67f8a9e852e62bb7959d87482223676"
+      },
+      "verification": "reviewed simple text branch reconstructed from AST-read literals; not publisher Python execution",
+      "options": {
+        "thinking": true
+      },
+      "serialized": "<|open|>message role=\"system\"<|sep|>Be concise.<|close|>message<|sep|><|end_of_msg|><|open|>message role=\"user\"<|sep|>Hello<|close|>message<|sep|><|end_of_msg|><|open|>message role=\"assistant\"<|sep|><|open|>think<|sep|><|close|>think<|sep|><|open|>response<|sep|>Hi.<|close|>response<|sep|><|close|>message<|sep|><|end_of_msg|>",
+      "display_parts": [
+        "<|open|>message role=\"system\"<|sep|>Be concise.<|close|>message<|sep|><|end_of_msg|>",
+        "<|open|>message role=\"user\"<|sep|>Hello<|close|>message<|sep|><|end_of_msg|>",
+        "<|open|>message role=\"assistant\"<|sep|><|open|>think<|sep|><|close|>think<|sep|><|open|>response<|sep|>Hi.<|close|>response<|sep|><|close|>message<|sep|><|end_of_msg|>"
+      ],
+      "tool_call": "<|open|>tools<|sep|><|open|>call tool=\"clock\" index=\"1\"<|sep|><|close|>call<|sep|><|close|>tools<|sep|>",
+      "tool_result": "<|open|>message role=\"tool\" tool=\"clock\" index=\"1\"<|sep|>12:00<|close|>message<|sep|><|end_of_msg|>",
+      "tool_result_label": "message role=\"tool\"",
+      "call_label": "<|open|>call tool=\"...\"",
+      "thinking_open": "<|open|>think<|sep|>",
+      "thinking_close": "<|close|>think<|sep|>",
+      "display_code": "<|open|>message role=\"system\"<|sep|>Be concise.<|close|>message<|sep|><|end_of_msg|>\n\n<|open|>message role=\"user\"<|sep|>Hello<|close|>message<|sep|><|end_of_msg|>\n\n<|open|>message role=\"assistant\"<|sep|><|open|>think<|sep|><|close|>think<|sep|><|open|>response<|sep|>Hi.<|close|>response<|sep|><|close|>message<|sep|><|end_of_msg|>"
+    }
+  ]
+}

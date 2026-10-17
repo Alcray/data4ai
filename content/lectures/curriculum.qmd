@@ -26,3 +26,5 @@ The published course material begins with the architectural background and then 
 **Lecture 4: Document extraction, quality filtering, and corpus auditing.** Recovering text and structure from acquired objects; explicit extraction references; normalization and language identification; quality decisions; retained and rejected audits; and pipeline order, cost, and evidence.
 
 **Lecture 5: Corpus integrity—deduplication, contamination, and privacy.** Exact and canonical equality; shingling, Jaccard, MinHash/LSH, clustering, and representative selection; family-aware benchmark decontamination; sensitive-span handling; integrity audits; and reproducible corpus locks.
+
+**Lecture 6: Tokenization and sequence construction.** Byte-level BPE and unigram segmentation; vocabulary and representation trade-offs; multilingual tokenizer audits; special tokens and chat formats; multimodal embeddings; next-token targets; document boundaries; attention and loss masks; long-document handling; and packing.

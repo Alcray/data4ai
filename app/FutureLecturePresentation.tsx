@@ -3,12 +3,13 @@ import { Slide } from "@revealjs/react";
 import Presentation from "./Lecture1Presentation";
 import lecture4 from "./future-decks/lecture-4";
 import lecture5 from "./future-decks/lecture-5";
+import lecture6 from "./future-decks/lecture-6";
 import { lecture5Html } from "./generated/lecture-5";
 import type { LectureDeck, SlideSpec } from "./future-decks/types";
 import { parseSlidePosition, setReturnSlidePosition } from "./lecture-navigation";
 import "./FutureLecturePresentation.css";
 
-const decks: Record<number, LectureDeck> = { 4: lecture4, 5: lecture5 };
+const decks: Record<number, LectureDeck> = { 4: lecture4, 5: lecture5, 6: lecture6 };
 
 function Question({ slide }: { slide: SlideSpec }) {
   const [revealed, setRevealed] = useState(false);
@@ -97,7 +98,7 @@ function Content({ slide, lectureNumber }: { slide: SlideSpec; lectureNumber: nu
 export default function FutureLecturePresentation({ lectureNumber, onExit }: { lectureNumber: number; onExit: () => void }) {
   const deck = decks[lectureNumber];
   if (!deck) return null;
-  const isDraft = deck.number > 5;
+  const isDraft = deck.number > 6;
   const openText = deck.number === 4 ? (anchor: string, slideHash: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set("lecture", "4");

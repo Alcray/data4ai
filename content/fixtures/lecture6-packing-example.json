@@ -1,0 +1,22 @@
+{
+  "status": "constructed-teaching-fixture",
+  "block_length": 8,
+  "pad": "PAD",
+  "documents": [
+    {
+      "id": "A",
+      "tokens": ["BOS", "a", "b", "EOS"],
+      "score_targets": [false, true, true]
+    },
+    {
+      "id": "B",
+      "tokens": ["BOS", "c", "d", "EOS"],
+      "score_targets": [false, true, true]
+    }
+  ],
+  "capacity": {
+    "sequence_length": 4096,
+    "input_positions_per_document": 512,
+    "document_counts": [1, 2, 8]
+  }
+}

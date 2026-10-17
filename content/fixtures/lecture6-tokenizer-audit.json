@@ -1,0 +1,959 @@
+{
+  "inspected_on": "2026-10-13",
+  "scope": "Nine short text-only correctness fixtures; no BOS/EOS insertion, no chat template, no media processing. Not a language benchmark.",
+  "libraries": {
+    "tokenizers": "0.23.3",
+    "tiktoken": "0.14.0"
+  },
+  "fixtures": {
+    "english": "The laboratory studies physics.",
+    "chinese": "实验室研究物理。",
+    "armenian": "Լաբորատորիան ուսումնասիրում է ֆիզիկա։",
+    "armenian_news": "Երևանում բացվեց նոր գիտական կենտրոն։",
+    "code": "def square(x):\n    return x * x\n",
+    "digits": "123456789",
+    "decomposed_accent": "é",
+    "composed_accent": "é",
+    "mixed": "Ա🙂 42"
+  },
+  "models": [
+    {
+      "name": "Qwen3.8-27B",
+      "repository": "Qwen/Qwen3.8-27B",
+      "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+      "sha256": {
+        "tokenizer.json": "0997f410c57a1f4e53b09e4be8f4a172d90edd9564368fb0847030937229b9f3",
+        "tokenizer_config.json": "b11349aafa7cdc6a320767cf7ceb29ed82f7eda5d65e8e0819e76f0ce947bf27",
+        "config.json": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+        "chat_template.jinja": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041"
+      },
+      "model_entries": 248044,
+      "effective_ids": 248077,
+      "embedding_rows": 248320,
+      "normalizer": {
+        "type": "NFC"
+      },
+      "digit_pieces": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "results": {
+        "english": {
+          "count": 5,
+          "ids": [
+            760,
+            25744,
+            7574,
+            20665,
+            13
+          ],
+          "decoded": "The laboratory studies physics.",
+          "original_bytes_preserved": true
+        },
+        "chinese": {
+          "count": 4,
+          "ids": [
+            103911,
+            96605,
+            101671,
+            1710
+          ],
+          "decoded": "实验室研究物理。",
+          "original_bytes_preserved": true
+        },
+        "armenian": {
+          "count": 27,
+          "ids": [
+            144,
+            120,
+            149048,
+            169318,
+            181580,
+            195587,
+            181580,
+            153080,
+            155652,
+            219265,
+            150235,
+            154944,
+            182903,
+            149773,
+            200822,
+            225584,
+            182903,
+            188429,
+            220,
+            146,
+            228,
+            153080,
+            169535,
+            153080,
+            154905,
+            149048,
+            169498
+          ],
+          "decoded": "Լաբորատորիան ուսումնասիրում է ֆիզիկա։",
+          "original_bytes_preserved": true
+        },
+        "armenian_news": {
+          "count": 24,
+          "ids": [
+            144,
+            113,
+            150503,
+            169602,
+            155652,
+            182903,
+            227250,
+            214458,
+            154938,
+            150512,
+            158844,
+            211050,
+            181580,
+            224504,
+            153080,
+            154917,
+            201665,
+            193193,
+            191733,
+            154917,
+            150503,
+            149619,
+            149773,
+            169498
+          ],
+          "decoded": "Երևանում բացվեց նոր գիտական կենտրոն։",
+          "original_bytes_preserved": true
+        },
+        "code": {
+          "count": 11,
+          "ids": [
+            727,
+            9057,
+            2007,
+            1590,
+            198,
+            262,
+            460,
+            830,
+            348,
+            830,
+            198
+          ],
+          "decoded": "def square(x):\n    return x * x\n",
+          "original_bytes_preserved": true
+        },
+        "digits": {
+          "count": 9,
+          "ids": [
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24
+          ],
+          "decoded": "123456789",
+          "original_bytes_preserved": true
+        },
+        "decomposed_accent": {
+          "count": 1,
+          "ids": [
+            933
+          ],
+          "decoded": "é",
+          "original_bytes_preserved": false
+        },
+        "composed_accent": {
+          "count": 1,
+          "ids": [
+            933
+          ],
+          "decoded": "é",
+          "original_bytes_preserved": true
+        },
+        "mixed": {
+          "count": 5,
+          "ids": [
+            159010,
+            169171,
+            220,
+            19,
+            17
+          ],
+          "decoded": "Ա🙂 42",
+          "original_bytes_preserved": true
+        }
+      },
+      "comparison_trace": {
+        "measured_on": "2026-10-16",
+        "scope": "Shared presentation sentence; ordinary text without boundary insertion, chat, or media.",
+        "input": "The tokenizer sees 123456.",
+        "pieces": [
+          "The",
+          " tokenizer",
+          " sees",
+          " ",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "."
+        ],
+        "ids": [
+          760,
+          44424,
+          15175,
+          220,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          13
+        ],
+        "decoded": "The tokenizer sees 123456."
+      },
+      "pretokenization_probes": {
+        "hello world": [
+          "hello",
+          " world"
+        ],
+        "hello world!": [
+          "hello",
+          " world",
+          "!"
+        ],
+        "123456789": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9"
+        ]
+      },
+      "inventory_extension": {
+        "base_id_range": [
+          0,
+          248043
+        ],
+        "added_count": 33,
+        "added_id_range": [
+          248044,
+          248076
+        ],
+        "examples": [
+          {
+            "content": "<|im_start|>",
+            "id": 248045,
+            "special": true
+          },
+          {
+            "content": "<|im_end|>",
+            "id": 248046,
+            "special": true
+          },
+          {
+            "content": "<think>",
+            "id": 248068,
+            "special": false
+          },
+          {
+            "content": "</think>",
+            "id": 248069,
+            "special": false
+          }
+        ],
+        "allocated_without_tokenizer_id": 243,
+        "unassigned_row_range": [
+          248077,
+          248319
+        ],
+        "weight_values_inspected": false
+      },
+      "opening_trace": {
+        "measured_on": "2026-10-16",
+        "scope": "Presentation trace; ordinary text without boundary insertion, chat, or media.",
+        "input": "Café prices change.",
+        "normalized": "Café prices change.",
+        "pre_regions": [
+          "Café",
+          " prices",
+          " change",
+          "."
+        ],
+        "pieces": [
+          "C",
+          "af",
+          "é",
+          " prices",
+          " change",
+          "."
+        ],
+        "ids": [
+          34,
+          2492,
+          933,
+          7336,
+          2222,
+          13
+        ],
+        "decoded": "Café prices change."
+      }
+    },
+    {
+      "name": "DeepSeek-V4-Pro",
+      "repository": "deepseek-ai/DeepSeek-V4-Pro",
+      "revision": "b5968e9190ef611bbf34a7229255be88a0e937c1",
+      "sha256": {
+        "tokenizer.json": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf",
+        "tokenizer_config.json": "6ac8c8dc065ed118161d02dd532749ae3f52c243deac27872134fae2f50d8547",
+        "config.json": "5fe4568daee51c208cb8a79538eaeda090ae011ade1dee2c386aa95f569c810e"
+      },
+      "model_entries": 128000,
+      "effective_ids": 129280,
+      "embedding_rows": 129280,
+      "normalizer": {
+        "type": "Sequence",
+        "normalizers": []
+      },
+      "digit_pieces": [
+        "123",
+        "456",
+        "789"
+      ],
+      "results": {
+        "english": {
+          "count": 5,
+          "ids": [
+            671,
+            17321,
+            4570,
+            18771,
+            16
+          ],
+          "decoded": "The laboratory studies physics.",
+          "original_bytes_preserved": true
+        },
+        "chinese": {
+          "count": 4,
+          "ids": [
+            23011,
+            2603,
+            13283,
+            320
+          ],
+          "decoded": "实验室研究物理。",
+          "original_bytes_preserved": true
+        },
+        "armenian": {
+          "count": 23,
+          "ids": [
+            147,
+            123,
+            86275,
+            48110,
+            30413,
+            48110,
+            6597,
+            9241,
+            65616,
+            32055,
+            24718,
+            6969,
+            36574,
+            81408,
+            24718,
+            25534,
+            53092,
+            231,
+            18500,
+            102,
+            79839,
+            3192,
+            28227
+          ],
+          "decoded": "Լաբորատորիան ուսումնասիրում է ֆիզիկա։",
+          "original_bytes_preserved": true
+        },
+        "armenian_news": {
+          "count": 20,
+          "ids": [
+            147,
+            116,
+            88484,
+            9241,
+            24718,
+            38286,
+            43481,
+            24097,
+            71266,
+            42673,
+            48110,
+            48222,
+            70903,
+            28517,
+            32647,
+            38640,
+            21956,
+            5282,
+            58604,
+            28227
+          ],
+          "decoded": "Երևանում բացվեց նոր գիտական կենտրոն։",
+          "original_bytes_preserved": true
+        },
+        "code": {
+          "count": 10,
+          "ids": [
+            3465,
+            5080,
+            4042,
+            3395,
+            361,
+            1354,
+            1527,
+            982,
+            1527,
+            201
+          ],
+          "decoded": "def square(x):\n    return x * x\n",
+          "original_bytes_preserved": true
+        },
+        "digits": {
+          "count": 3,
+          "ids": [
+            6895,
+            18009,
+            25744
+          ],
+          "decoded": "123456789",
+          "original_bytes_preserved": true
+        },
+        "decomposed_accent": {
+          "count": 2,
+          "ids": [
+            71,
+            17793
+          ],
+          "decoded": "é",
+          "original_bytes_preserved": true
+        },
+        "composed_accent": {
+          "count": 1,
+          "ids": [
+            619
+          ],
+          "decoded": "é",
+          "original_bytes_preserved": true
+        },
+        "mixed": {
+          "count": 5,
+          "ids": [
+            79031,
+            80300,
+            227,
+            223,
+            3180
+          ],
+          "decoded": "Ա🙂 42",
+          "original_bytes_preserved": true
+        }
+      },
+      "comparison_trace": {
+        "measured_on": "2026-10-16",
+        "scope": "Shared presentation sentence; ordinary text without boundary insertion, chat, or media.",
+        "input": "The tokenizer sees 123456.",
+        "pieces": [
+          "The",
+          " token",
+          "izer",
+          " sees",
+          " ",
+          "123",
+          "456",
+          "."
+        ],
+        "ids": [
+          671,
+          17840,
+          9160,
+          19076,
+          223,
+          6895,
+          18009,
+          16
+        ],
+        "decoded": "The tokenizer sees 123456."
+      },
+      "pretokenization_probes": {
+        "hello world": [
+          "hello",
+          " world"
+        ],
+        "hello world!": [
+          "hello",
+          " world",
+          "!"
+        ],
+        "123456789": [
+          "123",
+          "456",
+          "789"
+        ]
+      }
+    },
+    {
+      "name": "GLM-5.3",
+      "repository": "zai-org/GLM-5.3",
+      "revision": "c5087a76d148760811ffbdedfe6ff9f194e46e38",
+      "sha256": {
+        "tokenizer.json": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d",
+        "tokenizer_config.json": "98b1271574f41abf89427ae2dda030d94dc9478f0edc5a8bd240db213c6fd5fc",
+        "config.json": "3ac72612095574542f7fff847ada8e59d9199dd8af44bdf625d7e02615572e69",
+        "chat_template.jinja": "3740abcea51c45830cb3ca562084ad5fb2ef53589376f73332e9886f93ade41c"
+      },
+      "model_entries": 154820,
+      "effective_ids": 154856,
+      "embedding_rows": 154880,
+      "normalizer": null,
+      "digit_pieces": [
+        "123",
+        "45",
+        "6",
+        "78",
+        "9"
+      ],
+      "results": {
+        "english": {
+          "count": 5,
+          "ids": [
+            785,
+            26509,
+            7822,
+            21271,
+            13
+          ],
+          "decoded": "The laboratory studies physics.",
+          "original_bytes_preserved": true
+        },
+        "chinese": {
+          "count": 4,
+          "ids": [
+            102832,
+            98743,
+            101637,
+            1773
+          ],
+          "decoded": "实验室研究物理。",
+          "original_bytes_preserved": true
+        },
+        "armenian": {
+          "count": 37,
+          "ids": [
+            154304,
+            154341,
+            154342,
+            154364,
+            154372,
+            154341,
+            154371,
+            154364,
+            154372,
+            154351,
+            154341,
+            154362,
+            220,
+            154364,
+            154374,
+            154369,
+            154364,
+            154374,
+            154360,
+            154362,
+            154341,
+            154369,
+            154351,
+            154372,
+            154364,
+            154374,
+            154360,
+            220,
+            154347,
+            220,
+            154378,
+            154351,
+            154346,
+            154351,
+            154355,
+            154341,
+            154381
+          ],
+          "decoded": "Լաբորատորիան ուսումնասիրում է ֆիզիկա։",
+          "original_bytes_preserved": true
+        },
+        "armenian_news": {
+          "count": 36,
+          "ids": [
+            154297,
+            154372,
+            154379,
+            154341,
+            154362,
+            154364,
+            154374,
+            154360,
+            220,
+            154342,
+            154341,
+            154373,
+            154370,
+            154345,
+            154373,
+            220,
+            154362,
+            154364,
+            154372,
+            220,
+            154343,
+            154351,
+            154371,
+            154341,
+            154355,
+            154341,
+            154362,
+            220,
+            154355,
+            154345,
+            154362,
+            154371,
+            154372,
+            154364,
+            154362,
+            154381
+          ],
+          "decoded": "Երևանում բացվեց նոր գիտական կենտրոն։",
+          "original_bytes_preserved": true
+        },
+        "code": {
+          "count": 10,
+          "ids": [
+            750,
+            9331,
+            2075,
+            982,
+            262,
+            470,
+            856,
+            353,
+            856,
+            198
+          ],
+          "decoded": "def square(x):\n    return x * x\n",
+          "original_bytes_preserved": true
+        },
+        "digits": {
+          "count": 5,
+          "ids": [
+            108714,
+            100461,
+            21,
+            100928,
+            24
+          ],
+          "decoded": "123456789",
+          "original_bytes_preserved": true
+        },
+        "decomposed_accent": {
+          "count": 2,
+          "ids": [
+            68,
+            53481
+          ],
+          "decoded": "é",
+          "original_bytes_preserved": true
+        },
+        "composed_accent": {
+          "count": 1,
+          "ids": [
+            963
+          ],
+          "decoded": "é",
+          "original_bytes_preserved": true
+        },
+        "mixed": {
+          "count": 4,
+          "ids": [
+            154293,
+            152402,
+            220,
+            101961
+          ],
+          "decoded": "Ա🙂 42",
+          "original_bytes_preserved": true
+        }
+      },
+      "comparison_trace": {
+        "measured_on": "2026-10-16",
+        "scope": "Shared presentation sentence; ordinary text without boundary insertion, chat, or media.",
+        "input": "The tokenizer sees 123456.",
+        "pieces": [
+          "The",
+          " tokenizer",
+          " sees",
+          " ",
+          "123",
+          "45",
+          "6",
+          "."
+        ],
+        "ids": [
+          785,
+          45681,
+          15622,
+          220,
+          108714,
+          100461,
+          21,
+          13
+        ],
+        "decoded": "The tokenizer sees 123456."
+      },
+      "pretokenization_probes": {
+        "hello world": [
+          "hello",
+          " world"
+        ],
+        "hello world!": [
+          "hello",
+          " world",
+          "!"
+        ],
+        "123456789": [
+          "123",
+          "456",
+          "789"
+        ]
+      }
+    },
+    {
+      "name": "Kimi-K3",
+      "repository": "moonshotai/Kimi-K3",
+      "revision": "f831ab66814297da540d832a5235f8e904f29d06",
+      "sha256": {
+        "tiktoken.model": "b6c497a7469b33ced9c38afb1ad6e47f03f5e5dc05f15930799210ec050c5103",
+        "tokenizer_config.json": "5d0803c94db9cd78763499e0956c95fd5a225c14a727e5a6cf5db3f96f010a6e",
+        "config.json": "9710e121a58d03ac92c8d6da287a19541994319afbbe6d6202af001ffd379213",
+        "tokenization_kimi.py": "f28ea66e2d862a2a5814970b2ce40c2f7d8296ff09aed90a7e7def689b906944",
+        "encoding_k3.py": "49ff03305fdc4be26867972788d36150b67f8a9e852e62bb7959d87482223676",
+        "kimi_k3_processor.py": "ec9f7e86d2ab0eee07a8e7e7c037046e77ac3c25a710ad1298ec13be3b585b54"
+      },
+      "model_entries": 163584,
+      "effective_ids": 163840,
+      "embedding_rows": 163840,
+      "normalizer": null,
+      "digit_pieces": [
+        "123",
+        "456",
+        "789"
+      ],
+      "results": {
+        "english": {
+          "count": 5,
+          "ids": [
+            1008,
+            34336,
+            11537,
+            36607,
+            13
+          ],
+          "decoded": "The laboratory studies physics.",
+          "original_bytes_preserved": true
+        },
+        "chinese": {
+          "count": 4,
+          "ids": [
+            18580,
+            2568,
+            12635,
+            292
+          ],
+          "decoded": "实验室研究物理。",
+          "original_bytes_preserved": true
+        },
+        "armenian": {
+          "count": 23,
+          "ids": [
+            144,
+            120,
+            125054,
+            66332,
+            46659,
+            66332,
+            9859,
+            14495,
+            114265,
+            49510,
+            29497,
+            10482,
+            56536,
+            134951,
+            29497,
+            34090,
+            44803,
+            228,
+            28064,
+            99,
+            104361,
+            5030,
+            37053
+          ],
+          "decoded": "Լաբորատորիան ուսումնասիրում է ֆիզիկա։",
+          "original_bytes_preserved": true
+        },
+        "armenian_news": {
+          "count": 20,
+          "ids": [
+            144,
+            113,
+            8209,
+            81791,
+            145830,
+            81563,
+            64973,
+            33579,
+            96669,
+            53108,
+            66332,
+            65953,
+            134611,
+            39850,
+            45741,
+            62042,
+            32217,
+            8209,
+            75491,
+            37053
+          ],
+          "decoded": "Երևանում բացվեց նոր գիտական կենտրոն։",
+          "original_bytes_preserved": true
+        },
+        "code": {
+          "count": 10,
+          "ids": [
+            1166,
+            12156,
+            3940,
+            2360,
+            274,
+            745,
+            1288,
+            397,
+            1288,
+            198
+          ],
+          "decoded": "def square(x):\n    return x * x\n",
+          "original_bytes_preserved": true
+        },
+        "digits": {
+          "count": 3,
+          "ids": [
+            6694,
+            12972,
+            16242
+          ],
+          "decoded": "123456789",
+          "original_bytes_preserved": true
+        },
+        "decomposed_accent": {
+          "count": 2,
+          "ids": [
+            68,
+            37484
+          ],
+          "decoded": "é",
+          "original_bytes_preserved": true
+        },
+        "composed_accent": {
+          "count": 1,
+          "ids": [
+            1941
+          ],
+          "decoded": "é",
+          "original_bytes_preserved": true
+        },
+        "mixed": {
+          "count": 5,
+          "ids": [
+            137301,
+            5885,
+            46813,
+            220,
+            5512
+          ],
+          "decoded": "Ա🙂 42",
+          "original_bytes_preserved": true
+        }
+      },
+      "comparison_trace": {
+        "measured_on": "2026-10-16",
+        "scope": "Shared presentation sentence; ordinary text without boundary insertion, chat, or media.",
+        "input": "The tokenizer sees 123456.",
+        "pieces": [
+          "The",
+          " tokenizer",
+          " sees",
+          " ",
+          "123",
+          "456",
+          "."
+        ],
+        "ids": [
+          1008,
+          69770,
+          26051,
+          220,
+          6694,
+          12972,
+          13
+        ],
+        "decoded": "The tokenizer sees 123456."
+      },
+      "control_probe": {
+        "scope": "Structural-marker versus ordinary-content encoding branches; not a full chat or media audit.",
+        "marker": "<|end_of_msg|>",
+        "reserved_id": 163586,
+        "structural_ids": [
+          163586
+        ],
+        "literal_content_ids": [
+          27,
+          91,
+          517,
+          5118,
+          14222,
+          91,
+          29
+        ]
+      }
+    }
+  ]
+}

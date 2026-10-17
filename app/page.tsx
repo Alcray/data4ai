@@ -14,6 +14,7 @@ import { lecture2Html } from "./generated/lecture-2";
 import { lecture3Html } from "./generated/lecture-3";
 import { lecture4Html } from "./generated/lecture-4";
 import { lecture5Html } from "./generated/lecture-5";
+import { lecture6Html } from "./generated/lecture-6";
 import { lecturePassageBlocks, parseSlidePosition, readSlidePosition, returnSlideParam, returnSlidePosition, setReturnSlidePosition, slidePositionHash } from "./lecture-navigation";
 
 const Lecture1Presentation = lazy(() => import("./Lecture1Presentation"));
@@ -22,6 +23,7 @@ const Lecture3Presentation = lazy(() => import("./Lecture3Presentation"));
 const FutureLecturePresentation = lazy(() => import("./FutureLecturePresentation"));
 const lecture4Name = "Lecture 4: Document extraction, quality filtering, and corpus auditing";
 const lecture5Name = "Lecture 5: Corpus integrity—deduplication, contamination, and privacy";
+const lecture6Name = "Lecture 6: Tokenization and sequence construction";
 
 const navigation = [
   "Home",
@@ -37,6 +39,7 @@ const lecturePages = [
   { name: "Lecture 3: Corpus design, acquisition, and provenance", html: lecture3Html },
   { name: lecture4Name, html: lecture4Html },
   { name: lecture5Name, html: lecture5Html },
+  { name: lecture6Name, html: lecture6Html },
 ] as const;
 
 const lecturePhases = [
@@ -47,8 +50,8 @@ const lecturePhases = [
   },
   {
     name: "Pretraining",
-    range: "03–05",
-    families: [{ name: null, lectures: lecturePages.slice(3, 6) }],
+    range: "03–06",
+    families: [{ name: null, lectures: lecturePages.slice(3, 7) }],
   },
 ] as const;
 
@@ -92,7 +95,7 @@ export default function Home() {
   const startsInLecture2Presentation = lecture2PresentationRequested();
   const startsInLecture3Presentation = lecture3PresentationRequested();
   const requestedFutureLecture = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("lecture") : null;
-  const startsInLecture4 = requestedFutureLecture === "4" || requestedFutureLecture === "5";
+  const startsInLecture4 = requestedFutureLecture === "4" || requestedFutureLecture === "5" || requestedFutureLecture === "6";
   const [lecture4Presenting, setLecture4Presenting] = useState(
     startsInLecture4 && new URLSearchParams(window.location.search).get("mode") === "presentation",
   );
@@ -105,7 +108,7 @@ export default function Home() {
         ? "Lecture 2: Data and capabilities"
         : startsInLecture3Presentation
           ? "Lecture 3: Corpus design, acquisition, and provenance"
-        : startsInLecture4 ? (requestedFutureLecture === "5" ? lecture5Name : lecture4Name) : "Home",
+        : startsInLecture4 ? (requestedFutureLecture === "6" ? lecture6Name : requestedFutureLecture === "5" ? lecture5Name : lecture4Name) : "Home",
   );
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -123,8 +126,8 @@ export default function Home() {
   const lecture4Ref = useRef<HTMLElement>(null);
   const activeLecture = lecturePages.find((lecture) => lecture.name === active);
   const activeIsLecture4 = active === lecture4Name;
-  const activeIsFutureLecture = activeIsLecture4 || active === lecture5Name;
-  const activeFutureLectureNumber = active === lecture5Name ? 5 : 4;
+  const activeIsFutureLecture = activeIsLecture4 || active === lecture5Name || active === lecture6Name;
+  const activeFutureLectureNumber = active === lecture6Name ? 6 : active === lecture5Name ? 5 : 4;
 
   useEffect(() => {
     if (!activeIsLecture4 || lecture4Presenting) return;
@@ -180,11 +183,11 @@ export default function Home() {
     setLecture2Presentation(false);
     setLecture3Presentation(false);
     setLecture1Presentation(false);
-    if (item === lecture4Name || item === lecture5Name || activeIsFutureLecture) {
+    if (item === lecture4Name || item === lecture5Name || item === lecture6Name || activeIsFutureLecture) {
       const url = new URL(window.location.href);
       url.hash = "";
       url.searchParams.delete(returnSlideParam);
-      if (item === lecture4Name || item === lecture5Name) url.searchParams.set("lecture", item === lecture5Name ? "5" : "4");
+      if (item === lecture4Name || item === lecture5Name || item === lecture6Name) url.searchParams.set("lecture", item === lecture6Name ? "6" : item === lecture5Name ? "5" : "4");
       else url.searchParams.delete("lecture");
       window.history.replaceState({}, "", url);
     }

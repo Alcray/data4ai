@@ -1,0 +1,55 @@
+{
+  "status": "illustrative-not-measured",
+  "vocabulary_comparison": {
+    "fitting_documents": 100000,
+    "evaluation": "same held-out text, disjoint from tokenizer fitting",
+    "candidates": [
+      { "vocabulary_ids": 32000, "heldout_tokens": 50000000 },
+      { "vocabulary_ids": 64000, "heldout_tokens": 40000000 },
+      { "vocabulary_ids": 128000, "heldout_tokens": 38000000 }
+    ],
+    "conditional_choice": 64000
+  },
+  "sampling_comparison": {
+    "pool_bytes": 100000000000,
+    "sample_bytes": 10000000000,
+    "vocabulary_ids": 64000,
+    "byte_unit": "uncompressed UTF-8 bytes; decimal GB = 1000000000 bytes",
+    "control": "same BPE algorithm, normalization, pre-tokenization, byte alphabet, special-token reservation and evaluation texts",
+    "slices": [
+      {
+        "name": "English",
+        "pool_bytes": 80000000000,
+        "sample_a_bytes": 8000000000,
+        "sample_b_bytes": 5000000000,
+        "heldout_units": 100000,
+        "unit": "word",
+        "reference_segmentation": "fixed whitespace-delimited word-like units",
+        "tokens_a": 130000,
+        "tokens_b": 138000
+      },
+      {
+        "name": "Spanish",
+        "pool_bytes": 15000000000,
+        "sample_a_bytes": 1500000000,
+        "sample_b_bytes": 4000000000,
+        "heldout_units": 100000,
+        "unit": "word",
+        "reference_segmentation": "fixed whitespace-delimited word-like units",
+        "tokens_a": 180000,
+        "tokens_b": 145000
+      },
+      {
+        "name": "Code",
+        "pool_bytes": 5000000000,
+        "sample_a_bytes": 500000000,
+        "sample_b_bytes": 1000000000,
+        "heldout_units": 100000,
+        "unit": "lexeme",
+        "reference_segmentation": "Python tokenize NAME, NUMBER, STRING and OP units",
+        "tokens_a": 165000,
+        "tokens_b": 140000
+      }
+    ]
+  }
+}

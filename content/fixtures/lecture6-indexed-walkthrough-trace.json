@@ -1,0 +1,668 @@
+{
+  "documents": [
+    "abab",
+    "abac"
+  ],
+  "initial": {
+    "sequences": [
+      [
+        97,
+        98,
+        97,
+        98
+      ],
+      [
+        97,
+        98,
+        97,
+        99
+      ]
+    ],
+    "counts": [
+      {
+        "pair": [
+          97,
+          98
+        ],
+        "count": 3
+      },
+      {
+        "pair": [
+          98,
+          97
+        ],
+        "count": 2
+      },
+      {
+        "pair": [
+          97,
+          99
+        ],
+        "count": 1
+      }
+    ],
+    "positions": [
+      {
+        "pair": [
+          97,
+          98
+        ],
+        "positions": [
+          "0:0",
+          "0:2",
+          "1:0"
+        ]
+      },
+      {
+        "pair": [
+          98,
+          97
+        ],
+        "positions": [
+          "0:1",
+          "1:1"
+        ]
+      },
+      {
+        "pair": [
+          97,
+          99
+        ],
+        "positions": [
+          "1:2"
+        ]
+      }
+    ]
+  },
+  "rounds": [
+    {
+      "pair": [
+        97,
+        98
+      ],
+      "newId": 256,
+      "selectionCount": 3,
+      "replacements": 3,
+      "stale": [],
+      "before": [
+        [
+          97,
+          98,
+          97,
+          98
+        ],
+        [
+          97,
+          98,
+          97,
+          99
+        ]
+      ],
+      "after": [
+        [
+          256,
+          256
+        ],
+        [
+          256,
+          97,
+          99
+        ]
+      ],
+      "countsBefore": [
+        {
+          "pair": [
+            97,
+            98
+          ],
+          "count": 3
+        },
+        {
+          "pair": [
+            98,
+            97
+          ],
+          "count": 2
+        },
+        {
+          "pair": [
+            97,
+            99
+          ],
+          "count": 1
+        }
+      ],
+      "countsAfter": [
+        {
+          "pair": [
+            97,
+            99
+          ],
+          "count": 1
+        },
+        {
+          "pair": [
+            256,
+            97
+          ],
+          "count": 1
+        },
+        {
+          "pair": [
+            256,
+            256
+          ],
+          "count": 1
+        }
+      ],
+      "positionsBefore": [
+        {
+          "pair": [
+            97,
+            98
+          ],
+          "positions": [
+            "0:0",
+            "0:2",
+            "1:0"
+          ]
+        },
+        {
+          "pair": [
+            98,
+            97
+          ],
+          "positions": [
+            "0:1",
+            "1:1"
+          ]
+        },
+        {
+          "pair": [
+            97,
+            99
+          ],
+          "positions": [
+            "1:2"
+          ]
+        }
+      ],
+      "positionsAfter": [
+        {
+          "pair": [
+            97,
+            99
+          ],
+          "positions": [
+            "1:2"
+          ]
+        },
+        {
+          "pair": [
+            256,
+            97
+          ],
+          "positions": [
+            "1:0"
+          ]
+        },
+        {
+          "pair": [
+            256,
+            256
+          ],
+          "positions": [
+            "0:0"
+          ]
+        }
+      ],
+      "updates": [
+        {
+          "doc": 0,
+          "left": 0,
+          "right": 1,
+          "prev": -1,
+          "next": 2,
+          "before": [
+            {
+              "index": 0,
+              "token": 97
+            },
+            {
+              "index": 1,
+              "token": 98
+            },
+            {
+              "index": 2,
+              "token": 97
+            }
+          ],
+          "after": [
+            {
+              "index": 0,
+              "token": 256
+            },
+            {
+              "index": 2,
+              "token": 97
+            }
+          ],
+          "removed": [
+            {
+              "pair": [
+                97,
+                98
+              ],
+              "position": "0:0"
+            },
+            {
+              "pair": [
+                98,
+                97
+              ],
+              "position": "0:1"
+            }
+          ],
+          "added": [
+            {
+              "pair": [
+                256,
+                97
+              ],
+              "position": "0:0"
+            }
+          ],
+          "countsAfter": [
+            {
+              "pair": [
+                97,
+                98
+              ],
+              "count": 2
+            },
+            {
+              "pair": [
+                97,
+                99
+              ],
+              "count": 1
+            },
+            {
+              "pair": [
+                98,
+                97
+              ],
+              "count": 1
+            },
+            {
+              "pair": [
+                256,
+                97
+              ],
+              "count": 1
+            }
+          ]
+        },
+        {
+          "doc": 0,
+          "left": 2,
+          "right": 3,
+          "prev": 0,
+          "next": -1,
+          "before": [
+            {
+              "index": 0,
+              "token": 256
+            },
+            {
+              "index": 2,
+              "token": 97
+            },
+            {
+              "index": 3,
+              "token": 98
+            }
+          ],
+          "after": [
+            {
+              "index": 0,
+              "token": 256
+            },
+            {
+              "index": 2,
+              "token": 256
+            }
+          ],
+          "removed": [
+            {
+              "pair": [
+                256,
+                97
+              ],
+              "position": "0:0"
+            },
+            {
+              "pair": [
+                97,
+                98
+              ],
+              "position": "0:2"
+            }
+          ],
+          "added": [
+            {
+              "pair": [
+                256,
+                256
+              ],
+              "position": "0:0"
+            }
+          ],
+          "countsAfter": [
+            {
+              "pair": [
+                97,
+                98
+              ],
+              "count": 1
+            },
+            {
+              "pair": [
+                97,
+                99
+              ],
+              "count": 1
+            },
+            {
+              "pair": [
+                98,
+                97
+              ],
+              "count": 1
+            },
+            {
+              "pair": [
+                256,
+                256
+              ],
+              "count": 1
+            }
+          ]
+        },
+        {
+          "doc": 1,
+          "left": 0,
+          "right": 1,
+          "prev": -1,
+          "next": 2,
+          "before": [
+            {
+              "index": 0,
+              "token": 97
+            },
+            {
+              "index": 1,
+              "token": 98
+            },
+            {
+              "index": 2,
+              "token": 97
+            }
+          ],
+          "after": [
+            {
+              "index": 0,
+              "token": 256
+            },
+            {
+              "index": 2,
+              "token": 97
+            }
+          ],
+          "removed": [
+            {
+              "pair": [
+                97,
+                98
+              ],
+              "position": "1:0"
+            },
+            {
+              "pair": [
+                98,
+                97
+              ],
+              "position": "1:1"
+            }
+          ],
+          "added": [
+            {
+              "pair": [
+                256,
+                97
+              ],
+              "position": "1:0"
+            }
+          ],
+          "countsAfter": [
+            {
+              "pair": [
+                97,
+                99
+              ],
+              "count": 1
+            },
+            {
+              "pair": [
+                256,
+                97
+              ],
+              "count": 1
+            },
+            {
+              "pair": [
+                256,
+                256
+              ],
+              "count": 1
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "sequences": [
+    [
+      256,
+      256
+    ],
+    [
+      256,
+      97,
+      99
+    ]
+  ],
+  "merges": [
+    {
+      "pair": [
+        97,
+        98
+      ],
+      "newId": 256
+    }
+  ],
+  "scan": [
+    {
+      "doc": 0,
+      "node": 0,
+      "pair": [
+        97,
+        98
+      ],
+      "count": 1,
+      "positions": [
+        "0:0"
+      ],
+      "counts": [
+        {
+          "pair": [
+            97,
+            98
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "doc": 0,
+      "node": 1,
+      "pair": [
+        98,
+        97
+      ],
+      "count": 1,
+      "positions": [
+        "0:1"
+      ],
+      "counts": [
+        {
+          "pair": [
+            97,
+            98
+          ],
+          "count": 1
+        },
+        {
+          "pair": [
+            98,
+            97
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "doc": 0,
+      "node": 2,
+      "pair": [
+        97,
+        98
+      ],
+      "count": 2,
+      "positions": [
+        "0:0",
+        "0:2"
+      ],
+      "counts": [
+        {
+          "pair": [
+            97,
+            98
+          ],
+          "count": 2
+        },
+        {
+          "pair": [
+            98,
+            97
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "doc": 1,
+      "node": 0,
+      "pair": [
+        97,
+        98
+      ],
+      "count": 3,
+      "positions": [
+        "0:0",
+        "0:2",
+        "1:0"
+      ],
+      "counts": [
+        {
+          "pair": [
+            97,
+            98
+          ],
+          "count": 3
+        },
+        {
+          "pair": [
+            98,
+            97
+          ],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "doc": 1,
+      "node": 1,
+      "pair": [
+        98,
+        97
+      ],
+      "count": 2,
+      "positions": [
+        "0:1",
+        "1:1"
+      ],
+      "counts": [
+        {
+          "pair": [
+            97,
+            98
+          ],
+          "count": 3
+        },
+        {
+          "pair": [
+            98,
+            97
+          ],
+          "count": 2
+        }
+      ]
+    },
+    {
+      "doc": 1,
+      "node": 2,
+      "pair": [
+        97,
+        99
+      ],
+      "count": 1,
+      "positions": [
+        "1:2"
+      ],
+      "counts": [
+        {
+          "pair": [
+            97,
+            98
+          ],
+          "count": 3
+        },
+        {
+          "pair": [
+            98,
+            97
+          ],
+          "count": 2
+        },
+        {
+          "pair": [
+            97,
+            99
+          ],
+          "count": 1
+        }
+      ]
+    }
+  ]
+}

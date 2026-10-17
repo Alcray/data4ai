@@ -28,9 +28,9 @@ test("Lecture 5 is published without draft labels and without unpublished lectur
   assert.ok(title.includes(label));
   assert.doesNotMatch(title, /draft/i);
   const presentation = read("app/FutureLecturePresentation.tsx");
-  assert.ok(presentation.includes("const isDraft = deck.number > 5;"));
-  assert.match(presentation, /const decks: Record<number, LectureDeck> = \{ 4: lecture4, 5: lecture5 \}/);
-  assert.doesNotMatch(presentation, /import lecture(?:[6-9]|1[0-6]) from/);
+  assert.ok(presentation.includes("const isDraft = deck.number > 6;"));
+  assert.match(presentation, /const decks: Record<number, LectureDeck> = \{ 4: lecture4, 5: lecture5, 6: lecture6 \}/);
+  assert.doesNotMatch(presentation, /import lecture(?:[7-9]|1[0-6]) from/);
   assert.equal((await loadDeck(5)).slides.length + 1, 40);
 });
 

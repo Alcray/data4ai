@@ -1,0 +1,3032 @@
+---
+title: "Lecture 6: Tokenization and sequence construction"
+order: 7
+description: "Tokenization from first principles to released Qwen, DeepSeek, GLM, and Kimi artifacts: multilingual audits, chat and multimodal contracts, exact targets, packing, and training tensors."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+The first three lectures in this block of the course produced a **curated corpus**: source identities are pinned, extraction and filtering are versioned, duplicate families are known, protected evaluation material has been excluded under an explicit policy, and sensitive-content decisions are recorded. That is still not what a language model trains on.
+
+A decoder-only language model receives arrays of integers. Those integers are arranged into finite sequences. Some positions are visible to others and some are not. Some positions contribute to the loss and some do not. A tokenizer decides which strings share parameters and how many positions are needed to represent a document. A serializer decides which structure becomes model-visible text. A packer decides which documents coexist inside one physical training block. Attention masks, position IDs, and loss masks define the conditional prediction problem the optimizer actually sees.
+
+This lecture is about that interface:
+
+```text
+curated documents
+      ↓
+normalization contract
+      ↓
+tokenizer
+      ↓
+serialized documents
+      ↓
+next-token input/target pairs
+      ↓
+packing + boundaries + positions
+      ↓
+attention mask + loss mask
+      ↓
+exact tensors consumed by the model
+```
+
+The central principle is simple:
+
+> **The model trains on the tensors we construct, not on the corpus we intended to represent.**
+
+A data pipeline can be perfectly reproducible up to the curated corpus and still train the wrong objective because labels were shifted twice, document boundaries leaked through attention, padding tokens contributed to loss, a tokenizer disproportionately expanded one language, or long documents were silently truncated.
+
+We connect those fundamentals to **released-model practice**, using pinned tokenizer artifacts from Qwen3.8, DeepSeek-V4, GLM-5.3, and Kimi K3 inspected on **13 October 2026**. We will run the same short fixtures through their actual text tokenizers, distinguish vocabulary entries from allocated embedding rows, and examine chat, reasoning, tool, and multimodal serialization. These are inspectable examples, not a claim about every Chinese model or an undisclosed commercial training pipeline. A separate research example shows what changes when a model replaces fixed subword segmentation with adaptive byte patches.
+
+**Objective.** Starting from the curated corpus lock produced by Lecture 5, construct and validate the tokenizer, serialization rules, model-token sequences, targets, position IDs, attention permissions, loss masks, and accounting records used by a causal language model.
+
+**Prerequisites.** Lectures 3–5; UTF-8 and Unicode; basic probability; softmax and cross-entropy; causal language modeling; Python and tensor indexing. No prior implementation of a tokenizer is assumed.
+
+**Learning outcomes.** By the end of the lecture, students should be able to:
+
+1. distinguish linguistic units, bytes, Unicode code points, and model tokens;
+2. explain the vocabulary–sequence-length tradeoff quantitatively;
+3. implement and test a small byte-level BPE tokenizer;
+4. compare BPE, unigram, WordPiece, and adaptive byte-patch processing;
+5. design a multilingual tokenizer audit rather than reporting only vocabulary size;
+6. freeze a tokenizer as a versioned learned artifact;
+7. serialize structured documents without accidentally leaking metadata or control symbols;
+8. construct next-token targets exactly once;
+9. distinguish document boundaries, attention masks, loss masks, padding masks, and position IDs;
+10. pack short and long documents while making supervision accounting explicit;
+11. prove with tests which tokens, contexts, and targets the model actually sees;
+12. inspect and reproduce a released checkpoint's tokenizer contract rather than infer it from its model family;
+13. distinguish ordinary text tokenization from chat-template and multimodal processing;
+14. separate deployed subword practice from tokenizer-free research directions;
+15. explain NFC, NFKC, lowercasing, and language-specific rewrites; and
+16. distinguish pre-tokenization boundaries from the segmentation algorithm applied inside them.
+
+---
+
+## Running example: from the curated corpus to tensors
+
+We continue the multilingual base-model project used in Lectures 3–5. After acquisition, extraction, filtering, deduplication, contamination checks, and privacy processing, suppose our **curated corpus lock** contains five components:
+
+| Component                         | Role in the project                                  | Example unit                         |
+| --------------------------------- | ---------------------------------------------------- | ------------------------------------ |
+| Native Armenian science/education | scarce target-language technical exposition          | article/chapter                      |
+| Armenian general prose            | broad natural-language coverage                      | article/document                     |
+| Translated Armenian STEM          | additional technical coverage with recorded ancestry | problem/solution or explanatory text |
+| English science/general text      | cross-lingual/general capability                     | article/document                     |
+| Code                              | programming capability                               | repository file                      |
+
+These are not yet mixture weights. Lecture 7 will decide how much training exposure each source receives.
+
+Lecture 6 has a narrower job:
+
+> **For each admitted record, what exact sequence of token IDs and prediction targets will be produced?**
+
+We will build one frozen tokenizer and one explicit sequence-construction policy. We will also preserve source attribution so Lecture 7 can measure realized target-token exposure after packing.
+
+A possible final tokenized-data manifest will eventually look like:
+
+```json
+{
+  "corpus_lock": "sha256:...",
+  "tokenizer": "tok-v1",
+  "tokenizer_digest": "sha256:...",
+  "serialization_policy": "serialize-v2",
+  "sequence_policy": "independent-doc-pack-v1",
+  "context_length": 4096,
+  "special_ids": {
+    "bos": 0,
+    "eos": 1,
+    "pad": 2
+  },
+  "position_policy": "reset_per_segment",
+  "attention_policy": "causal_same_segment",
+  "loss_policy": "all_real_next-token-targets"
+}
+```
+
+Nothing in this example is a universal recommended configuration. The point is that the configuration is **explicit enough to reproduce and test**.
+
+---
+
+## Part I — What is a token?
+
+### 1. “Token” names several different objects
+
+In this course we have already used the word *token* in several contexts. That is dangerous unless we name the unit.
+
+A corpus analyst might count:
+
+* whitespace-delimited strings;
+* linguistically segmented words;
+* lemmas;
+* characters;
+* Unicode code points.
+
+A model tokenizer might produce:
+
+* subword pieces;
+* byte-level symbols;
+* byte-fallback tokens;
+* special/control IDs.
+
+For text $x$, write the model tokenizer as
+
+$$
+\phi(x)=(z_1,z_2,\ldots,z_m),
+\qquad
+z_i\in\{0,1,\ldots,V-1\}.
+$$
+
+Here $V$ is the model vocabulary size and $m$ is the number of **model tokens** produced for that text.
+
+For the same string, all of the following can differ:
+
+$$
+\text{Unicode code points},
+\qquad
+\text{UTF-8 bytes},
+\qquad
+\text{diagnostic words},
+\qquad
+\text{model tokens}.
+$$
+
+A field named only `length` is therefore ambiguous.
+
+Prefer explicit names:
+
+```text
+utf8_bytes
+diagnostic_word_count
+model_token_count
+sequence_positions
+loss_target_count
+```
+
+#### Stop and reason
+
+Two papers both say they trained on “10 billion tokens.” One uses the Gemma tokenizer; the other uses a 32K SentencePiece model trained on a different multilingual corpus.
+
+**Question:** Are the reported dataset sizes directly comparable?
+
+No. A token count is defined relative to a tokenizer and counting procedure. The same text can produce substantially different model-token counts.
+
+---
+
+#### 1.1 From text to model inputs {#text-to-model}
+
+The pinned Qwen3.8-27B tokenizer represents `Café prices change.` with six pieces:
+
+```text
+Pieces: ["C", "af", "é", " prices", " change", "."]
+IDs:    [34, 2492, 933, 7336, 2222, 13]
+```
+
+![One sentence becomes six colored token pieces and their integer IDs, which enter an embedding lookup and transformer.](lecture-6/text-to-model.svg)
+
+The word `Café` spans three tokens. The spaces before `prices` and `change` belong to those pieces. Colors track each piece into its ID; the visible `·` symbol denotes a space for display only. The model uses IDs to select learned embeddings before transformer computation. The model blocks are schematic; the segmentation and IDs are measured, not invented.
+
+---
+
+### 2. A tokenizer is not just a vocabulary file
+
+It is tempting to think of a tokenizer as a mapping
+
+```text
+piece -> integer ID
+```
+
+but a reproducible tokenizer usually includes more:
+
+```text
+input normalization
+      ↓
+pre-tokenization / boundary rules
+      ↓
+segmentation model
+      ↓
+special/control token rules
+      ↓
+ID mapping
+      ↓
+decoder
+```
+
+Two tokenizers can contain the same visible vocabulary pieces and still produce different IDs or segmentations because their normalization, merge order, pre-tokenization, or special-token handling differs.
+
+SentencePiece makes this particularly explicit: its model artifact stores the segmentation model together with normalization-related behavior, and it supports both BPE and unigram segmentation. Current SentencePiece documentation also exposes options such as byte fallback and configurable normalization. The important lesson for our course is not to copy one library's defaults blindly, but to **freeze the whole tokenization contract**. See the [SentencePiece project](https://github.com/google/sentencepiece) and its [normalization documentation](https://github.com/google/sentencepiece/blob/master/doc/normalization.md).
+
+#### One text through the tokenizer {#tokenizer-text-stages}
+
+Start with the same sentence but write its accented letter as `e` plus a combining acute accent: `"Cafe\u0301 prices change."`. The escape makes the otherwise visually subtle distinction explicit.
+
+![The text itself is visible at every stage: NFC normalization, four pre-tokenized regions, six BPE pieces, integer IDs, and decoding back to normalized text.](lecture-6/tokenizer-text-stages.svg)
+
+NFC normalization produces `Café prices change.`. Pre-tokenization yields `"Café"`, `" prices"`, `" change"`, and `"."`; BPE divides the first region into `"C"`, `"af"`, and `"é"`. Assigning IDs produces the sequence shown above. Decoding returns composed `é`, not the original decomposed code-point sequence. This trace is stored as `opening_trace` in the pinned tokenizer audit report; no BOS/EOS, chat, or media processing is included.
+
+#### Text before and after {#normalization-overview}
+
+**NFC** stands for **Normalization Form C**, where **C** denotes composition. **NFKC** stands for **Normalization Form KC**, where **K** denotes compatibility and **C** composition. The [Unicode normalization standard](https://www.unicode.org/reports/tr15/tr15-58.html) distinguishes their decomposition mappings; both forms then order combining marks and apply canonical composition.
+
+![Seven examples showing only text before and after: e plus acute to é, full-width a to a, ffi ligature to ffi, circled one to 1, HELLO to hello, եվ to և, and 7 to seven.](lecture-6/normalization-overview.svg)
+
+Each row illustrates a separate transformation; the figure is not a processing sequence. NFC and NFKC are Unicode normalization forms. Lowercasing is a case-mapping policy; spelling rewrites and number verbalization require a declared language and context. The following sections unpack their behavior.
+
+#### NFC: canonical decomposition and composition {#normalization-nfc}
+
+Normalization changes the text representation **before** segmentation. The [Unicode normalization standard](https://www.unicode.org/reports/tr15/tr15-58.html) specifies NFC as canonical decomposition, ordering combining marks by their combining classes, and canonical composition where permitted.
+
+```text
+Input:  "e\u0301"        Output: "é"
+        U+0065 U+0301            U+00E9
+```
+
+First expand canonical composites recursively; `é` and the decomposed input reach the same `e` plus accent sequence. Next order combining marks; a single accent needs no reordering. Finally compose eligible pairs. Composition rules do not provide a precomposed character for every possible mark sequence.
+
+```python
+import unicodedata as ud
+assert ud.normalize("NFC", "e\u0301") == "é"
+assert ud.normalize("NFC", "é") == "é"
+```
+
+This is neither lowercasing nor accent removal: `é` does not become `e`.
+
+#### NFKC: compatibility decomposition before composition {#normalization-nfkc}
+
+NFKC uses compatibility as well as canonical decompositions, followed by the same ordering and canonical-composition stages. Locally verified examples are:
+
+| Input | NFKC output | Distinction removed |
+| --- | --- | --- |
+| Full-width `ａ` (U+FF41) | Latin `a` (U+0061) | Character width |
+| Ligature `ﬃ` | `ffi` | Typographic ligature |
+| Circled `①` | `1` | Enclosure style |
+
+```python
+assert ud.normalize("NFKC", "ａ") == "a"
+assert ud.normalize("NFKC", "ﬃ") == "ffi"
+assert ud.normalize("NFKC", "①") == "1"
+assert ud.normalize("NFKC", "а") == "а"  # Cyrillic a stays Cyrillic
+```
+
+Compatibility folding is not general transliteration or a rule that merges all look-alike characters. It can erase distinctions important in mathematics or identifiers. Choose it by domain rather than apply it automatically to every corpus.
+
+#### Lowercasing: a separate case-mapping policy {#normalization-lowercase}
+
+Lowercasing applies Unicode case mappings; it does not use BPE merges or require NFC/NFKC. Python's [string case-conversion documentation](https://docs.python.org/3/library/stdtypes.html#str.lower) specifies this behavior.
+
+```python
+assert "HELLO".lower() == "hello"
+assert "Հայերեն".lower() == "հայերեն"
+assert "US".lower() == "us"
+```
+
+The last transformation loses the distinction between an abbreviation and an ordinary word. Names, code, and identifiers may also be case-sensitive. `casefold()` is a different, stronger operation for caseless matching; for example, `"ß".lower()` retains `ß`, whereas `"ß".casefold()` produces `ss`.
+
+#### Custom rewrites: Armenian spelling and number expansion {#normalization-custom}
+
+Some preprocessing policies rewrite a chosen spelling or verbalize numbers. They are not additional Unicode normalization forms:
+
+| Policy | Before | After |
+| --- | --- | --- |
+| Custom Armenian rewrite | `եվ` | `և` |
+| Custom English number expansion | `7` | `seven` |
+| Unicode NFKC, for comparison | `և` | `եւ` |
+
+The final row contains `ւ` (U+0582), not `վ` (U+057E). Unicode's compatibility decomposition of the ligature therefore does **not** implement the custom `եվ` → `և` policy. NFC leaves `և` unchanged.
+
+A custom rewriting algorithm identifies approved spans in a declared language/context, then replaces them under an explicit rule. An English number verbalizer would parse a numeric expression and generate English words; it should not blindly replace the digit inside a version, telephone number, or identifier. The same value would be verbalized differently in another language.
+
+Order also matters. For the following constructed Armenian fixture:
+
+```python
+text = "ԲԱՐԵՎ"
+assert text.lower() == "բարեվ"
+assert text.lower().replace("եվ", "և") == "բարև"
+assert text.replace("եվ", "և").lower() == "բարեվ"
+assert ud.normalize("NFKC", "և") == "եւ"
+```
+
+These replacements illustrate a policy, not a universal Armenian spelling corrector. Validate contexts and preserve the original text if needed. Do not stack all of these transformations onto an existing checkpoint: the inspected Qwen3.8 normalizer specifies NFC, not a blanket NFKC-plus-lowercase-plus-rewrite pipeline.
+
+#### 2.1 Reversibility must state what is recovered
+
+Suppose a tokenizer normalizes text with function $N$ before segmentation. Then the strongest round-trip guarantee may be
+
+$$
+\phi^{-1}(\phi(x))=N(x),
+$$
+
+not
+
+$$
+\phi^{-1}(\phi(x))=x.
+$$
+
+For example, if the tokenizer lowercases input or collapses repeated spaces, the original distinctions cannot be reconstructed from token IDs alone.
+
+A byte-complete tokenizer with identity normalization can, in principle, recover the exact UTF-8 byte sequence it encoded. But even then, special-token insertion may occur outside the raw-text encoder.
+
+Therefore a test should say exactly what is expected:
+
+```python
+encoded = tok.encode(text)
+decoded = tok.decode(encoded)
+assert decoded == normalize_for_tokenizer(text)
+```
+
+not simply “round trip works.”
+
+#### 2.2 Test the difficult strings, not only ordinary English sentences
+
+A tokenizer audit should include fixtures such as:
+
+```text
+"two  spaces"
+"line one\nline two"
+"x = a − b"
+"x = a - b"
+"Փորձարկում հայերենով"
+"printf(\"hello\\n\");"
+"    indented_python()"
+"🙂"
+"e\u0301"      # combining sequence
+"é"             # precomposed form
+```
+
+A passing English sentence says very little about code indentation, combining marks, another script, or byte fallback.
+
+---
+
+#### One character, different UTF-8 byte lengths {#utf8-character-bytes}
+
+UTF-8 represents a Unicode scalar value with one to four bytes. The [Unicode Standard's UTF-8 definition](https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-3/) specifies the ranges. Three concrete characters illustrate the difference:
+
+![English A becomes the single byte 41; Russian Я becomes D0 AF; Chinese 中 becomes E4 B8 AD. Each colored box is one UTF-8 byte, shown in hexadecimal.](lecture-6/utf8-character-bytes.svg)
+
+```python
+assert "A".encode("utf-8") == bytes.fromhex("41")
+assert "Я".encode("utf-8") == bytes.fromhex("D0 AF")
+assert "中".encode("utf-8") == bytes.fromhex("E4 B8 AD")
+assert [len(c.encode("utf-8")) for c in ["A", "Я", "中"]] == [1, 2, 3]
+```
+
+These are character-specific examples, not fixed byte counts for languages. The basic Latin letters used in ordinary English spelling occupy one byte each; an accented Latin character can require more. Russian Cyrillic letters such as `Я` occupy two bytes. The common Han character `中` occupies three, while a supplementary-plane Han character such as `𠀀` occupies four. A displayed grapheme can also contain several code points. State **UTF-8 bytes**, rather than treating bytes and characters as interchangeable units.
+
+Byte-level BPE starts with these bytes and learns how to combine adjacent byte sequences. A learned piece can therefore contain part of a multibyte character, one complete character, or several characters. The worked merge-count example in Section 6 makes that learning process explicit.
+
+#### 2.3 What recent Chinese model releases actually use {#released-tokenizer-artifacts}
+
+The following is an **artifact inspection**, not a reconstruction of the publishers' tokenizer-training datasets. All four inspected text tokenizers use **byte-level BPE**, but their complete text-to-ID contracts differ. “Byte-level” describes the representation underlying learned pieces; it does not mean that every byte is a separate final token.
+
+| Released checkpoint | BPE vocabulary / mergeable-rank entries | Effective tokenizer IDs | Model embedding rows |
+| --- | ---: | ---: | ---: |
+| [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B/tree/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0) | 248,044 | 248,077 | 248,320 |
+| [DeepSeek-V4-Pro](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/tree/b5968e9190ef611bbf34a7229255be88a0e937c1) | 128,000 | 129,280 | 129,280 |
+| [GLM-5.3](https://huggingface.co/zai-org/GLM-5.3/tree/c5087a76d148760811ffbdedfe6ff9f194e46e38) | 154,820 | 154,856 | 154,880 |
+| [Kimi K3](https://huggingface.co/moonshotai/Kimi-K3/tree/f831ab66814297da540d832a5235f8e904f29d06) | 163,584 | 163,840 | 163,840 |
+
+These columns count different objects. The first counts entries in `model.vocab` for the JSON tokenizers, or mergeable byte ranks for Kimi. DeepSeek's first column already includes three boundary/padding entries; it is not a count of ordinary lexical pieces alone. The second includes added or reserved IDs under the released configuration. The third comes from the model's text configuration and determines the size of its embedding/output inventory, including any unused allocated rows. Do not substitute one column for another in a parameter calculation.
+
+The artifacts also expose implementation differences:
+
+* **Qwen:** the JSON declares NFC normalization and includes 33 added entries. Its effective inventory has 248,077 IDs, while the model allocates 248,320 rows. The tokenizer configuration and chat template still belong to the contract even when their added-ID inventory agrees with the JSON.
+* **DeepSeek:** its JSON specifies BPE and a sequence of number/script/text splits. No normalization transformation is declared in its empty normalizer sequence.
+* **GLM:** its JSON declares `ignore_merges: true`. The BPE implementation can accept a whole pre-tokenized piece already in the vocabulary rather than always reconstructing it through merge operations. This is another reason a vocabulary list alone is insufficient.
+* **Kimi:** the release supplies a `tiktoken.model` byte-rank file and a custom `TikTokenTokenizer` wrapper with its regex and a 256-ID reserved range. Chat serialization is implemented by Python helpers in `encoding_k3.py`, not a released Jinja template. Using the `tiktoken` library does **not** mean it uses an OpenAI model's vocabulary.
+
+Inspect the tokenizer files, configuration, chat template, model configuration, and processor together. A wrapper class named after an older family is not evidence that the learned vocabulary is unchanged. Conversely, a new model name does not prove that its tokenizer was retrained. These public artifacts identify encoding behavior, not the exact fitting corpus or language sampling weights.
+
+**A newer checkpoint can retain its subwords while changing its interface.** Comparing these revisions with the pinned [Qwen3.6](https://huggingface.co/Qwen/Qwen3.6-35B-A3B/tree/995ad96eacd98c81ed38be0c5b274b04031597b0), [GLM-5.1](https://huggingface.co/zai-org/GLM-5.1/tree/26e1bd6e011feb778d25ae34b09b07074139d92d), and [Kimi-K2.6](https://huggingface.co/moonshotai/Kimi-K2.6/tree/7eb5002f6aadc958aed6a9177b7ed26bb94011bb) artifacts reveals three different kinds of continuity:
+
+* Qwen3.8 retains the inspected 3.6 vocabulary mapping, merge ranks, digit rule, and NFC normalization. Its JSON now contains all 33 configured added entries, and its chat template differs.
+* GLM-5.3's `tokenizer.json` is byte-identical to the inspected 5.1 file. Its configuration and chat template differ, so file equality is not equality of the complete model-facing interface.
+* Kimi K3 retains the inspected K2.6 byte ranks and regex but changes reserved-control spellings and chat serialization. ID `163586`, previously `<|im_end|>`, is now `<|end_of_msg|>`.
+
+The measured ordinary-text fixture IDs remain unchanged across these particular old/new pairs. That does not justify carrying an older serializer or processor forward without checking it. The newer checkpoints are the examples used below; the older revisions establish the comparison, not a substitute implementation.
+
+#### Added IDs and embedding capacity {#added-ids-embedding-capacity}
+
+The pinned Qwen3.8 files make the difference between the three inventory counts concrete:
+
+```text
+248,044 BPE entries + 33 added entries = 248,077 tokenizer IDs
+248,077 tokenizer IDs + 243 additional row slots = 248,320 embedding rows
+```
+
+![Actual Qwen added-token spellings and IDs beside a schematic of BPE rows, added-ID rows, and additional allocated embedding rows.](lecture-6/tokenizer-added-ids.svg)
+
+The [pinned tokenizer JSON](https://huggingface.co/Qwen/Qwen3.8-27B/blob/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/tokenizer.json) defines `<|im_start|>` as ID `248045`, `<|im_end|>` as `248046`, `<think>` as `248068`, and `</think>` as `248069`. These are explicitly added entries rather than new frequency-learned BPE merges. The audit reproduces their single-ID encodings. The two reasoning delimiters have `special: false` in this artifact; **added entry** and the library's **special-token flag** are different properties.
+
+Every model row is a numeric vector, not an empty spreadsheet cell. Extra rows can provide capacity for alignment, padding, or later vocabulary changes, but a tokenizer/configuration inspection does not reveal their stored values or training history. The [Transformers embedding-resize interface](https://huggingface.co/docs/transformers/main_classes/model#transformers.PreTrainedModel.resize_token_embeddings) exposes both matrix padding and alternative initialization policies. Thus extra rows are not inherently zero or random, and newly added rows do not acquire useful meanings merely by being allocated. If unused output rows are present, the model's generation policy must also define whether they are allowed candidates. We have not inspected this checkpoint's weight values or inferred its publisher's exact allocation rationale.
+
+#### One sentence through four tokenizers {#released-tokenizer-comparison}
+
+The same sentence, `The tokenizer sees 123456.`, makes both word-piece and digit boundaries visible:
+
+![The same sentence broken into measured colored token pieces by Qwen3.8, DeepSeek-V4, GLM-5.3, and Kimi K3, with exact vocabulary-local IDs below each piece.](lecture-6/model-tokenization-comparison.svg)
+
+Qwen produces six separate digit pieces. DeepSeek groups the digits as `123` and `456`, but splits ` tokenizer` into ` token` and `izer`. GLM produces digit pieces `123`, `45`, and `6`; Kimi produces `123` and `456`. The other three retain ` tokenizer` as one piece in this fixture. Each row preserves the same input, including spaces; `·` makes a space visible without adding a character.
+
+The figures are generated from `comparison_trace` in the pinned tokenizer audit. No BOS/EOS insertion, chat template, or media processing is included. Each vocabulary defines its own IDs, so equal colors do not assert shared token meanings. This short fixture illustrates encoding behavior, not language quality or arithmetic capability.
+
+---
+
+## Part II — Vocabulary size and representation cost
+
+#### Choosing a tokenizer {#choosing-tokenizer}
+
+Choosing a tokenizer means comparing vocabulary cost, language and domain coverage, measured behavior, and compatibility with the intended checkpoint. Use the same evaluation text and a declared project objective; the shortest segmentation alone does not settle the decision. The following cost and coverage examples establish the comparison criteria.
+
+### 3. The vocabulary–sequence-length tradeoff
+
+At one extreme, a model could operate on bytes. The alphabet is small and open-vocabulary behavior is easy, but ordinary text requires many positions.
+
+At the other extreme, a vocabulary could contain very long common strings. This can shorten sequences, but the vocabulary becomes large and sparse.
+
+For hidden width $d$ and vocabulary size $V$, an embedding matrix contains
+
+$$
+Vd
+$$
+
+parameters.
+
+If the output projection is untied, it adds another approximately
+
+$$
+Vd
+$$
+
+parameters, ignoring biases.
+
+#### Worked parameter example
+
+Suppose
+
+$$
+d=2048.
+$$
+
+Increasing the vocabulary from
+
+$$
+32{,}768
+$$
+
+to
+
+$$
+65{,}536
+$$
+
+adds
+
+$$
+(65{,}536-32{,}768)\times 2048
+=67{,}108{,}864
+$$
+
+parameters to one embedding matrix.
+
+With untied input/output matrices, the increase is doubled.
+
+This does **not** tell us the full memory cost of the model. Optimizer states, gradients, dtypes, sharding, and other parameters matter. The calculation only establishes the exact parameter change for the stated matrices.
+
+#### 3.1 Shorter tokenization is not automatically better
+
+A tokenizer producing fewer pieces can:
+
+* increase effective text covered by a fixed context window;
+* reduce the number of autoregressive prediction steps for the same text;
+* create useful reusable lexical units.
+
+But a larger vocabulary can:
+
+* increase embedding/output parameters;
+* increase output-projection/softmax work;
+* allocate entries to rare or source-specific strings;
+* memorize artifacts rather than learn reusable substructure.
+
+So “tokens per word” is a diagnostic, not a complete tokenizer objective.
+
+A fair tokenizer comparison must state what is fixed:
+
+```text
+fixed characters/bytes?
+fixed model-token budget?
+fixed model parameter budget?
+fixed training FLOPs?
+fixed context length?
+```
+
+Those are different experiments.
+
+#### Three vocabulary sizes on the same unseen text {#vocabulary-size-experiment}
+
+Consider a controlled, **illustrative experiment**: fit three byte-level BPE tokenizers on the same 100,000 training documents, targeting total vocabularies of 32,000, 64,000, and 128,000 IDs. Keep normalization, pre-tokenization, the byte alphabet, special-token reservation, and other training settings fixed. Encode an identical held-out corpus that was excluded from fitting every candidate.
+
+The following totals are assigned teaching outcomes, **not measured training runs** and not predictions from the number of documents:
+
+| Vocabulary IDs | Tokens on the same held-out text | Reduction from the preceding candidate |
+| ---: | ---: | ---: |
+| 32,000 | 50,000,000 | — |
+| 64,000 | 40,000,000 | 20% |
+| 128,000 | 38,000,000 | 5% |
+
+![Three BPE vocabulary sizes fitted on the same 100,000 documents yield illustrative held-out totals of50M,40M,38M, showing a diminishing marginal reduction.](lecture-6/bpe-vocabulary-size.svg)
+
+The first vocabulary doubling removes 10 million tokens, or 20% of the 50 million-token baseline. The second doubling removes only 2 million tokens, or 5% of the 40 million-token baseline. Under a constrained embedding/output budget, the **64,000-ID tokenizer producing 40 million evaluation tokens** may be the better engineering choice. The 40 million figure is a sequence-length total, not a vocabulary size. This case does not establish that 64k is universally best or that token-count savings equal proportional compute or accuracy gains; measure system cost and downstream behavior before freezing the choice.
+
+---
+
+### 4. Multilingual representation makes the tradeoff visible
+
+#### Two tokenizer-fitting samples from a 100 GB pool {#tokenizer-sampling-example}
+
+In a separate controlled example, reserve the held-out evaluation texts first. The remaining eligible tokenizer-fitting pool contains 100 GB of uncompressed UTF-8 text: 80 GB English, 15 GB Spanish, and 5 GB code. Here one decimal GB is $10^9$ bytes; these are byte shares, not document or model-token shares.
+
+Draw two 10 GB fitting samples. Sample A preserves the pool's proportions; sample B assigns more of its fixed budget to Spanish and code:
+
+| Slice | Full pool | Sample A: 10 GB | Sample B: 10 GB |
+| --- | ---: | ---: | ---: |
+| English | 80 GB · 80% | 8 GB · 80% | 5 GB · 50% |
+| Spanish | 15 GB · 15% | 1.5 GB · 15% | 4 GB · 40% |
+| Code | 5 GB · 5% | 0.5 GB · 5% | 1 GB · 10% |
+| Total | 100 GB | 10 GB | 10 GB |
+
+![A100GB pool and two10GB fitting samples: A preserves80/15/5 byte shares, while B uses50/40/10. Both fit64,000-ID BPE tokenizers.](lecture-6/bpe-sampling-mixtures.svg)
+
+Fit one byte-level BPE tokenizer on each sample, both with a 64,000-ID vocabulary. Hold the algorithm, normalization, pre-tokenization, byte alphabet, and special-token policy fixed. Only the fitting-sample composition changes. This allocates tokenizer-fitting evidence; it does **not** prescribe the later model-pretraining mixture. Neither sample size nor composition alone determines the token counts on unseen text.
+
+#### Compare the two samples on held-out slices {#tokenizer-sampling-heldout}
+
+Evaluate A and B on exactly the same unseen text within each slice. For English and Spanish, define diagnostic words by a fixed whitespace-delimited word-like segmentation. For the Python code slice, count `NAME`, `NUMBER`, `STRING`, and `OP` lexemes from Python's `tokenize` module as the reference units; code lexemes are not natural-language words. In this **constructed example**, each slice contains 100,000 reference units:
+
+| Held-out slice | Reference units | Tokenizer A: total · tokens/unit | Tokenizer B: total · tokens/unit |
+| --- | ---: | ---: | ---: |
+| English | 100,000 words | 130,000 · 1.30 | 138,000 · 1.38 |
+| Spanish | 100,000 words | 180,000 · 1.80 | 145,000 · 1.45 |
+| Code | 100,000 lexemes | 165,000 · 1.65 | 140,000 · 1.40 |
+
+![Illustrative A/B outcomes on identical held-out texts: B uses more English tokens but fewer Spanish and code tokens, with totals and tokens per declared reference unit.](lecture-6/bpe-sampling-evaluation.svg)
+
+All these counts are illustrative assumptions, not outputs of fitting the two 10 GB samples. Ratios are calculated from the displayed totals: for example, $145{,}000/100{,}000=1.45$ Spanish tokens per diagnostic word under B. Compared with A, B increases English token count by about 6.2%, reduces Spanish by 19.4%, and reduces code by 15.2%. This makes a possible representation tradeoff visible without promising that oversampling will produce these gains.
+
+Do not multiply the 80/15/5 **byte** shares by tokens-per-**word** ratios to estimate a corpus-wide token total. The denominators differ: either encode the actual evaluation corpus and sum its tokens, or combine per-byte rates with declared byte weights. Choose based on project priorities, per-slice coverage, model cost, and controlled downstream evaluation, not on one favorable ratio.
+
+#### Context-window coverage at different tokenization rates
+
+Suppose a 4,096-position context contains, on average, the following **constructed** tokenization rates:
+
+| Slice                    | Model tokens per diagnostic word |
+| ------------------------ | -------------------------------: |
+| English general prose    |                              1.5 |
+| Armenian general prose   |                              2.3 |
+| Armenian technical prose |                              3.1 |
+| Code                     |                              1.9 |
+
+Ignoring boundary markers and variation, the rough number of diagnostic words represented in one context is:
+
+$$
+\frac{4096}{1.5}\approx2731
+$$
+
+for the first slice and
+
+$$
+\frac{4096}{3.1}\approx1321
+$$
+
+for the Armenian technical slice.
+
+The tokenizer has therefore changed the **effective text span** associated with a fixed context length.
+
+This does not prove the Armenian slice will have half the downstream accuracy. It establishes a representation difference that deserves measurement.
+
+Research such as Rust et al., *How Good Is Your Tokenizer?* motivates measuring tokenization behavior across languages rather than assuming a shared multilingual vocabulary treats them equally. The paper is available from the [ACL Anthology](https://aclanthology.org/2021.acl-long.243/).
+
+#### Stop and reason
+
+A tokenizer produces 20% fewer tokens on English and 5% more tokens on Armenian than another tokenizer. The overall corpus is 80% English by bytes.
+
+**Question:** Is the first tokenizer necessarily better because it reduces total token count?
+
+No. The total is dominated by the majority language. Report per-language/domain behavior before making the engineering tradeoff.
+
+---
+
+## Part III — Byte-pair encoding from first principles
+
+#### Segmentation methods at a glance {#segmentation-methods}
+
+After normalization and any pre-tokenization boundaries, a segmentation method chooses computational units:
+
+| Method | How encoding chooses units |
+| --- | --- |
+| BPE | Applies learned merge priorities |
+| Unigram | Chooses a highest-probability segmentation path |
+| WordPiece | Greedily takes the longest vocabulary match |
+| Byte Latent Transformer | Forms adaptive byte patches rather than fixed subword IDs |
+
+The first three use learned subword vocabularies. BLT changes the architecture and computation unit as well as boundary selection; it is not an interchangeable BPE encoder. Our implementation focus is **byte-level BPE**. The other methods make the design alternatives explicit.
+
+### 5. Why implement a toy tokenizer?
+
+Production tokenizers are highly optimized. Students should use mature libraries for large-scale preprocessing. But implementing a small tokenizer once is valuable because it exposes four things that are easy to hide behind an API:
+
+1. the initial alphabet;
+2. how pair statistics are computed;
+3. the ordered merge list;
+4. the exact segmentation rule used at inference.
+
+We will implement a small **byte-level BPE** because bytes give us a fixed 256-symbol base alphabet and avoid an unknown-character problem in the teaching implementation.
+
+This is not the only valid BPE design. Many production tokenizers use pre-tokenization and other conventions.
+
+---
+
+#### Byte-level BPE starts from UTF-8 {#byte-level-bpe}
+
+Byte-level BPE begins with a byte alphabet, then learns merges over byte sequences. A constructed one-merge example is:
+
+```text
+Text: "café"
+UTF-8 (hex): 63 61 66 C3 A9
+Base-byte IDs: [99, 97, 102, 195, 169]
+Merge: [195, 169] -> new ID 256
+Pieces after this one merge: [c, a, f, é]
+IDs: [99, 97, 102, 256]
+```
+
+Only the declared merge is applied here; these IDs belong to this example, **not** Qwen's vocabulary. A byte can be part of a multibyte character, so concatenate a token sequence's byte strings before UTF-8 decoding. A larger merge table may combine several characters into one piece. Starting from all 256 bytes provides byte coverage; it does not imply that final tokens are single bytes or single characters.
+
+![Colored UTF-8 bytes for café start as five byte tokens; a constructed merge joins C3 and A9 into the bytes of é.](lecture-6/byte-bpe-utf8.svg)
+
+### 6. BPE training as repeated pair merging
+
+The subword use of BPE was popularized for neural machine translation by Sennrich, Haddow, and Birch (2016). See [Neural Machine Translation of Rare Words with Subword Units](https://aclanthology.org/P16-1162/).
+
+Our teaching algorithm starts with each training document represented as UTF-8 byte IDs:
+
+$$
+0,1,\ldots,255.
+$$
+
+At each iteration:
+
+1. count adjacent symbol pairs inside documents;
+2. choose the most frequent pair under a deterministic tie-break;
+3. allocate a new symbol ID;
+4. replace non-overlapping occurrences of that pair;
+5. repeat.
+
+#### 6.1 A tiny worked example
+
+For readability, write characters instead of byte IDs.
+
+Training documents:
+
+```text
+abab
+abac
+```
+
+Initial sequences:
+
+```text
+[a, b, a, b]
+[a, b, a, c]
+```
+
+Adjacent pair counts include:
+
+```text
+(a,b): 3
+(b,a): 2
+(a,c): 1
+```
+
+Merge `(a,b)` into new symbol `ab`:
+
+```text
+[ab, ab]
+[ab, a, c]
+```
+
+Now pair counts are recomputed on the transformed sequences.
+
+The merge list is therefore ordered:
+
+```text
+merge 0: (a, b) -> ab
+merge 1: (...)
+merge 2: (...)
+```
+
+We do not compute all pair frequencies once and then apply a static list.
+
+#### Watch byte BPE learn two merges {#bpe-visual-counts}
+
+Use three separate training documents: `banana`, `banana`, and `band`. Pre-tokenization produces one word-region from each document in this example; longer documents can produce many regions. Repeating the first document gives it two contributions to the counts. Each ASCII letter initially occupies one UTF-8 byte token: `b=98`, `a=97`, `n=110`, and `d=100`.
+
+![Initial colored byte tokens and all adjacent-pair counts. The winning pair a plus n occurs five times and becomes an, ID 256.](lecture-6/byte-bpe-merge-1.svg)
+
+The initial counts are `(a,n):5`, `(n,a):4`, `(b,a):3`, and `(n,d):1`. Count adjacent pairs inside each pre-tokenized region and aggregate those counts across documents. Never create a pair across a region or document boundary. The unique most frequent pair is `(a,n)`; replace all five non-overlapping occurrences with token `an`, ID `256`.
+
+#### Recount after the first merge {#bpe-visual-recount}
+
+![After a plus n becomes an, the new most frequent pair is b plus an with three occurrences. Counts have been recomputed on the transformed sequences.](lecture-6/byte-bpe-merge-2.svg)
+
+The two `banana` documents are now `[b, an, an, a]`, while `band` is `[b, an, d]`. Recomputed counts are `(b,an):3`, `(an,a):2`, `(an,an):2`, and `(an,d):1`. Select `(b,an)` and replace all three occurrences with `ban`, ID `257`. A later merge can therefore combine an existing multi-byte token with a base byte.
+
+#### The two learned rules {#bpe-visual-result}
+
+![Final pieces after two merges, beside the learned rules in their required order. Training recounts frequencies; encoding replays learned merge priorities.](lecture-6/byte-bpe-merge-result.svg)
+
+Stop at a deliberately small two-merge budget. The two `banana` documents become `[ban, an, a]`; `band` becomes `[ban, d]`. The learned rules are `(97,110) → 256`, then `(98,256) → 257`. With further training, recount again and use the declared tie rule when needed. Encoding a new sentence does not retrain on its local frequencies: it applies the frozen merge priorities.
+
+#### 6.2 Overlap matters
+
+Consider:
+
+```text
+aaa
+```
+
+The adjacent pair `(a,a)` appears at positions `(0,1)` and `(1,2)`: two overlapping pair occurrences.
+
+But one left-to-right merge pass can only create one merged symbol:
+
+```text
+[aa, a]
+```
+
+or, under another defined policy,
+
+```text
+[a, aa].
+```
+
+The training implementation must define replacement behavior deterministically.
+
+Pair **selection count** and number of symbols removed by one replacement pass are not always identical.
+
+---
+
+### 7. A small byte-level BPE implementation
+
+Below is intentionally simple code. It prioritizes inspectability over speed.
+
+```python
+from collections import Counter
+
+
+def replace_pair(seq, pair, new_id):
+    out = []
+    i = 0
+    while i < len(seq):
+        if i + 1 < len(seq) and (seq[i], seq[i + 1]) == pair:
+            out.append(new_id)
+            i += 2
+        else:
+            out.append(seq[i])
+            i += 1
+    return out
+
+
+def train_byte_bpe(texts, num_merges, first_new_id=256):
+    seqs = [list(t.encode("utf-8")) for t in texts]
+    merges = []
+
+    for step in range(num_merges):
+        counts = Counter()
+        for seq in seqs:
+            counts.update(zip(seq, seq[1:]))
+
+        if not counts:
+            break
+
+        # Highest frequency, then lexicographically smallest pair.
+        best_pair = min(
+            counts,
+            key=lambda p: (-counts[p], p)
+        )
+
+        new_id = first_new_id + step
+        seqs = [
+            replace_pair(seq, best_pair, new_id)
+            for seq in seqs
+        ]
+        merges.append((best_pair, new_id))
+
+    return merges
+```
+
+Important properties of this teaching implementation:
+
+* documents are separate when pair counts are collected;
+* no pair is counted across a document boundary;
+* ties are deterministic;
+* replacement order is explicit;
+* UTF-8 bytes guarantee a finite base alphabet.
+
+A production implementation should not repeatedly rescan every document for every merge. Efficient BPE trainers maintain more elaborate statistics/data structures.
+
+#### Indexed BPE training {#bpe-indexed-training}
+
+The data structures are easier to understand by building them on the small `abab`, `abac` corpus from Section 6.1. This is a fresh byte-BPE training run: `a`, `b`, and `c` have base IDs `97`, `98`, and `99`; its first learned token will receive ID `256`.
+
+#### Count pairs as the scan advances {#bpe-hashmap-scan}
+
+Start with an empty hash map keyed by **pairs of token IDs**. At each adjacent window, look up the pair and increment its count, starting from zero if it has no entry yet.
+
+![Three windows over Doc1 abab: add a,b with count1, add b,a with count1, then increment a,b to2. Continuing with Doc2 abac gives global counts3,2,1.](lecture-6/bpe-hashmap-scan.svg)
+
+The first document contributes `(a,b)`, `(b,a)`, `(a,b)`. The second contributes `(a,b)`, `(b,a)`, `(a,c)`. The completed map is therefore `{(97,98): 3, (98,97): 2, (97,99): 1}`. Count adjacent windows even when they share a token, but never create a pair across the document boundary.
+
+#### Record each pair's locations {#bpe-build-inverted-index}
+
+In that **same initial pass**, also append the current occurrence to an inverted index. The key is a pair; the value is the set of places where that pair begins. A place such as `D1:n2` identifies document 1's stable token node 2, not a character offset in a string that will later shrink.
+
+![Append a pair's left-node handle during each scan step, then show the completed posting lists for a,b; b,a; and a,c across both documents.](lecture-6/bpe-build-inverted-index.svg)
+
+The second `(a,b)` in document 1 appends `D1:n2` to the list already containing `D1:n0`; it does not create a second pair key. After both documents, the posting lists are:
+
+```text
+(97,98): [D1:n0, D1:n2, D2:n0]
+(98,97): [D1:n1, D2:n1]
+(97,99): [D2:n2]
+```
+
+Each list's length agrees with the corresponding count. The count map answers **how many**; the inverted index answers **where**.
+
+#### Allocate the next token ID {#bpe-create-merged-token}
+
+The unique most frequent pair is `(97,98)`, with count `3`. Concatenate its byte strings to form `ab`, allocate token ID `256`, and record the learned rule `(97,98) → 256`. This is concatenation, not addition of the two integer IDs.
+
+![Select a,b with count3, create ab with ID256, and retrieve the three occurrence handles from its posting list.](lecture-6/bpe-create-merged-token.svg)
+
+Snapshot the selected pair's posting list before modifying it. The three candidate handles let us find replacements without searching every document again. A max-heap can choose frequent pairs efficiently; the count map remains the authority for current frequencies.
+
+#### Replace one indexed occurrence {#bpe-indexed-replacement}
+
+Follow the first handle, `D1:n0`, to the current `a,b` pair in `abab`. Reuse node `n0` for token `256`, unlink `n1`, and reconnect `n0` to `n2`. The sequence becomes `[256,97,98]`; the second `(a,b)` still begins at stable handle `D1:n2`.
+
+![Follow D1:n0, merge the first a,b into token256, and update the three affected frequency and inverted-index entries.](lecture-6/bpe-indexed-replacement.svg)
+
+Update both structures for the changed adjacent edges:
+
+| Operation | Count change | Posting change |
+| --- | --- | --- |
+| Remove `(97,98)` | `3 → 2` | Remove `D1:n0` |
+| Remove `(98,97)` | `2 → 1` | Remove `D1:n1` |
+| Add `(256,97)` | `0 → 1` | Add `D1:n0` |
+
+There is no left-neighbor edge at the beginning of this document. All other current edges remain indexed. Keeping `prev` and `next` links on stable nodes lets the trainer find the current neighbors without shifting every later occurrence handle.
+
+#### Finish the indexed replacement pass {#bpe-indexed-result}
+
+Next visit `D1:n2`. Its left neighbor is **now token `256`**, not the original `b`: remove `(256,97)` and `(97,98)`, then add `(256,256)`. Finally visit `D2:n0`, remove its consumed `(97,98)` and old right-neighbor `(98,97)`, and add `(256,97)`. The `(97,99)` edge in document 2 stays unchanged.
+
+![The remaining indexed replacements produce Doc1 with IDs256,256 and Doc2 with IDs256,97,99, beside the current counts and occurrence handles.](lecture-6/bpe-indexed-result.svg)
+
+The final sequences are `[256,256]` and `[256,97,99]`. Each of `(256,256)`, `(256,97)`, and `(97,99)` occurs once; their handles are `D1:n0`, `D2:n0`, and `D2:n2`, respectively. The consumed `(97,98)` posting list is empty. Before each replacement, re-check that the indexed nodes are live, adjacent, and still contain the selected pair. This handles candidates changed by earlier replacements.
+
+The figures are generated from the local incremental trainer and `content/fixtures/lecture6-indexed-walkthrough-trace.json`. Tests compare its counts and postings with full recounts after each replacement; the recounts are validation, not the normal update algorithm. The following larger example keeps the full data-structure view and priority-queue details available for reference.
+
+An incremental teaching trainer can represent the same `banana`, `banana`, `band` corpus with four connected structures:
+
+| Structure | What it answers |
+| --- | --- |
+| Hash map: pair → count | How many current adjacent occurrences? |
+| Inverted index: pair → node handles | Where can this pair be replaced? |
+| Max-heap of frequency snapshots | Which candidate should be checked next? |
+| Doubly linked token nodes | What are the current neighbors? |
+
+![Linked token nodes, a pair-frequency map, an occurrence index, and a max-heap for the same three-document corpus.](lecture-6/bpe-training-structures.svg)
+
+Initialize these structures with one corpus pass. Nodes have stable identities such as `D1:n1`; a handle refers to a node, not a character offset in an ever-shorter string. The inverted index records the left node of each adjacent pair. Initially `(a,n)` has five handles: `D1:n1`, `D1:n3`, `D2:n1`, `D2:n3`, and `D3:n1`. The hash-map count agrees with the number of indexed adjacent occurrences, including potentially overlapping ones. The heap stores candidate snapshots, not authoritative counts.
+
+This design is implemented in `scripts/lecture6-incremental-bpe.mjs`; its generated trace is `content/fixtures/lecture6-incremental-bpe-trace.json`. It is a teaching implementation, not the four publishers' undisclosed fitting pipeline. For an inspectable production comparison, [SentencePiece's BPE trainer](https://github.com/google/sentencepiece/blob/master/src/bpe_model_trainer.cc) uses occurrence positions, neighbor invalidation, and stale-priority checks. Implementations can represent neighbors with arrays and inactive slots rather than explicit linked-list nodes.
+
+#### Update only neighboring edges {#bpe-local-updates}
+
+For one current neighborhood `L — A — B — R`, replacing `A,B` with `M` removes `(L,A)`, `(A,B)`, and `(B,R)` and inserts `(L,M)` and `(M,R)`. At a document boundary, omit the missing neighbor. Update both the count map and the occurrence index for these edges.
+
+![The first a,n merge removes three old adjacent edges, creates two new ones, and reconnects the surviving linked nodes.](lecture-6/bpe-local-update.svg)
+
+In the first occurrence of our fixture, `b — a — n — a` becomes `b — an — a`. The global counts change as follows:
+
+```text
+(b,a):  3 → 2       (b,an): 0 → 1
+(a,n):  5 → 4       (an,a): 0 → 1
+(n,a):  4 → 3
+```
+
+Reuse node `n1` for `an`, unlink `n2`, and reconnect `n0 ↔ n1 ↔ n3`. Other edges are untouched by this one replacement. When processing another indexed occurrence, look up its **current** neighbors: a previous replacement may have changed them. Snapshot candidate handles in a deterministic left-to-right order and re-check that their nodes are live, adjacent, and still carry the selected pair. This also handles overlapping candidates such as `(a,a)` in `aaa`.
+
+#### Lazy heap updates {#bpe-lazy-priorities}
+
+After processing all valid occurrences of the winning pair, push refreshed priorities only for the pair types whose counts changed. A simple heap can retain obsolete entries until they reach its top. Give each pair a version and compare the entry with the current version and count when popping it.
+
+![Current counts after all five a,n replacements, beside the stale heap entries skipped before selecting b,an.](lecture-6/bpe-lazy-heap.svg)
+
+```python
+while heap:
+    count, pair, version = pop_max(heap)
+    if version != live_version[pair] or count != live_count[pair]:
+        continue                         # stale priority
+    if count <= 0:
+        continue
+    for handle in sorted(snapshot(occurrences[pair])):
+        if not still_live_and_adjacent(handle, pair):
+            continue
+        update_local_edges_and_links(handle)
+    push_refreshed_candidates(changed_pairs)
+    break
+```
+
+For this fixture, after all five `(a,n)` replacements the live counts are `(b,an):3`, `(an,a):2`, `(an,an):2`, and `(an,d):1`. The tested heap trace skips old `(n,a):4` and `(b,a):3` entries before accepting `(b,an):3`. The previous winning `(a,n):5` entry was already popped; it is not an additional stale candidate.
+
+This avoids repeated full-corpus recounts, not all work: each valid occurrence still needs local updates, hash-table operations have their usual expected costs, and heap pushes/pops cost logarithmic time in heap size. Lazy entries consume memory and can require compaction. The tests compare every incremental state against a full-scan oracle; that expensive scan is a **test check**, not part of the normal training loop.
+
+---
+
+### 8. Encoding new text requires the learned merge order
+
+Training BPE gives an ordered merge table. At inference, the tokenizer must use that same merge priority.
+
+A simple but slow encoder can start from bytes and apply learned merges in training order:
+
+```python
+
+def encode_with_merges(text, merges):
+    seq = list(text.encode("utf-8"))
+    for pair, new_id in merges:
+        seq = replace_pair(seq, pair, new_id)
+    return seq
+```
+
+This is computationally inefficient but conceptually clear.
+
+A production tokenizer typically uses a more efficient algorithm that finds applicable low-rank merges without rescanning the entire sequence for every merge.
+
+#### 8.1 Vocabulary contents alone do not define BPE segmentation
+
+Suppose the vocabulary contains tokens representing:
+
+```text
+"a"
+"b"
+"ab"
+"aba"
+```
+
+A generic “longest matching vocabulary item” algorithm might choose `aba`.
+
+A BPE encoder must instead follow the learned merge ranks. If `ab` was learned but the merge required to form `aba` was not, the segmentation is different.
+
+So these are separate artifacts:
+
+```text
+piece inventory
+merge ranking
+```
+
+#### 8.2 Byte-level does not mean one token per Unicode character
+
+An Armenian character is encoded using multiple UTF-8 bytes. A base-byte tokenizer can therefore initially represent one visible Armenian character with several base symbols. Learned merges can combine common byte sequences into larger pieces.
+
+The decoder should concatenate token byte strings **before** decoding UTF-8. Decoding each token separately can fail if a token contains only part of a multibyte character.
+
+---
+
+### 9. Pre-tokenization changes what BPE is allowed to learn
+
+Many tokenizers apply a **pre-tokenizer** before BPE.
+
+A pre-tokenizer may split on:
+
+* whitespace;
+* punctuation;
+* regex-defined word-like regions;
+* script boundaries;
+* byte-level encodings with specific whitespace conventions.
+
+Hugging Face's current Tokenizers documentation exposes, for example, both punctuation/whitespace-oriented pre-tokenizers and a `ByteLevel` pre-tokenizer with GPT-2-style regex behavior. See the official [pre-tokenizer documentation](https://huggingface.co/docs/tokenizers/en/api/pre-tokenizers).
+
+Pre-tokenization constrains which pairs can ever be merged.
+
+If merges cannot cross whitespace, the tokenizer cannot learn a multiword phrase as one token. If digits are segmented by a regex, numbers may receive very different tokenizations than under raw byte BPE.
+
+The rule must therefore be part of the frozen tokenizer configuration.
+
+#### Pre-tokenize hello world before BPE {#pretokenization-hello}
+
+Pre-tokenization selects regions **before the main subword algorithm**. The pinned Qwen3.8 and DeepSeek-V4 pre-tokenizers both give these human-readable regions:
+
+```text
+"hello world"  -> ["hello", " world"]
+"hello world!" -> ["hello", " world", "!"]
+```
+
+The leading space is retained in the second region. Diagrams may display it as `·world`, where `·` is a display aid, not an extra input character. The library's internal byte-level spelling may instead show a byte-alphabet symbol for that space.
+
+A simple whitespace split could identify `hello` and `world` too, but discarding separators would lose the original spacing unless another mechanism preserved it. The exact rule, not just the name “word split,” matters. BPE then segments **within each chosen region**; pre-tokenization is not a learned BPE merge and need not produce final model tokens. The local artifact audit records these regions separately from final IDs.
+
+#### Stop and reason
+
+The vocabulary file is identical between training and inference, but the inference service changed its regex pre-tokenizer.
+
+**Question:** Is this still the same tokenizer?
+
+No. The mapping from text to IDs changed. The model's input interface changed even if the vocabulary file did not.
+
+---
+
+#### 9.1 Real number-splitting rules {#released-number-splits}
+
+Consider the literal string `123456789`, with no spaces, BOS, EOS, or chat wrapper. At the pinned revisions above, the audit produces:
+
+| Tokenizer | Pre-tokenizer digit regions | Final decoded token pieces | Token count |
+| --- | --- | --- | ---: |
+| Qwen3.8 | `1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9` | `1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9` | 9 |
+| DeepSeek-V4 | `123 / 456 / 789` | `123 / 456 / 789` | 3 |
+| GLM-5.3 | `123 / 456 / 789` | `123 / 45 / 6 / 78 / 9` | 5 |
+| Kimi K3 | `123 / 456 / 789` | `123 / 456 / 789` | 3 |
+
+Qwen's number branch isolates individual numeric characters; the others allow regions of up to three. A three-character region is an **upper boundary**, not a guarantee of one final token: GLM's vocabulary and BPE behavior further split two of these regions. More tokens here do not by themselves establish better arithmetic; representation and task performance require separate measurements.
+
+Normalization is equally observable. Compare `é` (one code point) with `e\u0301` (an `e` followed by a combining accent). Qwen produces the same single ID, `933`, for both and decodes both as composed `é`. DeepSeek, GLM, and Kimi encode the decomposed form as two tokens and preserve that form on decoding in this fixture. Qwen satisfies an NFC round-trip contract here, not an original-byte contract. A model-token comparison must therefore report normalization as well as length.
+
+Do not infer coverage from the name of a flag. A tokenizer with a complete byte alphabet can represent arbitrary UTF-8 through byte pieces even when its BPE setting says `byte_fallback: false`; that option describes a different fallback mechanism.
+
+---
+
+## Part IV — Segmentation alternatives
+
+### 10. BPE and unigram models solve different problems
+
+BPE learns an ordered sequence of merge operations.
+
+A **unigram subword model** instead maintains a vocabulary of pieces with probabilities and evaluates possible segmentations of a string.
+
+Let
+
+$$
+\mathcal{Z}(x)
+$$
+
+be the set of valid segmentations of string $x$ into vocabulary pieces.
+
+For one segmentation
+
+$$
+z=(u_1,u_2,\ldots,u_k),
+$$
+
+a unigram model assigns
+
+$$
+P(z)=\prod_{j=1}^{k}p(u_j).
+$$
+
+The text probability marginalizes over possible segmentations:
+
+$$
+P(x)=
+\sum_{z\in\mathcal{Z}(x)}
+\prod_{u\in z}p(u).
+$$
+
+Tokenizer training estimates piece probabilities and prunes a larger candidate vocabulary toward a target size.
+
+This probabilistic segmentation model is **not** the neural language model we are pretraining. It is a model used to define the representation.
+
+SentencePiece supports both unigram and BPE models. Its current option documentation describes unigram as a probabilistic model with vocabulary pruning and BPE as repeated merging; see [SentencePiece options](https://github.com/google/sentencepiece/blob/master/doc/options.md).
+
+---
+
+### 11. Best unigram segmentation by dynamic programming
+
+Suppose piece probabilities are fixed.
+
+Let
+
+$$
+D[j]
+$$
+
+be the best log probability of a segmentation ending at position $j$.
+
+Then
+
+$$
+D[j]
+=
+\max_{i<j:\,x[i:j]\in\mathcal V}
+\left(
+D[i]+\log p(x[i:j])
+\right).
+$$
+
+Backpointers recover the best segmentation.
+
+#### Worked example
+
+Vocabulary:
+
+| Piece | Probability |
+| ----- | ----------: |
+| `a`   |        0.20 |
+| `b`   |        0.20 |
+| `ab`  |        0.30 |
+| `aba` |        0.10 |
+
+For string
+
+```text
+aba
+```
+
+possible segmentations include:
+
+```text
+[a, b, a]
+[ab, a]
+[aba]
+```
+
+Their products are:
+
+$$
+0.2\times0.2\times0.2=0.008,
+$$
+
+$$
+0.3\times0.2=0.06,
+$$
+
+and
+
+$$
+0.1.
+$$
+
+Under these constructed probabilities, `[aba]` is the highest-probability segmentation.
+
+The example shows the conceptual difference: unigram decoding compares segmentation paths; BPE follows merge ranks.
+
+---
+
+#### WordPiece: greedy longest-match encoding {#wordpiece-segmentation}
+
+[BERT](https://aclanthology.org/N19-1423/) [@devlin2019bert] uses WordPiece. At encoding time, a common WordPiece implementation finds the longest vocabulary prefix at the current position, emits it, and repeats. Noninitial pieces use a continuation convention such as `##`. The [TensorFlow Text algorithm description](https://www.tensorflow.org/text/api_docs/python/text/WordpieceTokenizer) and [Hugging Face implementation](https://github.com/huggingface/tokenizers/blob/main/tokenizers/src/models/wordpiece/mod.rs) describe this greedy behavior. Vocabulary fitting is a separate operation; this is not BPE merge-rank replay.
+
+Consider a deliberately small vocabulary, not BERT's actual vocabulary:
+
+```text
+[UNK], play, ##ing, p, ##layer
+
+playing -> [play, ##ing]
+player  -> [UNK]
+```
+
+For `playing`, `play` is the longest initial match and `##ing` covers the remainder. For `player`, greedy selection again takes `play`, but `##er` is missing. With the Hugging Face WordPiece model's whole-word unknown behavior, the result is `[UNK]`; it does not backtrack to the available alternative `[p, ##layer]`. Unigram's dynamic program, in contrast, evaluates whole candidate paths. The `##` prefix marks a continuation entry; it is not literal source text.
+
+#### 11.1 A research frontier: adaptive byte patches {#byte-patch-frontier}
+
+The four inspected releases retain fixed subword inventories. A different research direction asks whether the model should operate directly on bytes while allocating expensive computation to variable-sized groups.
+
+[Byte Latent Transformer: Patches Scale Better Than Tokens](https://arxiv.org/abs/2412.09871) [@pagnoni2024blt] studies this approach. BLT uses local byte processing and a global transformer over **patches**, with boundaries determined using next-byte uncertainty. Predictable regions can form longer patches; less predictable regions receive finer computation. A patch is not a fixed dictionary entry with a learned BPE token ID.
+
+This changes the design question from “which strings belong in a fixed vocabulary?” to “where should computation be spent?” It does not make sequence construction disappear: byte targets, patch boundaries, local/global representations, and compute accounting still need explicit contracts. Compare such systems at controlled training/inference cost and on the same underlying text, not by equating one patch with one BPE token. BLT is a 2024 research example, **not** the tokenizer implementation found in the four releases above, and not evidence that subword tokenization has been universally replaced.
+
+---
+
+## Part V — Training the tokenizer is itself a learned preprocessing step
+
+### 12. The tokenizer-training corpus matters
+
+A tokenizer is learned from data. Therefore the corpus used to fit it must have its own membership and sampling policy.
+
+Do **not** train the tokenizer on protected benchmark/test material simply because no gradient from the model will be computed on that text. Vocabulary construction can memorize rare strings and benchmark-specific forms.
+
+Preserve:
+
+```text
+tokenizer training corpus lock
+sampling policy
+random seed where relevant
+normalization configuration
+pre-tokenizer configuration
+algorithm and version
+vocabulary size
+special-token reservation
+byte-fallback/unknown policy
+model/vocabulary/merge files
+software version
+```
+
+#### 12.1 Tokenizer-training weights need not equal model-training weights
+
+This distinction is important enough to write mathematically.
+
+Let
+
+$$
+q_{\mathrm{tok}}(d)
+$$
+
+be the sampling distribution used to fit the tokenizer, and let
+
+$$
+q_{\mathrm{train}}(d)
+$$
+
+be the later model-training distribution.
+
+There is no requirement that
+
+$$
+q_{\mathrm{tok}}=q_{\mathrm{train}}.
+$$
+
+For our running example, Armenian technical material is scarce. We may deliberately oversample it when training the tokenizer so that common Armenian technical byte/character patterns receive useful vocabulary entries.
+
+That does **not** imply we should use the same oversampling rate for pretraining exposure. Lecture 7 will choose that mixture separately.
+
+#### 12.2 Why this matters for multilingual tokenizers
+
+Suppose raw corpus sizes are:
+
+```text
+English                  80%
+Armenian                 15%
+Code                       5%
+```
+
+A tokenizer learned strictly in proportion to raw bytes may allocate most high-level pieces to English because English supplies most pair counts or candidate-piece evidence.
+
+A tokenizer-training policy could instead sample something like:
+
+```text
+English                  50%
+Armenian                 40%
+Code                     10%
+```
+
+for tokenizer fitting only.
+
+This is a representation decision, not yet a model-training mixture recommendation.
+
+---
+
+## Part VI — Audit a tokenizer before freezing it
+
+### 13. What should a tokenizer audit measure?
+
+Never report only:
+
+```text
+vocab_size = 32000
+```
+
+A tokenizer audit should characterize how the tokenizer behaves on held-out data from the slices that matter to the project.
+
+At minimum, report several complementary diagnostics.
+
+#### 13.1 Model tokens per UTF-8 byte
+
+For document $x$:
+
+$$
+r_{\mathrm{tok/byte}}(x)
+=
+\frac{|\phi(x)|}
+{\operatorname{bytes}(x)}.
+$$
+
+This is easy to compute and language-independent at the denominator level.
+
+But it is not a linguistic fairness metric. UTF-8 uses different byte lengths for different scripts.
+
+#### 13.2 Fertility relative to a diagnostic word segmentation
+
+If a separate diagnostic tokenizer defines $W(x)$ word-like units:
+
+$$
+\operatorname{fertility}(x)
+=
+\frac{|\phi(x)|}{|W(x)|}.
+$$
+
+This can be intuitive, but the denominator is itself language- and policy-dependent.
+
+Name the diagnostic segmentation.
+
+#### 13.3 Characters or code points per model token
+
+Another view is:
+
+$$
+r_{\mathrm{char/token}}(x)
+=
+\frac{\text{Unicode code points in }x}
+{|\phi(x)|}.
+$$
+
+Again, this is descriptive rather than a standalone optimization objective.
+
+#### 13.4 Length distributions, not only means
+
+Report at least:
+
+```text
+median
+p90
+p95
+p99
+maximum or capped maximum
+```
+
+A tokenizer can have an acceptable mean while producing extreme sequence expansion for rare scripts, OCR artifacts, mathematical notation, or code.
+
+#### 13.5 Unknown or byte-fallback behavior
+
+If the tokenizer can produce `<unk>`, measure how often and where.
+
+If byte fallback is used, unknown characters can be decomposed into byte pieces rather than mapped to a single unknown symbol. Current SentencePiece documentation explicitly exposes `byte_fallback` for this purpose. See [SentencePiece options](https://github.com/google/sentencepiece/blob/master/doc/options.md).
+
+Byte fallback removes one kind of information loss but does **not** guarantee compact representation. A rare script or symbol can still expand into several byte tokens.
+
+#### 13.6 Structure-sensitive fixtures
+
+Keep a small regression suite containing:
+
+* Armenian prose;
+* English prose;
+* Armenian/English mixed text;
+* code indentation;
+* long numbers;
+* dates;
+* URLs;
+* equations;
+* Unicode combining marks;
+* emoji;
+* special-token-looking strings.
+
+These are correctness fixtures. They do not estimate population prevalence.
+
+---
+
+### 14. A concrete multilingual audit table
+
+Suppose two candidate tokenizers are evaluated on the same held-out audit set.
+
+Constructed example:
+
+| Slice              | Tokenizer A tokens/word | Tokenizer B tokens/word | A p95 doc length | B p95 doc length |
+| ------------------ | ----------------------: | ----------------------: | ---------------: | ---------------: |
+| English general    |                    1.42 |                    1.55 |            2,800 |            3,020 |
+| Armenian general   |                    2.75 |                    2.20 |            5,100 |            4,180 |
+| Armenian technical |                    3.40 |                    2.45 |            6,300 |            4,600 |
+| Code               |                    1.90 |                    2.05 |            4,200 |            4,450 |
+
+Tokenizer A is more compact on English and code. Tokenizer B is much more compact on Armenian, especially technical Armenian.
+
+Which should we choose?
+
+The table is not enough to answer universally. We need to consider:
+
+* project priorities;
+* model parameter budget;
+* vocabulary sizes;
+* behavior on numbers/code/special fixtures;
+* unknown/fallback behavior;
+* context-length constraints;
+* eventual model experiment.
+
+The important methodological point is that the tradeoff is now **visible** rather than hidden inside one global average.
+
+---
+
+#### 14.1 A measured released-tokenizer fixture audit {#released-tokenizer-audit}
+
+The earlier table illustrates population-level audit statistics. The following table instead contains **actual local measurements** using the pinned released artifacts. Each cell counts the text alone, without automatically inserted boundary tokens, a chat template, or media processing.
+
+| Exact fixture | Qwen3.8 | DeepSeek-V4 | GLM-5.3 | Kimi K3 |
+| --- | ---: | ---: | ---: | ---: |
+| `The laboratory studies physics.` | 5 | 5 | 5 | 5 |
+| `实验室研究物理。` | 4 | 4 | 4 | 4 |
+| `Լաբորատորիան ուսումնասիրում է ֆիզիկա։` | 27 | 23 | 37 | 23 |
+| `Երևանում բացվեց նոր գիտական կենտրոն։` | 24 | 20 | 36 | 20 |
+| Python fixture below | 11 | 10 | 10 | 10 |
+
+The Python fixture is exactly the following string, including four indentation spaces and a final newline:
+
+```python
+"def square(x):\n    return x * x\n"
+```
+
+All five fixtures round-trip to their original bytes in all four tokenizers. The accent fixture in Section 9.1 deliberately exposes a different normalization contract. **A small correctness fixture set is not a language benchmark.** These sentences are not a representative sample, and equal counts do not imply equal token boundaries, IDs, learned representations, or model quality. In particular, the largest vocabulary here does not give the shortest encoding of either Armenian sentence.
+
+Reproduce the inspection without downloading model weights:
+
+```bash
+uv venv .tools/lecture6-audit-env
+uv pip install --python .tools/lecture6-audit-env/bin/python \
+  -r scripts/requirements-lecture6-audit.txt
+.tools/lecture6-audit-env/bin/python scripts/audit-lecture6-tokenizers.py --check
+```
+
+The first run downloads tokenizer/configuration artifacts into `.tools/lecture6-tokenizers`. The checked-in `content/fixtures/lecture6-tokenizer-audit.json` records repository revisions, file SHA-256 digests, library versions, exact input strings, token IDs, decoded outputs, and counts. Kimi's regex is inspected as literal data; its remote Python class is not imported or executed. The audit reproduces its short ordinary-text encoding path and probes structural-marker versus literal-content encoding. It does not execute the full chat formatter or multimodal processor.
+
+For these JSON tokenizers, `add_special_tokens=False` suppresses automatic insertion; it does **not** disable recognition of added-token spellings inside input text. Kimi's ordinary-text path is selected explicitly. Audit reserved-looking strings separately under the actual application policy, rather than assuming similarly named API flags have identical semantics.
+
+---
+
+### 15. A tokenizer can create apparent data-mixture differences
+
+Suppose two sources each contain exactly 1 GB of normalized text.
+
+Tokenizer behavior:
+
+```text
+Source A -> 250M model tokens
+Source B -> 500M model tokens
+```
+
+If training samples uniformly from a concatenated token stream, source B offers twice as many token positions.
+
+If the data mixture is specified in documents, long-tokenized documents also consume more compute per record.
+
+So the tokenizer changes how byte/document-level corpus composition maps into **model-token exposure**.
+
+This is one reason Lecture 7 must define mixture weights at a named stage and then measure realized target tokens after sequence construction.
+
+#### Stop and reason
+
+A corpus report says Armenian is 20% of bytes. After tokenization it is 31% of model tokens.
+
+**Question:** Which is the “true percentage”?
+
+Neither is uniquely true. They describe different units. The training system cares about model-token positions and loss-bearing targets; corpus analysis may care about bytes, documents, or families. Report the unit.
+
+---
+
+### 16. Freeze the tokenizer before the main mixture experiment
+
+For the main from-scratch class project, changing the tokenizer while changing the mixture makes attribution difficult.
+
+Suppose run A uses:
+
+```text
+Tokenizer 1 + Mixture 1
+```
+
+and run B uses:
+
+```text
+Tokenizer 2 + Mixture 2.
+```
+
+A model difference cannot be attributed cleanly to the mixture.
+
+Therefore, after the tokenizer audit:
+
+1. choose one tokenizer policy;
+2. freeze its model artifact and configuration;
+3. regenerate token counts for every source;
+4. only then begin Lecture 7's mixture experiments.
+
+This is experimental hygiene, not a claim that tokenizer and mixture should never be co-designed in research.
+
+---
+
+#### 16.1 Continuing a checkpoint is not training a new tokenizer {#checkpoint-tokenizer-contract}
+
+For a from-scratch model, fitting and choosing a tokenizer is a legitimate experiment. For continued pretraining or fine-tuning of an existing checkpoint, the starting point is its **existing mapping**. Embedding row $i$ and output row $i$ were trained for a particular ID's meaning. Replacing the tokenizer with one that assigns the same integer to a different piece silently changes both the input representation and the prediction task.
+
+Appending a few IDs is different from replacing the vocabulary. New IDs need compatible embedding/output rows, initialization, serialization updates, and training examples; resizing alone does not teach their meanings. An extensive vocabulary migration is a separate modeling experiment with adaptation and evaluation, not an interchangeable preprocessing option. Fewer Armenian tokens under another release do not authorize substituting that tokenizer into a Qwen checkpoint.
+
+Pin this contract for continuation and serving:
+
+```text
+checkpoint revision + weight configuration
+tokenizer model + ranks/merges + normalization + added IDs
+chat template + reasoning/tool options + generation stop rules
+processor configuration, when media is supported
+library versions + regression fixture IDs
+```
+
+Use immutable revisions rather than a moving `main` reference. Do not treat an enormous `model_max_length` value in a tokenizer configuration as a tested context limit: some are library sentinels. The model configuration, processor/position policy, serving implementation, and tested operating envelope must agree.
+
+---
+
+## Part VII — Additional tokens and multimodality {#serializing-content}
+
+### 17. Structured corpus records are not automatically model-visible text
+
+Lecture 4 preserved blocks such as:
+
+```text
+heading
+paragraph
+code
+question
+answer
+```
+
+Lecture 5 preserved sidecar metadata such as:
+
+```text
+source_id
+family_id
+origin
+quality audit
+privacy decisions
+dedup cluster
+rights evidence
+```
+
+The serializer decides what becomes model-visible.
+
+Do **not** automatically prepend every metadata field to the text.
+
+For example, this sidecar is useful for engineering:
+
+```json
+{
+  "source": "armenian_university",
+  "quality_score": 0.92,
+  "dedup_cluster_size": 14,
+  "privacy_review": "clear"
+}
+```
+
+but training the model on the literal string
+
+```text
+quality_score=0.92 privacy_review=clear
+```
+
+creates an unintended prediction target and possibly a shortcut.
+
+Metadata used for sampling and auditing can remain outside the model input.
+
+---
+
+### 18. Design one serialization policy per content type
+
+A simple prose serializer might be:
+
+```text
+<title>\n\n<paragraph 1>\n\n<paragraph 2>...
+```
+
+A code serializer might preserve file text exactly after a controlled header policy.
+
+A translated problem record might serialize:
+
+```text
+Question:\n...
+\nSolution:\n...
+```
+
+if the project intentionally wants that structure in pretraining.
+
+The labels `Question:` and `Solution:` then become model-visible tokens and should be deliberate.
+
+A serializer should have a version:
+
+```json
+{
+  "serializer": "serialize-v2",
+  "rules": {
+    "prose": "title_then_blocks",
+    "problem_solution": "question_solution_labels",
+    "code": "raw_file_text"
+  }
+}
+```
+
+Changing serialization can change token counts and model behavior even when the underlying corpus records are unchanged.
+
+---
+
+### 19. Special tokens are control symbols, not magic strings
+
+Suppose the tokenizer reserves IDs:
+
+```text
+BOS = 0
+EOS = 1
+PAD = 2
+```
+
+The raw text may literally contain the characters
+
+```text
+<EOS>
+```
+
+That does **not** necessarily mean the encoder should emit reserved ID `1`.
+
+Keep separate APIs for:
+
+```text
+encode_raw_text("<EOS>")
+```
+
+and
+
+```text
+append_special(EOS_ID)
+```
+
+Otherwise a document can accidentally inject control tokens merely by containing a special-looking string.
+
+SentencePiece distinguishes control symbols and user-defined symbols in its model representation; the broader engineering lesson is to define how reserved symbols interact with raw text. See the [SentencePiece special-symbol documentation](https://github.com/google/sentencepiece/blob/master/doc/special_symbols.md).
+
+#### 19.1 Special tokens consume vocabulary capacity
+
+Reserved symbols occupy IDs. If a fixed vocabulary budget is 32,000 and hundreds of IDs are reserved, fewer entries remain for ordinary learned pieces.
+
+The count is small in many systems, but it is part of the vocabulary specification.
+
+---
+
+#### 19.2 Chat, reasoning, and tools are serialized contracts {#chat-reasoning-contract}
+
+A modern chat model still consumes a sequence. Roles, turn boundaries, reasoning fields, and tool schemas become part of that sequence through its released **chat template**. Copying the same message dictionaries between models does not make the serialized inputs identical.
+
+For example, Qwen3.8's template uses `<|im_start|>` and `<|im_end|>` around messages. Kimi K3 uses an XML-like serialized format, XTML, with `<|open|>`, `<|close|>`, `<|sep|>`, and `<|end_of_msg|>` markers. Inspect the pinned [Qwen template](https://huggingface.co/Qwen/Qwen3.8-27B/blob/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/chat_template.jinja) and [Kimi encoder](https://huggingface.co/moonshotai/Kimi-K3/blob/f831ab66814297da540d832a5235f8e904f29d06/encoding_k3.py); do not manufacture a universal reasoning wrapper.
+
+Use the same three messages to compare the formats: system content `Be concise.`, user content `Hello`, and assistant content `Hi.`. The following are short **text-format fixtures**, not model-generated replies. In the displays, `\n` stands for a newline byte sequence; blank rows only separate fragments for readability. Joining the original fragments recovers each serialized sequence. The pinned source digests, options, and original strings are recorded in `content/fixtures/lecture6-chat-controls.json`.
+
+#### Qwen: message borders and roles
+
+```text
+<|im_start|>system\nBe concise.<|im_end|>\n
+
+<|im_start|>user\nHello<|im_end|>\n
+
+<|im_start|>assistant\n<think>\n\n</think>\n\nHi.<|im_end|>\n
+```
+
+This is a sandboxed local render of the pinned Qwen template with `enable_thinking=False`, `preserve_thinking=False`, and `add_generation_prompt=False`. This assistant branch still includes an empty reasoning span. `<|im_start|>` and `<|im_end|>` are boundary IDs; `system`, `user`, and `assistant` are role names in the header text. The system instruction is the message body, not a universal system-prompt token.
+
+#### DeepSeek V4 chat format {#deepseek-chat-template}
+
+```text
+<｜begin▁of▁sentence｜>Be concise.
+
+<｜User｜>Hello
+
+<｜Assistant｜></think>Hi.<｜end▁of▁sentence｜>
+```
+
+The [pinned DeepSeek V4 encoder](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/b5968e9190ef611bbf34a7229255be88a0e937c1/encoding/encoding_dsv4.py) places system text after sequence BOS, prefixes the user and assistant turns, and ends a completed assistant turn with its sentence EOS. Here `Be concise.` is the system prompt; this simple format does not put a separate system-role marker before it. BOS and EOS are atomic control tokens, not XML elements requiring matched opening and closing tags.
+
+The publisher's [Basic Chat format](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/raw/b5968e9190ef611bbf34a7229255be88a0e937c1/encoding/README.md) explicitly puts `</think>` immediately after the assistant marker in `thinking_mode="chat"`, selecting a direct answer without an earlier `<think>` in this mode. Thinking mode instead opens a reasoning region. The displayed Unicode bars and underscore-like separators belong to the actual marker spellings. This fixture reconstructs the inspected simple text branch from literal constants, without importing or executing publisher Python.
+
+#### GLM 5.3 chat format {#glm-chat-template}
+
+```text
+[gMASK]<sop>
+
+<|system|>Reasoning Effort: Max
+
+<|system|>Be concise.
+
+<|user|>Hello
+
+<|assistant|><think></think>Hi.
+```
+
+This is a sandboxed local render of the pinned GLM template. The `[gMASK]<sop>` prefix and explicit role markers differ from Qwen's borders. Its template also inserts a `Reasoning Effort: Max` system block for these options. The rendered fixture does not append a closing token after `Hi.`; generation stopping is a separate setting. Passing Qwen's option names does not turn GLM into the same interface.
+
+#### Kimi K3 chat format {#kimi-chat-template}
+
+```text
+<|open|>message role="system"<|sep|>Be concise.<|close|>message<|sep|><|end_of_msg|>
+
+<|open|>message role="user"<|sep|>Hello<|close|>message<|sep|><|end_of_msg|>
+
+<|open|>message role="assistant"<|sep|><|open|>think<|sep|><|close|>think<|sep|><|open|>response<|sep|>Hi.<|close|>response<|sep|><|close|>message<|sep|><|end_of_msg|>
+```
+
+Kimi's inspected simple text branch uses XTML opening, closing, separator, and end-of-message markers. Tag names such as `message`, `think`, and `response`, plus role attributes, are text between structural markers. The assistant has separate reasoning and response regions. This fixture is locally reconstructed from the reviewed literal markers and text branch; it is not a run of publisher Python, a hosted API, or a media processor. Preserve the content/control segmentation when encoding, rather than joining strings and reinterpreting literal user text as control.
+
+These completed short conversation fixtures are not open assistant-generation prompts. Reasoning settings can add system instructions and assistant prefixes. In the inspected Qwen template, reasoning effort accepts `low`, `medium`, or `xhigh`, with `xhigh` as the default. The [GLM-5.3 template](https://huggingface.co/zai-org/GLM-5.3/blob/c5087a76d148760811ffbdedfe6ff9f194e46e38/chat_template.jinja) instead resolves effort to `low`, `high`, or `max`, defaulting to `max`; its history-clearing option is `clear_thinking`. The [Kimi K3 model interface](https://huggingface.co/moonshotai/Kimi-K3/tree/f831ab66814297da540d832a5235f8e904f29d06) requires preserved assistant reasoning and tool-call fields in subsequent API turns, and its public API always enables thinking. Option names and defaults are not interchangeable across checkpoints or between a local wrapper and a hosted API.
+
+An added token is not necessarily flagged `special`. In the inspected Qwen configuration, `<think>` is a single added ID but is marked `special: false`. Consequently, “one vocabulary ID,” “control meaning in a template,” and “removed by `skip_special_tokens`” are three different properties. Stop rules may also name a turn-ending ID different from the tokenizer's nominal EOS. Inspect generation settings rather than assuming one spelling settles all boundary behavior.
+
+Kimi K3's encoder retains a distinction between structural markers and user/tool content. The former can use reserved IDs; the latter is encoded as ordinary text even when it contains a reserved-looking spelling. The local audit gives `<|end_of_msg|>` ID `163586` in the structural branch, but does not use that ID when the same string is literal content. This distinction is lost if the segments are joined and naively re-tokenized with all reserved spellings enabled.
+
+When working through the model's supported tokenizer API, a **training** pattern that preserves its own encoding path is:
+
+```python
+# tokenizer is the checkpoint's compatible, pinned tokenizer
+ids = tokenizer.apply_chat_template(
+    messages, tokenize=True, add_generation_prompt=False
+)
+```
+
+For conventional Jinja templates, the [Hugging Face chat-template guide](https://huggingface.co/docs/transformers/en/chat_templating) explains why adding special tokens again after rendering can duplicate template-supplied boundaries. If rendering and tokenization are separate, disable automatic boundary insertion in that second step. For Kimi K3, use its direct segment-aware tokenization rather than assume that a rendered string carries the same content/control provenance. At inference, `add_generation_prompt=True` may append an unfinished assistant prefix; that is not a substitute for the complete assistant target used in training.
+
+For assistant-only fine-tuning, user text, system instructions, and tool results can be visible context while their prediction losses are masked. Specify whether reasoning spans, final answers, tool-call arguments, and turn-ending markers are scored. The template does not automatically define the loss mask. Reasoning text and tool schemas also consume actual context positions; count the fully serialized IDs, not only the user's natural-language question.
+
+#### Reasoning delimiters are part of the format {#reasoning-format-controls}
+
+The shared spelling `<think>…</think>` in the inspected Qwen, DeepSeek, and GLM formats is not a universal protocol. Kimi instead uses XTML: `<|open|>think<|sep|>` opens the region and `<|close|>think<|sep|>` closes it. In that sequence, the structural markers and the ordinary tag name are separate units. Even in Qwen, an added reasoning delimiter can have `special: false`; “a delimiter,” “one ID,” and “a token removed during special-token skipping” are different properties.
+
+Reasoning-channel boundaries organize an assistant message. They do not prove that the text inside is correct or determine whether that span should receive training loss. Keep the checkpoint's reasoning settings, history-retention rules, and stopping behavior with its template.
+
+#### Tool-call and result formats {#tool-call-formats}
+
+A tool call is structured assistant output that requests an operation from the surrounding application. The application validates and executes the request, then supplies a result for a later assistant step. The delimiters do not themselves execute a function or make the returned content authoritative.
+
+The four inspected formats use different structures. These are **fragments**, not complete prompts or promises that each spelling occupies one reserved ID:
+
+| Model | Call structure | Result structure |
+| --- | --- | --- |
+| Qwen3.8 | `<tool_call>` containing `<function=...>` and `<parameter=...>` | User-side `<tool_response>` block |
+| DeepSeek-V4 | `<｜DSML｜tool_calls>` containing `<｜DSML｜invoke ...>` and parameter markup | `<｜User｜>` containing `<tool_result>` |
+| GLM-5.3 | `<tool_call>` with function text and `<arg_key>` / `<arg_value>` | `<|observation|>` with `<tool_response>` |
+| Kimi K3 | XTML `tools`, `call`, and typed `argument` regions | XTML `message role="tool"` with tool name and index |
+
+DeepSeek V4's [DSML formatter](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/b5968e9190ef611bbf34a7229255be88a0e937c1/encoding/encoding_dsv4.py) is different from older DeepSeek tool-call marker families. Qwen's [template](https://huggingface.co/Qwen/Qwen3.8-27B/blob/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/chat_template.jinja), GLM's [template](https://huggingface.co/zai-org/GLM-5.3/blob/c5087a76d148760811ffbdedfe6ff9f194e46e38/chat_template.jinja), and Kimi's [encoder](https://huggingface.co/moonshotai/Kimi-K3/blob/f831ab66814297da540d832a5235f8e904f29d06/encoding_k3.py) define their respective argument formats. Real use also requires the declared tool schema, consistent call/result association, and the model's supported parsing path.
+
+#### A tool call and its returned result {#tool-roundtrip-example}
+
+For a minimal Qwen fixture, let an assistant request a zero-argument function named `clock`. The assistant's call body is:
+
+```text
+<tool_call>
+<function=clock>
+</function>
+</tool_call>
+```
+
+An application would execute that request and return a tool result. For this **constructed fixture**, assign `12:00` as the result; no tool is executed:
+
+```text
+<tool_response>
+12:00
+</tool_response>
+```
+
+The code blocks show body fragments; outer message borders, an empty reasoning span, and the tool schema are omitted. The pinned Qwen template wraps this result in a user-side message. A following assistant turn can condition on the returned value. The local chat-format audit renders this tiny call/result case and preserves the complete strings, including the outer boundaries.
+
+#### 19.3 Multimodal tokens need a processor, not just a text count {#multimodal-token-contract}
+
+![Text IDs and image-position markers lead to text embeddings; image pixels pass through preprocessing and a learned vision encoder, and visual features fill the image positions before the language model.](lecture-6/image-processing-path.svg)
+
+Separate **image preprocessing** from **vision encoding**. A processor converts an input image into the pixel tensors and grid metadata expected by the model; a learned vision component produces visual feature vectors. The model combines those features with its text representation at the indicated image positions. This diagram illustrates the image-enabled Qwen/Kimi paths, not a fixed patch count or a claim that every chat model has a vision encoder.
+
+Qwen3.8-27B and Kimi K3 supply media-aware processing alongside text tokenization. A printed image marker is a placeholder in the serialization, **not the image's complete numerical representation**. A compatible processor can decode and resize media, form patches or crops, expand placeholders, and return visual tensors and metadata alongside `input_ids`. A video-capable processing path may additionally sample frames and attach temporal metadata; verify the supported media types in the exact implementation rather than assume every processor handles every modality. Use the released [Qwen model/processor interface](https://huggingface.co/Qwen/Qwen3.8-27B) and [Kimi K3 processor](https://huggingface.co/moonshotai/Kimi-K3/blob/f831ab66814297da540d832a5235f8e904f29d06/kimi_k3_processor.py) as concrete references. The inspected Kimi processor returns fields including `pixel_values` and `grid_thws` and routes structured messages through its segment-aware text encoder.
+
+```text
+messages containing text + media
+    -> compatible template and media processor
+    -> text IDs + expanded media positions + visual tensors/metadata
+    -> model inputs under the checkpoint's position/mask policy
+```
+
+The [multimodal chat-template documentation](https://huggingface.co/docs/transformers/en/chat_templating_multimodal) distinguishes a processor from a text-only tokenizer. Track text tokens, actual processed sequence positions, media processing settings, and loss-bearing targets separately. Image resolution/crops and video frame policies can change cost even when the text prompt is unchanged. Never use the count of a literal `<image>` string as the multimodal budget, and never assume media-placeholder IDs should receive ordinary text-generation loss.
+
+#### Big picture: images become embeddings {#multimodal-big-picture}
+
+![An image is resized and split into patches, then a vision encoder and projector produce visual embeddings. A text prompt follows a tokenizer and embedding lookup to produce text embeddings. Both kinds of vectors join an ordered input sequence for the language model.](lecture-6/multimodal-big-picture.svg)
+
+A common image–text architecture has two input paths. Image preprocessing prepares pixels or patches for a learned **vision encoder**; a projector or merger adapts its features to the language model's input width. Text follows the tokenizer's ID mapping and an embedding lookup. The resulting visual and text embeddings occupy positions in the same ordered input sequence, with the checkpoint's position and attention rules. The language model can then generate a response conditioned on both the image and the prompt. It does not need an intermediate text caption of the image.
+
+The [LLaVA architecture](https://llava-vl.github.io/) provides a concrete encoder–projector–language-model example. This is a common pattern, not a universal multimodal interface: other models may use cross-attention, different feature mergers, or modality-specific pathways. The vector columns in the diagram are schematic, not measured values or a fixed number of image tokens.
+
+---
+
+## Part VIII — Next-token targets {#next-token-targets}
+
+### 20. A causal model predicts the next token
+
+Suppose one serialized document becomes
+
+$$
+s=(s_0,s_1,\ldots,s_L).
+$$
+
+For ordinary next-token prediction, construct:
+
+$$
+x=(s_0,s_1,\ldots,s_{L-1}),
+$$
+
+$$
+y=(s_1,s_2,\ldots,s_L).
+$$
+
+At input position $t$, the model predicts target $y_t=s_{t+1}$.
+
+If the serialized document is
+
+```text
+[BOS, a, b, EOS]
+```
+
+then
+
+```text
+input : [BOS, a, b]
+target: [a,   b, EOS]
+```
+
+The predictions are:
+
+```text
+BOS -> a
+a   -> b
+b   -> EOS
+```
+
+#### Causal attention hides the future {#causal-attention-example}
+
+![A triangular attention matrix allows each query to read itself and earlier inputs. At input b in BOS a b c d, only BOS a b are visible while c is the next-token target.](lecture-6/causal-attention.svg)
+
+This is an **autoregressive** objective: predict the next token from the allowed prefix, rather than reconstruct the same visible token. The input at position $i$ may read keys at positions $j\le i$. In the example, the representation at `b` can use `BOS, a, b` to predict `c`; it cannot read the input `c` or `d`. Training computes these predictions in parallel, but causal attention preserves the past-only constraint.
+
+#### 20.1 Shift labels exactly once
+
+Some model APIs accept a sequence and internally shift labels. Others expect already-shifted `(input, target)` arrays.
+
+Possible bugs:
+
+**No shift**
+
+```text
+input : [BOS, a, b]
+target: [BOS, a, b]
+```
+
+The model is rewarded for predicting the token it already sees.
+
+**Double shift**
+
+```text
+input : [BOS, a]
+target: [b, EOS]
+```
+
+The intended immediate-next-token predictions were skipped.
+
+Therefore document the model API and test a toy sequence where the expected pairs are obvious.
+
+---
+
+### 21. Write the loss with its mask and denominator
+
+For batch index $b$ and position $t$, let
+
+$$
+\ell_{b,t}
+= -\log p_\theta(y_{b,t}\mid \text{allowed context}).
+$$
+
+Let
+
+$$
+m_{b,t}\in\{0,1\}
+$$
+
+indicate whether this target contributes to the objective.
+
+Then
+
+$$
+\mathcal L
+=
+\frac{
+\sum_{b,t} m_{b,t}\ell_{b,t}
+}{
+\sum_{b,t} m_{b,t}
+}.
+$$
+
+The denominator is the number of **loss-bearing targets**, not the physical tensor size.
+
+Padding positions and optional context-only positions should not silently change the scale of the loss.
+
+---
+
+## Part IX — Document boundaries and packing semantics {#packing-and-context}
+
+Start from the next-token pairs in Section 20, then choose how to place them into physical blocks. The independent-document examples here shift each document once before packing. Sequence length $L$ is the number of input positions in one block; batch size $B$ is the number of such blocks processed together, so an input batch has shape `[B, L]`.
+
+### 22. Two legitimate document-boundary objectives
+
+Suppose we have two documents:
+
+```text
+A = [BOS, a, b, EOS]
+B = [BOS, c, EOS]
+```
+
+There are at least two defensible training objectives.
+
+#### Policy A — Continuous token stream
+
+Concatenate documents:
+
+```text
+[BOS, a, b, EOS, BOS, c, EOS]
+```
+
+and apply an ordinary causal mask over the entire block.
+
+Then later positions in document B can attend to document A, and the objective includes whatever boundary transitions the serialization produces.
+
+This is common in language-model training pipelines because it is simple and efficient.
+
+#### Policy B — Independent documents inside one physical block
+
+Create next-token pairs within each document separately:
+
+```text
+A input : [BOS, a, b]
+A target: [a,   b, EOS]
+
+B input : [BOS, c]
+B target: [c,   EOS]
+```
+
+Then pack them into one physical block while preventing cross-document attention:
+
+```text
+input    = [BOS, a, b, BOS, c]
+target   = [a,   b, EOS, c, EOS]
+segment  = [0,   0, 0,   1, 1]
+position = [0,   1, 2,   0, 1]
+```
+
+No target asks the model to predict B's first token from A's final context.
+
+Neither policy is universally “correct.” They define different conditioning assumptions.
+
+The key requirement is:
+
+> **Do not accidentally claim one while implementing the other.**
+
+---
+
+### 23. EOS does not isolate documents
+
+An EOS token is a learned symbol.
+
+It can teach the model that a document ended, but it does not change the attention operator.
+
+If ordinary causal attention is used, a token after EOS can still attend to tokens before EOS.
+
+Therefore:
+
+```text
+EOS marker ≠ attention barrier
+```
+
+Likewise:
+
+```text
+position reset ≠ attention barrier
+loss mask       ≠ attention barrier
+```
+
+These mechanisms solve different problems.
+
+#### Stop and reason
+
+You pack two documents into one sequence, insert EOS between them, reset the second document's positions to zero, and use an ordinary triangular causal mask.
+
+**Question:** Can document B attend to document A?
+
+Yes. Nothing in EOS or the position reset blocks attention to earlier keys.
+
+---
+
+## Part X — Attention, loss, padding, and positions are different masks/policies
+
+### 24. Block-diagonal causal attention for independent documents
+
+Let
+
+$$
+g_i
+$$
+
+be the segment/document ID at packed position $i$.
+
+For real input positions, define
+
+$$
+A_{ij}
+=
+\mathbb{1}[j\le i]
+\mathbb{1}[g_i=g_j].
+$$
+
+Position $i$ may attend to $j$ only if:
+
+1. $j$ is not in the future; and
+2. both positions belong to the same document segment.
+
+For segments
+
+```text
+[0,0,0,1,1]
+```
+
+the Boolean attention matrix is conceptually:
+
+```text
+        key →
+query   0 1 2 3 4
+  0     1 0 0 0 0
+  1     1 1 0 0 0
+  2     1 1 1 0 0
+  3     0 0 0 1 0
+  4     0 0 0 1 1
+```
+
+This is causal **and** document-isolated.
+
+#### From a causal triangle to isolated documents {#packed-document-attention}
+
+![Ordinary causal attention lets document B read earlier document A. Adding a same-document condition leaves two separate triangular blocks and blocks cross-document reads.](lecture-6/packed-document-attention.svg)
+
+Use the same six real input positions throughout the mask examples: `A = [BOS, a, b]` and `B = [BOS, c, d]`, with targets `[a, b, EOS]` and `[c, d, EOS]`. Under ordinary causal attention, all three B queries can read A's three keys. Under the independent-document policy, those nine cross-document connections are blocked as well as all future connections. EOS and position resets do not create this boundary. Efficient implementations can use sequence-boundary metadata with variable-length attention kernels rather than materializing a dense square mask; see NVIDIA's [packed-sequence implementation](https://docs.nvidia.com/nemo/megatron-bridge/latest/training/packed-sequences.html).
+
+#### 24.1 Be careful with library mask conventions
+
+Mask conventions differ across APIs.
+
+As of current PyTorch documentation, `torch.nn.functional.scaled_dot_product_attention()` interprets Boolean `True` in `attn_mask` as **allowed to participate** in attention. PyTorch's `MultiheadAttention`/some other mask interfaces use the opposite Boolean convention for certain masks. The current SDPA documentation explicitly warns about this difference. See [PyTorch scaled_dot_product_attention](https://docs.pytorch.org/docs/main/generated/torch.nn.functional.scaled_dot_product_attention.html).
+
+For a custom block-diagonal causal mask in SDPA, verify the exact API/version behavior rather than assuming `True` means “masked.”
+
+The same documentation also notes that SDPA applies dropout according to `dropout_p`; evaluation code should pass `0.0` when dropout is not desired.
+
+---
+
+### 25. The loss mask answers a different question
+
+An attention mask asks:
+
+> Which input positions can influence this query position?
+
+A loss mask asks:
+
+> Which predictions count toward the optimization objective?
+
+A token can be visible as context but have its own prediction ignored.
+
+For example, an overlapping long-document window can contain a prefix only to provide context. Those prefix positions may be visible to later predictions while their own losses are masked out.
+
+Therefore:
+
+```text
+loss_mask[t] = 0
+```
+
+**does not mean** position $t$ is invisible to other positions.
+
+#### Loss mask: choose which targets count {#packing-loss-mask}
+
+![Aligned input, next-token target, and loss-mask rows for two documents in eight slots. Targets a and c and the two padding slots have zero loss; b, d, and both EOS targets are scored.](lecture-6/packing-loss-mask.svg)
+
+For an illustrative context/answer objective, make `a` and `c` context-only targets. The packed rows are:
+
+```text
+input:     [BOS, a, b, BOS, c, d, PAD, PAD]
+target:    [a,   b, EOS, c, d, EOS, PAD, PAD]
+loss_mask: [0,   1, 1,   0, 1, 1,   0,   0]
+```
+
+The mask is aligned with the **already-shifted target**, not with a token's role in the input row. For example, input `a` is available to predict scored target `b`, even though predicting `a` was not scored. Four targets contribute to this example's loss. For ordinary full-document pretraining, all six real targets could instead be scored; the selected supervision policy does not alter attention permissions.
+
+---
+
+### 26. Padding has its own semantics
+
+Suppose physical block length is 8 but only five real inputs are present:
+
+```text
+input = [BOS, a, b, BOS, c, PAD, PAD, PAD]
+```
+
+Real queries should not attend to padding keys.
+
+Padding targets should not contribute to the loss.
+
+Padding query rows themselves are ignored by the loss, but attention implementations still need numerically defined behavior. A row with every key disallowed can produce undefined softmax behavior in a naive implementation.
+
+One safe engineering convention is to give ignored padding queries at least one allowed padding key while ensuring real queries cannot read padding. Another is to use an implementation whose masking semantics explicitly handle fully masked rows.
+
+Whatever convention is chosen, test it.
+
+#### Padding mask: distinguish real inputs from storage {#packing-padding-mask}
+
+![Six real input positions followed by two PAD slots. A validity row is one for real inputs and zero for padding; padding keys are excluded from real queries and padding targets are unscored.](lecture-6/packing-padding-mask.svg)
+
+The shared eight-slot fixture has validity flags `[1, 1, 1, 1, 1, 1, 0, 0]`. These are conceptual **one means real** flags, not a promise about a particular API's Boolean convention. Combine validity with the causal and same-document conditions for real queries. Also ignore the targets at padding slots; setting a loss to zero alone would not hide padding keys. Padding-query outputs are unused, and the implementation must still handle those rows without producing NaNs.
+
+#### 26.1 A strong padding-invariance test
+
+For one real example:
+
+1. run it without padding;
+2. run it inside a larger padded block;
+3. compare logits at all real positions.
+
+Under equivalent attention/position semantics, they should agree to numerical tolerance.
+
+Then change padding-token embeddings/IDs and confirm real-position logits do not change.
+
+---
+
+## Part XI — Position IDs
+
+### 27. Position reset is a modeling choice, not a boundary mechanism
+
+In independent-document packing, we may use:
+
+```text
+segment  = [0,0,0,1,1]
+position = [0,1,2,0,1]
+```
+
+or keep monotonic physical positions:
+
+```text
+position = [0,1,2,3,4].
+```
+
+These policies can affect models using learned absolute positions, rotary positions, or other position-dependent mechanisms.
+
+Resetting positions can make each packed document behave more like an independently presented sequence. Monotonic positions expose documents to arbitrary offsets determined by previous packed lengths.
+
+But position resets do not block attention. If document isolation is intended, enforce it through the attention structure.
+
+For this course's independent-document teaching pipeline, we will reset positions per segment and store that policy in the manifest.
+
+#### Position IDs: assign coordinates within each document {#packing-position-ids}
+
+![The shared input row is aligned with segment IDs A A A B B B and position IDs 0 1 2 0 1 2. The two padded slots use ignored zero coordinates.](lecture-6/packing-position-ids.svg)
+
+For the padded eight-slot fixture, use position IDs `[0, 1, 2, 0, 1, 2, 0, 0]`. The second document restarts at zero; the final two zeros are filler coordinates for ignored padding slots, not new documents. Position IDs describe coordinates used by the model's positional mechanism. They do not decide visibility, exclude padding, or select loss targets: those remain separate policies.
+
+Lecture 8 will return to the architecture/system consequences of positional methods and efficient attention kernels.
+
+---
+
+## Part XII — Long documents
+
+### 28. A finite context forces another policy decision
+
+Let the model context length be
+
+$$
+L_{\max}.
+$$
+
+A serialized document can contain more than $L_{\max}+1$ tokens once targets are considered.
+
+Possible strategies include:
+
+* truncate;
+* split into non-overlapping chunks;
+* use overlapping windows;
+* retain a context-only prefix;
+* use a longer-context model.
+
+Each changes what the model can condition on and/or which targets are repeated.
+
+---
+
+### 29. Truncation creates systematic bias
+
+If every long document is cut after 4,096 tokens, the corpus overrepresents beginnings.
+
+For books or technical chapters, later conclusions, references, appendices, and long derivations may be systematically dropped.
+
+Report:
+
+```text
+fraction of documents truncated
+fraction of model tokens discarded
+truncation rate by source/language/domain
+```
+
+A 1% document truncation rate can still discard substantial text if those documents are very long.
+
+---
+
+### 30. Non-overlapping chunking preserves targets but loses context
+
+Suppose a serialized document is:
+
+```text
+[BOS, a, b, c, d, e, EOS]
+```
+
+The adjacent next-token pairs are:
+
+```text
+BOS->a
+a->b
+b->c
+c->d
+d->e
+e->EOS
+```
+
+With block size 4 input positions, we can split the **pair sequence**:
+
+```text
+chunk 1
+input : [BOS, a, b, c]
+target: [a,   b, c, d]
+
+chunk 2
+input : [d, e]
+target: [e, EOS]
+```
+
+Every original adjacent target pair appears exactly once.
+
+But the first prediction in chunk 2:
+
+```text
+d -> e
+```
+
+has less context than it had in the unsplit document. It no longer sees `BOS a b c`.
+
+This distinction is crucial:
+
+> **Target preservation is not context preservation.**
+
+---
+
+### 31. Overlapping windows preserve more context but can repeat supervision
+
+Suppose a long document is windowed as:
+
+```text
+window 1: positions 0..4095
+window 2: positions 3072..7167
+```
+
+Positions 3072..4095 appear in both windows.
+
+If loss is computed on all positions in both windows, those targets are trained twice.
+
+If overlap is intended only as context, use a loss mask:
+
+```text
+window 2 prefix overlap -> visible context, loss=0
+new suffix             -> visible context, loss=1
+```
+
+Then each target can still be counted exactly once while later windows receive additional context.
+
+This policy should preserve original offsets so repeated/context-only regions are auditable.
+
+---
+
+### 32. Long-document policies should be evaluated by target accounting
+
+For every source record $d$, let
+
+$$
+T_d
+$$
+
+be the set/count of intended next-token targets after serialization.
+
+A strong sequence-construction invariant is:
+
+> Every target intended by the policy appears the intended number of times in the packed dataset, and every scored target maps back to a source record and token offset.
+
+For a policy intending exactly-once supervision:
+
+$$
+\sum_{\text{packed rows}}\text{scored targets from }d
+=|T_d|.
+$$
+
+This is testable.
+
+---
+
+## Part XIII — Packing short documents
+
+### 33. Why pack at all?
+
+Suppose context length is 4,096 and a batch contains many 300-token documents.
+
+Padding each document independently wastes most positions.
+
+#### Fill a 4,096-position block {#packing-capacity-example}
+
+![Three equal-capacity blocks show one 512-position document and padding at 12.5 percent utilization; two documents at 25 percent; and eight documents filling all 4,096 positions at 100 percent.](lecture-6/packing-capacity.svg)
+
+For this numerical example, each already-prepared document contributes **512 valid input positions and 512 aligned next-token targets**, with its boundary markers accounted for before packing. One document fills `512 / 4096 = 12.5%` of a block; two fill `1024 / 4096 = 25%`; eight fill the block exactly. Here 4,096 is the sequence length, not the number of blocks in a batch. Packing reduces padded positions; actual runtime savings depend on the model and attention implementation. The independent-document attention rule keeps the packed documents from becoming one shared context.
+
+Packing multiple documents into one physical block can increase utilization while preserving whatever document-boundary semantics we choose.
+
+Define physical utilization:
+
+$$
+\nu
+=
+\frac{\text{valid input positions}}
+{\text{allocated input positions}}.
+$$
+
+If a block of length 4,096 contains 3,700 valid inputs:
+
+$$
+\nu\approx0.903.
+$$
+
+But also report **loss utilization**:
+
+$$
+\nu_{\mathrm{loss}}
+=
+\frac{\text{loss-bearing targets}}
+{\text{allocated positions}}.
+$$
+
+These differ when context-only overlap or other masked targets are used.
+
+---
+
+### 34. A simple next-fit packer
+
+For teaching, use a deterministic next-fit algorithm:
+
+```text
+start empty block
+for each chunk in fixed order:
+    if chunk fits:
+        append it
+    else:
+        pad + emit current block
+        start new block
+emit final padded block
+```
+
+This is not optimal bin packing. It is simple, streaming-friendly, deterministic, and easy to test.
+
+#### Worked utilization example
+
+Block size 8.
+
+Pair-sequence lengths:
+
+```text
+5, 3
+```
+
+fit exactly:
+
+$$
+\nu=8/8=1.
+$$
+
+Lengths:
+
+```text
+5, 4
+```
+
+require two blocks under next-fit:
+
+$$
+\nu=9/16=0.5625.
+$$
+
+A best-fit or length-sorted packer might improve utilization, but sorting changes document order and buffering/restart behavior.
+
+Systems efficiency belongs in Lecture 8; here the first obligation is **objective correctness and deterministic accounting**.
+
+---
+
+### 35. Packing can change source exposure if remainders are dropped
+
+A dangerous optimization is:
+
+```text
+concatenate tokens
+cut into full 4096-token blocks
+drop the final remainder
+```
+
+If this is done separately per source, small sources may lose a larger fraction of tokens.
+
+Even globally, every epoch/build can silently discard a tail.
+
+Do not drop data invisibly.
+
+Record:
+
+```text
+input tokens before packing
+loss targets before packing
+loss targets after packing
+padding positions
+context-only positions
+dropped positions, if any, with reason
+```
+
+Lecture 7 will use post-sequence-construction target counts to measure realized mixture exposure.
+
+---
+
+## Part XIV — What exactly should be counted? {#accounting-and-tests}
+
+### 36. Separate at least five accounting units
+
+For one corpus version, distinguish:
+
+1. **raw bytes**;
+2. **normalized/serialized bytes or code points**;
+3. **model tokens**;
+4. **valid input positions**;
+5. **loss-bearing target positions**.
+
+For long-window overlap, model-token positions can exceed unique serialized tokens because context is repeated.
+
+For padding, allocated positions exceed valid positions.
+
+For masked context, valid input positions exceed loss-bearing targets.
+
+A single `tokens_consumed` counter is therefore insufficient unless its definition is precise.
+
+---
+
+### 37. Source attribution must survive packing
+
+Suppose a packed block contains:
+
+```text
+positions 0..999     Armenian native science
+positions 1000..1799 English science
+positions 1800..2500 Code
+positions 2501..4095 padding
+```
+
+The training loop should be able to aggregate **loss targets by source** without making those source labels visible to the model.
+
+A sidecar could contain:
+
+```text
+source_component_id per scored target
+source_record_id per segment
+source_token_offset
+family_id if needed for auditing
+```
+
+This allows Lecture 7 to answer:
+
+> “What fraction of actual optimization targets came from each source?”
+
+rather than assuming input record probabilities translated directly into target-token shares.
+
+---
+
+## Part XV — Evaluation losses and denominators
+
+### 38. Aggregate negative log likelihood by target count
+
+Suppose batch 1 has 1,000 scored targets with mean loss 2.0 and batch 2 has 100 targets with mean loss 4.0.
+
+Unweighted batch-mean average:
+
+$$
+\frac{2.0+4.0}{2}=3.0.
+$$
+
+Correct target-weighted global mean:
+
+$$
+\frac{1000(2.0)+100(4.0)}{1100}
+\approx2.182.
+$$
+
+They are very different.
+
+The global mean token NLL is:
+
+$$
+\bar\ell
+=
+\frac{
+\sum_{b,t}m_{b,t}\ell_{b,t}
+}{
+\sum_{b,t}m_{b,t}
+}.
+$$
+
+Perplexity is:
+
+$$
+\operatorname{PPL}=e^{\bar\ell}.
+$$
+
+Always aggregate loss sums and scored-target counts.
+
+---
+
+### 39. Perplexity depends on tokenization
+
+If two tokenizers segment the same string differently, each model predicts different units.
+
+Therefore raw per-token perplexities are not directly comparable across different tokenizers.
+
+One text-level normalization is bits per reference byte:
+
+$$
+\operatorname{bits/byte}
+=
+\frac{
+-\sum_t\log p_\theta(z_t\mid z_{<t})
+}{
+\ln 2\times \operatorname{reference\_bytes}
+}.
+$$
+
+But even this requires conventions:
+
+* Which text normalization defines the reference bytes?
+* Are BOS/EOS losses included?
+* How are long documents windowed?
+* Which contexts are provided?
+* Is the chosen tokenization deterministic/canonical?
+
+Bits/byte helps normalize the denominator. It does not automatically make differently sized/trained models a controlled experiment.
+
+---
+
+## Part XVI — Prove the model-facing semantics with tests
+
+### 40. Tokenizer tests
+
+At minimum:
+
+#### Round-trip contract
+
+```python
+for x in fixtures:
+    assert decode(encode(x)) == tokenizer_normalize(x)
+```
+
+#### Determinism
+
+```python
+assert encode(x) == encode(x)
+```
+
+and after saving/loading the tokenizer artifact:
+
+```python
+assert tok1.encode(x) == tok2.encode(x)
+```
+
+#### Special-token injection
+
+```text
+raw text containing "<EOS>"
+```
+
+must not become reserved EOS unless that behavior is explicitly intended.
+
+#### Coverage/fallback
+
+Audit unknown/fallback use by language/domain.
+
+---
+
+### 41. Target-conservation tests
+
+For a toy document with known token IDs, enumerate intended next-token pairs by hand.
+
+Example:
+
+```text
+serialized: [BOS, 10, 11, 12, EOS]
+```
+
+Expected pairs:
+
+```text
+(BOS,10)
+(10,11)
+(11,12)
+(12,EOS)
+```
+
+After chunking and packing, collect every scored `(input_token, target_token, source_offset)` tuple.
+
+For exactly-once supervision, the multiset should match the expected multiset exactly.
+
+This catches:
+
+* double shifting;
+* skipped remainders;
+* duplicated overlap losses;
+* artificial cross-document transitions.
+
+---
+
+### 42. Causal invariance test
+
+For one sequence, change a token **after** position $t$.
+
+Logits at positions up to $t$ should remain unchanged under a correct causal mask, up to numerical tolerance.
+
+Conceptually:
+
+```python
+logits1 = model(x1, mask)
+logits2 = model(x2, mask)
+assert close(logits1[:, :t+1], logits2[:, :t+1])
+```
+
+If earlier logits change, future information leaked.
+
+---
+
+### 43. Cross-document isolation test
+
+Pack documents A and B into one physical block under the independent-document policy.
+
+1. hold B fixed;
+2. alter every token in A;
+3. recompute logits;
+4. compare B-position logits.
+
+They should remain unchanged to tolerance if attention isolation is correct.
+
+This is stronger than visually inspecting a mask matrix.
+
+---
+
+### 44. Padding invariance test
+
+Run the same real sequence:
+
+```text
+alone
+```
+
+and
+
+```text
+inside a larger padded block.
+```
+
+Under equivalent semantics, logits/losses at real positions should agree.
+
+This catches padding-key leakage and position-policy mistakes.
+
+---
+
+### 45. Test the failing implementation on purpose
+
+A useful master's-level exercise is to deliberately introduce each bug:
+
+```text
+remove same-segment attention constraint
+shift targets twice
+allow padding keys
+forget loss mask on overlap
+reset positions but leave cross-document attention enabled
+```
+
+Then show which invariant test fails.
+
+The goal is not merely to write tests that pass. It is to understand **which modeling mistake each test detects**.
+
+---
+
+## Part XVII — One complete trace through the running pipeline
+
+### 46. Start from one curated record
+
+Lecture 5 gives us:
+
+```json
+{
+  "record_id": "hy-science-00421",
+  "family_id": "family-00391",
+  "source_component": "native_hy_science",
+  "blocks": [
+    {"type": "heading", "text": "Նյուտոնի երկրորդ օրենքը"},
+    {"type": "paragraph", "text": "..."},
+    {"type": "equation", "text": "F = ma"}
+  ],
+  "decision": "admitted"
+}
+```
+
+#### Stage 1 — serialize
+
+Policy `serialize-v2` produces:
+
+```text
+Նյուտոնի երկրորդ օրենքը
+
+...
+
+F = ma
+```
+
+#### Stage 2 — tokenize
+
+Tokenizer `tok-v1` produces:
+
+```text
+[381, 912, 74,  ... , 1051]
+```
+
+The exact IDs matter; the printed pieces are only a debugging view.
+
+#### Stage 3 — add document markers
+
+```text
+[BOS, 381, 912, 74, ..., 1051, EOS]
+```
+
+#### Stage 4 — create next-token pairs
+
+```text
+input  = [BOS, 381, 912, 74, ..., 1051]
+target = [381, 912, 74, ..., 1051, EOS]
+```
+
+#### Stage 5 — long-document chunk if necessary
+
+Each resulting target keeps:
+
+```text
+record_id
+source_component
+token_offset
+```
+
+#### Stage 6 — pack with other chunks
+
+The physical block gains:
+
+```text
+segment IDs
+position IDs
+attention permissions
+padding
+loss mask
+```
+
+#### Stage 7 — training loop
+
+The model receives tensors only:
+
+```text
+input_ids
+position_ids
+attention structure
+labels/targets
+loss mask
+```
+
+The source attribution remains in sidecar accounting, not in the model-visible sequence.
+
+This is the complete conceptual bridge from corpus engineering to optimization.
+
+---
+
+## Part XVIII — Practical checkpoint
+
+### 47. Build and prove a tokenized training dataset
+
+This practical should produce the artifact Lecture 7 consumes.
+
+### Part A — Train two candidate tokenizers
+
+Using only the **training** portion of the curated corpus:
+
+1. choose two tokenizer-training sampling policies;
+2. train two small tokenizers;
+3. pin every configuration and model artifact;
+4. exclude protected evaluation families from tokenizer fitting.
+
+At least one tokenizer should deliberately improve representation of the scarce target-language technical slice, for example by changing the tokenizer-training sample allocation rather than the model-training mixture.
+
+### Part B — Audit both tokenizers
+
+On the same held-out tokenizer-audit set, report by language/domain:
+
+```text
+tokens / diagnostic word
+tokens / UTF-8 byte
+median document length
+p95 document length
+p99 document length
+unknown/fallback rate
+round-trip failures
+```
+
+Also inspect the fixed regression fixtures for:
+
+```text
+Armenian
+English
+mixed Armenian/English
+code
+numbers
+math
+URLs
+whitespace
+special-token-looking strings
+```
+
+Choose one tokenizer and justify the choice from the project objective and engineering tradeoffs. Do not claim that the audit alone proves which tokenizer yields the best model.
+
+Also reproduce the pinned four-release audit in Section 14.1. Inspect at least one model's normalizer, digit rule, added-ID inventory, embedding rows, and chat template. Then evaluate two released tokenizers on a larger held-out Armenian/English/Chinese/code sample with a stated sampling policy. Record exact revisions and byte denominators; do not relabel the nine correctness fixtures as a representative benchmark. For a checkpoint-continuation project, inherit its tokenizer and use comparisons diagnostically rather than swapping mappings.
+
+### Part C — Implement serialization
+
+Write a versioned serializer for at least:
+
+```text
+prose
+problem/solution
+code
+```
+
+Show example input records and exact serialized outputs.
+
+For one complete user/assistant conversation, additionally show the checkpoint's rendered training sequence, an inference assistant prefix, and the declared loss-bearing spans. Compare the token count of user content alone with the complete serialization. Explain which tool or reasoning options change that count; media examples must name a compatible processor and must not infer visual sequence cost from a text marker.
+
+### Part D — Construct targets
+
+For every serialized document:
+
+1. add boundary markers according to policy;
+2. tokenize;
+3. create shifted input/target pairs exactly once;
+4. retain source attribution and token offsets.
+
+### Part E — Handle long documents
+
+Implement either:
+
+* non-overlapping target-preserving chunking; or
+* overlapping context with exactly-once target loss.
+
+Report what context is lost/repeated.
+
+### Part F — Pack short chunks
+
+Use a deterministic packer. Produce:
+
+```text
+input_ids
+target_ids
+segment_ids
+position_ids
+loss_mask
+padding/valid mask
+```
+
+If the independent-document policy is chosen, also produce document-isolated causal attention semantics.
+
+### Part G — Prove invariants
+
+Your tests must include:
+
+1. tokenizer round-trip contract;
+2. tokenizer save/load determinism;
+3. special-token injection test;
+4. target conservation;
+5. no artificial cross-document target;
+6. causal invariance;
+7. cross-document attention isolation;
+8. padding invariance;
+9. no silent remainder loss.
+
+### Part H — Produce accounting reports
+
+Report:
+
+```text
+serialized bytes
+model tokens before packing
+valid packed input positions
+loss-bearing targets
+padding positions
+context-only positions
+physical utilization
+loss utilization
+loss targets by source component
+```
+
+The final deliverable is a **tokenized-data manifest plus deterministic sequence builder**, ready for Lecture 7's mixture and scaling analysis.
+
+---
+
+## Check your understanding
+
+1. A tokenizer decodes to normalized text but not the original byte sequence. Is it lossless? What additional phrase is required to make the claim precise?
+2. Why can two tokenizers with the same vocabulary pieces still produce different ID sequences?
+3. Why does increasing vocabulary size affect both sequence length and model parameter count?
+4. What is the difference between BPE merge order and unigram segmentation?
+5. Why may $q_{\mathrm{tok}}$ intentionally differ from $q_{\mathrm{train}}$?
+6. Why is a global average tokenization rate inadequate for multilingual tokenizer selection?
+7. Why does inserting EOS not isolate packed documents?
+8. What is the difference between attention masking and loss masking?
+9. How can a long-document chunker preserve every target but still change the training objective?
+10. Why can overlapping windows accidentally overweight part of a document?
+11. Why should validation loss be aggregated from loss sums and target counts rather than unweighted batch means?
+12. What information must be preserved so Lecture 7 can measure realized training exposure by source?
+13. Why are Qwen's 248,044 BPE entries, 248,077 effective IDs, and 248,320 embedding rows different counts?
+14. Why can GLM split `123456789` into five tokens even though its digit regex permits three-character regions?
+15. Can a shorter released tokenizer be substituted into a pretrained checkpoint without adapting the weights? Why?
+16. What does counting the text of an image placeholder fail to measure? How does a BLT patch differ from a BPE token?
+
+---
+
+## What to remember
+
+1. **Model tokens are not linguistic words.** Every count must name its unit and tokenizer.
+2. **A tokenizer is a learned interface.** Freeze normalization, pre-tokenization, segmentation, special-token rules, IDs, and decoder behavior—not just the vocabulary strings.
+3. **Vocabulary size trades parameters against sequence length.** No single compression statistic decides the best choice.
+4. **Multilingual tokenization must be audited by language and domain.** A global mean can hide severe expansion in a scarce target slice.
+5. **Tokenizer-training sampling and model-training sampling are different decisions.** Oversampling Armenian during tokenizer fitting does not imply the same pretraining mixture.
+6. **Serialization is part of the model specification.** Sidecar metadata should not become prediction text accidentally.
+7. **Shift next-token targets exactly once.** APIs differ; tests should make the intended pairs explicit.
+8. **EOS, attention masks, loss masks, padding masks, and position IDs solve different problems.** None should be assumed to imply the others.
+9. **Packing is not merely a storage optimization.** It can change context, supervision multiplicity, and source exposure.
+10. **Target accounting is the bridge to mixture design.** Lecture 7 should operate on the targets actually consumed after sequence construction, not merely on upstream record counts.
+11. **Test semantics, not only shapes.** Causal invariance, document isolation, padding invariance, and target conservation expose bugs that shape checks miss.
+12. **The model trains on tensors.** A reproducible corpus is necessary, but the final data artifact is the exact tensor-generating procedure plus its manifest.
+13. **Inspect releases, not family names.** Current BPE systems differ in normalization, regex rules, inventories, and wrapper behavior; exact fixtures make those differences reproducible.
+14. **A checkpoint's interface includes serialization and processing.** Keep tokenizer IDs, chat/reasoning/tool templates, media processing, stop rules, and loss policies compatible with the weights.
+15. **Research alternatives change the accounting unit.** Adaptive byte patches are not fixed subword IDs and require their own cost-controlled evaluation.
+
+---
+
+## References and further reading
+
+### Subword tokenization
+
+* Sennrich, R., Haddow, B., & Birch, A. (2016). **Neural Machine Translation of Rare Words with Subword Units.** *ACL 2016.* Introduces the subword BPE adaptation used as the conceptual basis for the teaching implementation. [ACL Anthology](https://aclanthology.org/P16-1162/).
+* Kudo, T., & Richardson, J. (2018). **SentencePiece: A Simple and Language Independent Subword Tokenizer and Detokenizer for Neural Text Processing.** *EMNLP 2018 System Demonstrations.* [ACL Anthology](https://aclanthology.org/D18-2012/).
+* SentencePiece project documentation. Current project documentation covers BPE/unigram models, normalization, special symbols, and byte fallback. [Project](https://github.com/google/sentencepiece), [options](https://github.com/google/sentencepiece/blob/master/doc/options.md), [normalization](https://github.com/google/sentencepiece/blob/master/doc/normalization.md), [special symbols](https://github.com/google/sentencepiece/blob/master/doc/special_symbols.md).
+* Hugging Face Tokenizers documentation. Useful for inspecting explicit normalizer/pre-tokenizer/model/decoder components, including byte-level pre-tokenization. [Pre-tokenizers](https://huggingface.co/docs/tokenizers/en/api/pre-tokenizers).
+* [BERT](https://aclanthology.org/N19-1423/) [@devlin2019bert] and the official [TensorFlow Text WordPiece API](https://www.tensorflow.org/text/api_docs/python/text/WordpieceTokenizer): greedy vocabulary matching and continuation pieces.
+
+### Normalization policies
+
+* [Unicode Standard Annex #15, revision 58](https://www.unicode.org/reports/tr15/tr15-58.html): canonical and compatibility decomposition, canonical ordering, and composition.
+* Python's official [Unicode data API](https://docs.python.org/3/library/unicodedata.html) and [string case conversion](https://docs.python.org/3/library/stdtypes.html#str.lower): executable normalization and casing examples. Local tests verify the specific character mappings shown here; custom spelling and number rewrites remain separate policies.
+
+### Multilingual tokenizer analysis
+
+* Rust, P., Pfeiffer, J., Vulić, I., Ruder, S., & Gurevych, I. (2021). **How Good Is Your Tokenizer? On the Monolingual Performance of Multilingual Language Models.** *ACL-IJCNLP 2021.* [ACL Anthology](https://aclanthology.org/2021.acl-long.243/).
+
+### Released artifacts and research alternatives
+
+* The immutable model-repository links in Section 2.3 identify the Qwen3.8, DeepSeek-V4, GLM-5.3, and Kimi K3 artifacts inspected for this lecture. The reproducible fixture report stores complete revisions and file digests; revisit those artifacts when comparing a later release. Older revisions appear only in the explicit continuity comparison.
+* [Byte Latent Transformer: Patches Scale Better Than Tokens](https://arxiv.org/abs/2412.09871) [@pagnoni2024blt]. Adaptive byte-patch processing as a research alternative to a fixed subword vocabulary.
+* Hugging Face's official [chat-template](https://huggingface.co/docs/transformers/en/chat_templating) and [multimodal-template](https://huggingface.co/docs/transformers/en/chat_templating_multimodal) documentation. Library interfaces complement, rather than replace, the checkpoint-specific artifacts.
+
+### Attention-mask semantics
+
+* PyTorch documentation. **torch.nn.functional.scaled_dot_product_attention.** The current documentation states that Boolean `True` in SDPA's `attn_mask` means the element participates in attention, warns that this differs from some `MultiheadAttention` mask conventions, and notes that `dropout_p` must be explicitly set to zero when dropout is not desired during evaluation. [Official documentation](https://docs.pytorch.org/docs/main/generated/torch.nn.functional.scaled_dot_product_attention.html).
+
+### Connection to earlier course materials
+
+* Revised Lecture 3: **Corpus Design, Acquisition, and Provenance** — supplies the immutable corpus inventory and source lineage.
+* Revised Lecture 4: **Document Extraction, Quality Filtering, and Corpus Auditing** — supplies structured, normalized candidate documents and processing evidence.
+* Revised Lecture 5: **Corpus Integrity: Deduplication, Contamination, and Privacy** — supplies the curated corpus lock and protected-family boundaries consumed by this lecture.
+* Supplied corpus-linguistics Lecture 3: **Tokenization, POS-Tagging, and Annotation** — useful for the distinction between linguistic units and model-facing representations; linguistic annotation remains separate from model tokenization unless explicitly serialized.
