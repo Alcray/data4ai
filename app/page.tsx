@@ -51,7 +51,10 @@ const lecturePhases = [
   {
     name: "Pretraining",
     range: "03–06",
-    families: [{ name: null, lectures: lecturePages.slice(3, 7) }],
+    families: [
+      { name: "Corpus engineering", lectures: lecturePages.slice(3, 6) },
+      { name: "Pretraining at scale", lectures: lecturePages.slice(6, 7) },
+    ],
   },
 ] as const;
 
