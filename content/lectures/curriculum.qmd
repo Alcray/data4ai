@@ -28,3 +28,5 @@ The published course material begins with the architectural background and then 
 **Lecture 5: Corpus integrity—deduplication, contamination, and privacy.** Exact and canonical equality; shingling, Jaccard, MinHash/LSH, clustering, and representative selection; family-aware benchmark decontamination; sensitive-span handling; integrity audits; and reproducible corpus locks.
 
 **Lecture 6: Tokenization and sequence construction.** Byte-level BPE and unigram segmentation; vocabulary and representation trade-offs; multilingual tokenizer audits; special tokens and chat formats; multimodal embeddings; next-token targets; document boundaries; attention and loss masks; long-document handling; and packing.
+
+**Lecture 7: Data mixtures, multilingual exposure, and scaling.** Record probabilities versus realized loss-bearing targets; finite-source coverage and repetition; multilingual, domain, and origin allocation; continued pretraining and replay; controlled mixture experiments; compute-optimal and data-constrained scaling; DoReMi, RegMix, and staged curricula.

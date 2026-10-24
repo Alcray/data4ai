@@ -27,10 +27,10 @@ test("Lecture 6 is published without exposing other unpublished lectures", async
   assert.ok(read("content/lectures/curriculum.qmd").includes("**" + label));
   assert.ok(html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/)[1].includes(label));
   assert.doesNotMatch(html, /Lecture 6 \(draft\)/);
-  assert.ok(presentation.includes("const isDraft = deck.number > 6;"));
+  assert.ok(presentation.includes("const isDraft = deck.number > 7;"));
   assert.match(presentation, /6: lecture6/);
-  assert.doesNotMatch(presentation, /import lecture(?:[7-9]|1[0-6]) from/);
-  assert.doesNotMatch(navigation, /generated\/lecture-(?:[7-9]|1[0-6])/);
+  assert.doesNotMatch(presentation, /import lecture(?:[8-9]|1[0-6]) from/);
+  assert.doesNotMatch(navigation, /generated\/lecture-(?:[8-9]|1[0-6])/);
   const deck = await loadDeck(6);
   assert.equal(deck.slides.length + 1, 44);
   const citationKeys = new Set([...read("content/references.bib").matchAll(/@\w+\s*\{\s*([^,\s]+)/g)].map(match => match[1]));

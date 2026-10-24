@@ -4,12 +4,13 @@ import Presentation from "./Lecture1Presentation";
 import lecture4 from "./future-decks/lecture-4";
 import lecture5 from "./future-decks/lecture-5";
 import lecture6 from "./future-decks/lecture-6";
+import lecture7 from "./future-decks/lecture-7";
 import { lecture5Html } from "./generated/lecture-5";
 import type { LectureDeck, SlideSpec } from "./future-decks/types";
 import { parseSlidePosition, setReturnSlidePosition } from "./lecture-navigation";
 import "./FutureLecturePresentation.css";
 
-const decks: Record<number, LectureDeck> = { 4: lecture4, 5: lecture5, 6: lecture6 };
+const decks: Record<number, LectureDeck> = { 4: lecture4, 5: lecture5, 6: lecture6, 7: lecture7 };
 
 function Question({ slide }: { slide: SlideSpec }) {
   const [revealed, setRevealed] = useState(false);
@@ -67,9 +68,14 @@ function Content({ slide, lectureNumber }: { slide: SlideSpec; lectureNumber: nu
       const formula = math
         ? <div className="future-formula future-formula-native" dangerouslySetInnerHTML={{ __html: math }} />
         : <div className="future-formula" role="math" aria-label={slide.formula}>{slide.formula}</div>;
+      const explainedFormula = slide.formulaLayout === "legend" ? <div className="future-formula-detail">
+        {formula}
+        {slide.formulaExplanation && <p className="future-formula-explanation">{slide.formulaExplanation}</p>}
+        {slide.items?.length ? <Points items={slide.items} /> : null}
+      </div> : formula;
       return <div className="future-formula-layout">
-        {slide.rows ? <div className="future-formula-table-layout"><Table slide={slide} />{formula}</div> : formula}
-        <Points items={slide.items} />
+        {slide.rows ? <div className={`future-formula-table-layout${slide.formulaLayout === "legend" ? " future-formula-table-legend" : ""}`}><Table slide={slide} />{explainedFormula}</div> : explainedFormula}
+        {slide.formulaLayout !== "legend" && <Points items={slide.items} />}
       </div>;
     }
     case "code": return <div className="future-code-layout"><pre><code>{slide.code}</code></pre><Points items={slide.items} /></div>;
@@ -98,7 +104,7 @@ function Content({ slide, lectureNumber }: { slide: SlideSpec; lectureNumber: nu
 export default function FutureLecturePresentation({ lectureNumber, onExit }: { lectureNumber: number; onExit: () => void }) {
   const deck = decks[lectureNumber];
   if (!deck) return null;
-  const isDraft = deck.number > 6;
+  const isDraft = deck.number > 7;
   const openText = deck.number === 4 ? (anchor: string, slideHash: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set("lecture", "4");

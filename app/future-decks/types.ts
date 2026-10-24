@@ -10,6 +10,10 @@ export type SlideSpec = {
   formula?: string;
   /** ID of a trusted, authored MathML block in the rendered lecture chapter. */
   formulaAnchor?: string;
+  /** Wider term legend for formulas with several defined quantities. */
+  formulaLayout?: "legend";
+  /** Plain-language interpretation displayed beside the formula. */
+  formulaExplanation?: string;
   code?: string;
   specimens?: { label: string; text: string }[];
   image?: { src: string; alt: string; caption?: string };

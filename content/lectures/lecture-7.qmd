@@ -1,0 +1,952 @@
+---
+title: "Lecture 7: Data mixtures, multilingual exposure, and scaling"
+order: 8
+description: "Derive target-aware sampling, repetition-constrained mixtures, DoReMi updates, proxy regression, and compute-optimal model/data allocation through executable examples."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+Lecture 6 produced tokenized documents, prediction targets, and source IDs. We now choose how often each source contributes to training and how to divide a compute budget between model size and data exposure.
+
+Consider a native Armenian technical pool with 20 million unique target positions. Allocating 10% of a two-billion-target run to that pool means 200 million exposures: ten corpus-equivalents. The percentage is not an isolated setting. It determines repetition, displaces other sources, and interacts with the model size we can afford to train.
+
+We will answer four connected questions:
+
+1. How do desired target shares become an actual sampler?
+2. Which mixtures are feasible when source pools are finite?
+3. How can small proxy runs propose better mixtures?
+4. Which model size, training horizon, and source schedule fit the budget?
+
+**Prerequisites.** Lectures 3–6; expectation, logarithms, derivatives, and gradients. Corpus admission, family identity, deduplication, tokenizer choice, and packing semantics are inputs here, not additional processing stages. Optimizer implementations, distributed loaders, and recovery belong to Lecture 8.
+
+**Learning outcomes.** Derive the objective induced by record sampling; implement target-aware sampling; quantify coverage and repetition; solve a repetition-capped allocation; calculate a DoReMi domain-weight update; search a proxy response surface; and derive a compute-optimal model/data allocation with explicit units.
+
+All numerical fixtures in this lecture are constructed examples, not measured language-model results. The standard-library implementation in `scripts/lecture7-mixture-examples.py` reproduces the central calculations; `tests/lecture7-mixtures.test.py` checks their invariants.
+
+## Part I — Turn target weights into a sampler {#mixture-sampler}
+
+### 1. Start from the frozen target inventory {#target-inventory}
+
+#### Documents and tokens tell different stories {#documents-versus-tokens}
+
+Suppose a corpus combines code, web articles, and manuals under one fixed tokenizer. Count each code file as one document, rather than treating an entire repository as a single item. The following is an illustrative corpus, not a measured sample:
+
+| Document type | Documents | Share of documents | Share of tokens |
+| --- | ---: | ---: | ---: |
+| Code files | 300 | 30% | 60% |
+| Web articles | 500 | 50% | 25% |
+| Manuals | 200 | 20% | 15% |
+| **Total** | **1,000** | **100%** | **100%** |
+
+The code files average 4,000 tokens each, the articles 1,000, and the manuals 1,500. They contain 1.2M, 0.5M, and 0.3M tokens respectively: 2M tokens in total. Code supplies only 30% of the documents but 60% of the tokens because its documents are longer on average. If we draw documents uniformly and preserve their tokens, these are also the long-run token shares; document percentages cannot simply be copied into a desired token allocation.
+
+#### A multilingual target inventory
+
+For the multilingual allocation and repetition calculations later in the lecture, use the following frozen target inventory. Capacities are unique scored-target positions under the frozen tokenizer and sequence policy, not bytes or a count of independently sampled facts.
+
+| Source | Pool | Capacity \(D_i\) | Proposed target share \(p_i\) | Targets in a 2B run | Exposure \(T_i/D_i\) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| A | English general | 800M | 50% | 1,000M | 1.25× |
+| B | Armenian general/native | 120M | 18% | 360M | 3× |
+| C | Armenian technical/native | 20M | 10% | 200M | 10× |
+| D | Armenian technical/translated | 60M | 12% | 240M | 4× |
+| E | Code | 100M | 10% | 200M | 2× |
+
+The inventory totals 1.10 billion unique target positions. Source C is only \(20/1100\approx1.82\%\) of that inventory, but the proposed sampler allocates 10% of training targets to it. This is a hypothesis to evaluate, not a recommendation.
+
+We need four main quantities:
+
+| Symbol | Meaning |
+| --- | --- |
+| \(D_i\) | Unique target capacity of source \(i\) |
+| \(q_i\) | Probability of selecting source \(i\) for one record draw |
+| \(\mu_i\) | Mean scored targets contributed by a record from that source |
+| \(p_i\) | Desired fraction of all scored targets from that source |
+
+During a run, count \(T_i\) and compare the realized share \(\widehat p_i=T_i/\sum_jT_j\) with \(p_i\). Preserve the source, origin, and family IDs established earlier; the mixture changes exposure without changing those identities.
+
+### 2. Derive the objective induced by record sampling {#sampler-objective}
+
+We will compare three approaches. **Token-static sampling** fixes a token mixture before training. **Document-static sampling** draws documents using fixed source probabilities. **Document-dynamic sampling** adapts the next document's source using feedback from consumed-target counts; Section 4 develops that scheduler. Static describes an allocation rule that stays fixed during the run, even if the loader draws documents online. All three approaches retain document boundaries and use packing.
+
+#### Approach 1: token-static sampling {#static-mix-and-chunk}
+
+An intuitive offline approach collects the admitted documents into a few large storage streams, mixes the documents, and cuts or packs the result into fixed-length training blocks. For the illustrative corpus, two streams contain 1.2M code tokens and 0.8M other-text tokens. Keeping all of them produces an overall code share of 60%, whether the blocks contain 2,048 or 4,096 positions. Chunk length does not rebalance source exposure by itself.
+
+![Code and other text feed a document-shuffling stage, a combined token stream, and stored 4,096-position training blocks. The full retained stream remains 60 percent code tokens.](lecture-7/static-mix-and-chunk.svg)
+
+The large streams are storage containers. Retain each document's identity, boundary, and attention rules from Lecture 6; do not treat the containers as two new independent documents. Shuffle whole documents or chunks, not individual tokens within sentences. Retain the final partial block's targets, for example by padding it, rather than silently changing source shares by discarding a tail. The mixture is fixed when the chunks are built unless the loader later rebuilds or resamples them.
+
+#### Approach 2: document-static sampling {#static-document-sampling}
+
+For each document draw, a document-static sampler chooses a source with fixed probability \(q_i\), draws a document from that source, and passes it to a packer while the run proceeds. The probabilities remain fixed throughout the run. The resulting token shares also depend on document lengths, so probabilities over document draws do not directly specify token shares.
+
+![Document-static sampling: source pools feed a source choice with fixed probability q_i, followed by a document and a packer producing training blocks.](lecture-7/static-document-sampling.svg)
+
+Hybrid loaders can sample already-tokenized, source-labelled chunks. Whether their allocation policy is static or dynamic depends on whether source selection stays fixed or adapts from feedback. In every case, distinguish a source-selection probability from the token share that results after lengths and retained targets are counted.
+
+#### From document draws to token shares {#record-target-shares}
+
+A two-stage sampler chooses source \(i\), then a document from that source. Its selection probabilities and emitted token shares are connected by
+
+$$
+\mu_i=\mathbb E[\text{document token length}\mid\text{source }i],
+\qquad
+p_i=\frac{q_i\mu_i}{\sum_jq_j\mu_j}.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(i,j\) | Source indices; \(j\) ranges over all sources in the denominator |
+| \(q_i\) | Probability of selecting source \(i\) for a document draw |
+| \(\mu_i\) | Mean emitted tokens per selected document from source \(i\) |
+| \(p_i\) | Long-run fraction of emitted tokens supplied by source \(i\) |
+| \(\mathbb E[\cdot]\) | Expectation: the mean under the source's document distribution |
+| \(\sum_j\) | Sum over all sources |
+
+The product \(q_i\mu_i\) is source \(i\)'s expected token contribution per draw; the denominator is the expected total tokens per draw. For the illustrative corpus, code has \(q_{\mathrm{code}}=0.30\) and \(\mu_{\mathrm{code}}=4000\). The denominator is \(0.30(4000)+0.50(1000)+0.20(1500)=2000\), so code supplies \(1200/2000=0.60\) of emitted tokens. This is a long-run result under stable source streams, finite mean lengths, and no downstream token dropping. For accounting over selected scored targets, define document lengths and \(\mu_i\) using those targets instead.
+
+#### Reference: loss normalization and the induced objective
+
+Let record \(x\) contain \(L(x)\) scored targets. Write its summed negative log likelihood as
+
+$$
+S_\theta(x)=\sum_{t=1}^{L(x)}\ell_{\theta,t}(x).
+$$
+
+Suppose a sampler draws source \(i\) with probability \(q_i\), then draws a record from \(\mathcal D_i\). There are two different ways to aggregate those records.
+
+If we average each record first, the expected objective is
+
+$$
+\mathcal L_{\mathrm{record}}(\theta)
+=\sum_i q_i\,\mathbb E_{x\sim\mathcal D_i}
+\left[\frac{S_\theta(x)}{L(x)}\right].
+$$
+
+If a large batch is normalized by its **total number of scored targets**, the long-run objective is
+
+$$
+\mathcal L_{\mathrm{target}}(\theta)
+=\frac{\sum_iq_i\mathbb E[S_\theta(x)\mid i]}
+{\sum_iq_i\mu_i}
+=\sum_i p_i\overline\ell_i(\theta),
+$$
+
+where
+
+$$
+\overline\ell_i(\theta)
+=\frac{\mathbb E[S_\theta(x)\mid i]}{\mu_i},
+\qquad
+p_i=\frac{q_i\mu_i}{\sum_jq_j\mu_j}.
+$$
+
+The same distinction applies to gradients. It is not merely a reporting convention. With uniformly sampled records, global target normalization gives longer records more prediction events; averaging record means gives each record one vote.
+
+For example, take two records containing 100 and 1,000 targets, with constant mean losses 1 and 3. Their mean-of-record-means is \((1+3)/2=2\). Their target mean is \((100\cdot1+1000\cdot3)/1100\approx2.818\). The model would receive different gradients under the two reductions.
+
+For finite variable-length batches, the expectation of the ratio is not generally the ratio of expectations. The expression above describes the large-sample limit, assuming finite means and stable source streams. If every optimizer update averages a small, variable-sized batch independently, update-level weighting also matters; Lecture 8 treats the exact accumulation rule.
+
+**Sampling versus importance weighting.** To estimate a fixed source objective with weights \(p_i\) using source proposals \(q_i\), a draw can be weighted by \(p_i/q_i\), provided the proposal has support wherever the objective does. That statement assumes the same within-source observation and loss normalization. Deliberate oversampling usually changes the objective itself; automatically importance-correcting it back would undo that choice.
+
+### 3. Convert target shares into record probabilities {#record-target-conversion}
+
+Suppose source A contributes 100 targets per record and B contributes 1,000. Selecting A for 90% of record draws produces contributions proportional to
+
+$$
+(0.9\cdot100,\ 0.1\cdot1000)=(90,100).
+$$
+
+Its target share is only \(90/190\approx47.37\%\).
+
+To obtain specified target shares, invert the calculation:
+
+$$
+q_i=\frac{p_i/\mu_i}{\sum_j p_j/\mu_j}.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(q_i\) | Probability of drawing a document from source \(i\) |
+| \(p_i\) | Desired scored-target share |
+| \(\mu_i\) | Mean scored targets per selected document |
+| \(\sum_j\) | Sum over all sources \(j\) |
+
+Divide each desired target share by its mean document length, then normalize the resulting weights to sum to one.
+
+For desired shares \((0.9,0.1)\), this gives
+
+$$
+q_A=\frac{0.9/100}{0.9/100+0.1/1000}
+=\frac{90}{91}\approx98.90\%,
+\qquad q_B=\frac1{91}.
+$$
+
+The small source examples need more draws to supply the requested number of targets.
+
+```python
+def record_probabilities(target_shares, mean_targets):
+    raw = [p / length for p, length
+           in zip(target_shares, mean_targets)]
+    total = sum(raw)
+    return [value / total for value in raw]
+```
+
+The checked implementation additionally rejects mismatched arrays, nonfinite inputs, and nonpositive lengths. Estimate lengths **after** the target-selection policy. If every example contributes the same number of scored targets, then \(q=p\); equal tensor shapes alone do not establish this.
+
+The correction is only as current as \(\mu_i\). A source that exhausts its short records, changes its internal sampler, or drops long remainders can drift away from the estimated mean. Measure realized shares rather than treating the inverse formula as a guarantee.
+
+### 4. Document-dynamic sampling: track consumed targets {#target-quota}
+
+The third approach, **document-dynamic sampling**, adapts which source supplies the next document using actual consumed-token counts. With a target mask, count scored targets. It still draws whole documents or chunks, and feeds the observed target counts back into source selection.
+
+#### Follow the feedback loop {#document-dynamic-feedback}
+
+![Document-dynamic sampling: choose a source from its current deficit, draw a document, pack and consume its blocks, update actual consumed-target counts, and feed those counts back into the next source choice.](lecture-7/dynamic-document-sampling.svg)
+
+Fixed document probabilities use estimated mean lengths to control token shares. The feedback scheduler instead observes how many targets each source has actually supplied. After consuming \(t\) targets, define the cumulative deficit
+
+$$
+t=\sum_iT_i,
+\qquad
+\delta_i(t)=p_i t-T_i,
+\qquad
+i^*=\arg\max_{i\ \mathrm{eligible}}\delta_i(t).
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(T_i\) | Targets already consumed from source \(i\) |
+| \(t\) | Total targets consumed across sources |
+| \(p_i\) | Desired target share of source \(i\) |
+| \(p_it\) | How many targets source \(i\) should have supplied by this point |
+| \(\delta_i\) | Desired count minus consumed count; negative means over its current quota |
+| \(i^*\) | Index of the source selected next |
+| \(\arg\max\) | Return the index with the largest value, not the value itself |
+
+At each decision, select a source with maximum deficit among positive-weight sources that can supply an example, consume its next example, and add the example's scored-target count. Fix a source ordering for deterministic tie-breaking at initialization. A positive deficit means the source has received fewer targets than its current quota; it does not mean its next record will fit exactly.
+
+For desired shares \((0.5,0.5)\), sources A and B contributing two and six targets per record produce this trace:
+
+| Decision | Deficits before draw | Selected | Cumulative targets A, B |
+| ---: | --- | --- | --- |
+| 1 | \((0,0)\) | A, tie-break | \((2,0)\) |
+| 2 | \((-1,1)\) | B | \((2,6)\) |
+| 3 | \((2,-2)\) | A | \((4,6)\) |
+| 4 | \((1,-1)\) | A | \((6,6)\) |
+
+Equal target shares require unequal draw counts. Reaching 12 targets takes three A records and one B record.
+
+For a fixed run budget \(T\), precompute quotas \(p_iT\) and monitor both remaining quota and total targets. Whole-record consumption can overshoot a quota. Exact quotas require splitting examples at valid target boundaries or a final scheduling policy; silently truncating a record changes the training examples. Repetition limits and source exhaustion must be checked before drawing.
+
+#### Measure the realized mixture {#realized-mixture-distance}
+
+First normalize consumed counts, then use total variation to summarize the discrepancy from the desired shares:
+
+$$
+\widehat p_i=\frac{T_i}{\sum_jT_j},
+\qquad
+\operatorname{TV}(p,\widehat p)
+=\frac12\sum_i|p_i-\widehat p_i|.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(T_i\) | Consumed targets from source \(i\) |
+| \(\sum_jT_j\) | Total consumed targets, which must be positive |
+| \(p_i\) | Desired target share |
+| \(\widehat p_i\) | Realized target share, computed from observed counts |
+| \(\lvert p_i-\widehat p_i\rvert\) | Absolute difference for one source |
+| \(\operatorname{TV}(p,\widehat p)\) | Half the sum of absolute differences across sources |
+
+For normalized shares, total variation is between zero and one; zero means exact agreement. The factor one-half avoids counting the same transferred probability mass as both a surplus and a deficit. It does not measure how useful the mixture was for learning.
+
+For \(p=(.50,.18,.10,.12,.10)\) and \(\widehat p=(.503,.177,.098,.121,.101)\), TV is \(0.005\), or half a percentage point. This establishes mixture agreement, not model quality. Under independent equal-sized source draws, sampling variation remains: the standard deviation of a source's realized share is \(\sqrt{p_i(1-p_i)/n}\). Correlated draws or variable target lengths require a different uncertainty calculation.
+
+## Part II — Allocate finite data {#finite-data}
+
+### 5. Coverage under repeated sampling {#replacement-coverage}
+
+#### Why the small pool becomes a constraint {#finite-pool-motivation}
+
+The proposed 2B-target run assigns 10% of training targets to native Armenian technical text. That requires 200M scored-target events from a pool containing only 20M unique target positions. Once that pool is exhausted, we must reuse material, acquire more data, or change the allocation. The same run places much less repetition pressure on the larger English pool:
+
+| Source | Unique targets | Targets in the 2B run | Planned ÷ unique |
+| --- | ---: | ---: | ---: |
+| English general | 800M | 1,000M | 1.25× |
+| Armenian general/native | 120M | 360M | 3× |
+| Armenian technical/native | 20M | 200M | 10× |
+| Armenian technical/translated | 60M | 240M | 4× |
+| Code | 100M | 200M | 2× |
+| **Total** | **1,100M** | **2,000M** | **1.82× overall** |
+
+This is the complete constructed inventory and allocation. The five planned counts sum to 2B targets; their unique capacity totals 1.10B. The overall exposure ratio is \(2000/1100\approx1.82\), while individual source ratios differ. A desired language or domain share is also a reuse policy when its source is small. Before choosing smoothed weights or repetition caps, we need to know how much distinct material the sampler reaches and how often it returns to the same targets.
+
+Exposure ratio \(e_i=T_i/D_i\) measures corpus-equivalents consumed. It is an exact pass count only when the loader actually traverses each item once per pass.
+
+#### Equal exposure can leave different chunks unseen {#coverage-draw-trace}
+
+Shrink one source pool to ten disjoint chunks, labelled A through J, each containing 1,000 scored targets. Compare two ways to consume 10,000 targets:
+
+| Sampler | One possible ten-draw trace | Distinct chunks seen | Chunks unseen |
+| --- | --- | ---: | ---: |
+| Independent draws with replacement | A C A D C F A G D G | 5 | 5 |
+| One shuffled traversal without replacement | C F A J B H E D I G | 10 | 0 |
+
+Both consume one pool-equivalent of target events. In the replacement trace, repeated visits to A, C, D, and G use part of the budget while B, E, H, I, and J remain unseen. A shuffled traversal reaches every chunk once before repeating. The five-chunk result is one constructed realization, not the average result of replacement sampling.
+
+#### Measure exposure relative to the pool {#source-exposure}
+
+Before calculating unique coverage, compare target exposure with the available pool:
+
+$$
+e_i=\frac{T_i}{D_i}.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(i\) | Source index |
+| \(T_i\) | Scored-target events attributed to source \(i\) |
+| \(D_i\) | Unique scored-target capacity of source \(i\) |
+| \(e_i\) | Exposure in corpus-equivalents |
+
+For a plan, use the allocated target count; during a run, use the consumed count. The native Armenian technical allocation gives \(200\mathrm M/20\mathrm M=10\) corpus-equivalents. Both ten-chunk traces give \(10{,}000/10{,}000=1\), despite reaching different unique chunks. The ratio counts exposure relative to capacity; it establishes a complete pass only when every target is actually visited once.
+
+#### Expected unique coverage {#expected-unique-coverage}
+
+For chunk probabilities \(a_j\) and \(n\) independent replacement draws, the expected number of distinct chunks is
+
+$$
+\mathbb E[V_n]=\sum_j[1-(1-a_j)^n].
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(V_n\) | Number of distinct chunks observed after \(n\) draws |
+| \(\mathbb E[\cdot]\) | Expectation: the mean across repeated runs |
+| \(a_j\) | Probability of drawing chunk \(j\) on one draw |
+| \(n\) | Number of independent draws with replacement |
+| \(\sum_j\) | Sum over all chunks \(j\) |
+
+The term \((1-a_j)^n\) is the chance that every draw misses chunk \(j\). Subtracting from one gives the chance of seeing it at least once. Summing those chances counts each distinct chunk once in expectation.
+
+#### Example: one pool-sized replacement sample {#uniform-coverage-example}
+
+Take a pool of \(M=1000\) equally likely chunks and make \(n=M\) independent draws with replacement. Then \(a_j=1/M\) for every chunk, so
+
+$$
+\frac{\mathbb E[V_n]}{M}
+=1-\left(1-\frac1M\right)^M
+\approx0.6323046.
+$$
+
+Expect about 632.3 distinct chunks, or 63.23% of this pool. As the pool size grows, the fraction approaches
+
+$$
+1-\exp(-1)\approx0.6321206.
+$$
+
+Here \(M\) is the pool size, \(\mathbb E[V_n]/M\) is the expected covered fraction, and \(\exp(-1)=1/e\), with Euler's number \(e\approx2.718\). The 63.2% value is the large-pool limit of this uniform replacement example. It is not a guarantee for one run; a shuffled traversal without replacement covers every chunk in one pass.
+
+With probabilities \((0.8,0.1,0.1)\) and three draws, expected unique chunks are
+
+$$
+(1-0.2^3)+2(1-0.9^3)=1.534.
+$$
+
+Uniform sampling of the same three chunks gives \(3[1-(2/3)^3]\approx2.111\). Concentration reduces coverage even though both samplers take three draws.
+
+If items have different lengths \(s_j\), expected unique **target positions** are \(\sum_j s_j[1-(1-a_j)^n]\), assuming nonoverlapping target sets. Family coverage uses the probability of drawing any member of each family instead. Do not relabel a unique-record count as unique-target or independent-family coverage.
+
+### 6. Multilingual smoothing changes repetition {#multilingual-smoothing}
+
+One baseline transforms available language capacities:
+
+$$
+p_l(\alpha)=\frac{D_l^\alpha}{\sum_jD_j^\alpha},
+\qquad 0\le\alpha\le1.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(l,j\) | Language/source indices |
+| \(D_l\) | Unique scored-target capacity of language \(l\) |
+| \(p_l(\alpha)\) | Allocated target share under exponent \(\alpha\) |
+| \(\alpha\) | Smoothing exponent between zero and one |
+| \(\sum_j\) | Sum over all nonempty source pools |
+
+Here \(\alpha=1\) is proportional allocation and \(\alpha=0\) is uniform over nonempty pools. The equivalent inverse-temperature convention uses \(\alpha=1/\tau\); always write the formula rather than naming a temperature without defining it.
+
+For a 99:1 inventory, square-root smoothing changes the smaller pool's share from 1% to
+
+$$
+\frac{1}{\sqrt{99}+1}\approx9.13\%.
+$$
+
+A 500M-target pool would receive about 9.13B targets in a 100B-target run, or 18.27 corpus-equivalents. The balanced-looking mixture is also a strong repetition policy.
+
+We can derive that interaction directly. At total target budget \(T\),
+
+$$
+e_i=\frac{Tp_i}{D_i}
+=\frac{T D_i^{\alpha-1}}{\sum_jD_j^\alpha}.
+$$
+
+Therefore
+
+$$
+\frac{e_i}{e_j}
+=\left(\frac{D_i}{D_j}\right)^{\alpha-1}.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(i,j\) | Two source indices |
+| \(T\) | Total scored-target budget for the run |
+| \(p_i\) | Target share assigned to source \(i\) |
+| \(D_i\) | Unique target capacity of source \(i\) |
+| \(e_i\) | Exposure ratio: allocated targets divided by unique capacity |
+| \(\alpha\) | Exponent used to smooth the source shares |
+
+Under proportional sampling, every source has the same exposure ratio. With square-root smoothing, a source 100 times smaller receives ten times as many corpus-equivalents. This mathematical consequence holds before any claim about improved multilingual performance.
+
+### 7. Enforce repetition caps on the simplex {#repetition-caps}
+
+Suppose an experiment limits source \(i\) to \(e_i^{\max}\) corpus-equivalents. At fixed budget \(T\), its share must satisfy
+
+$$
+p_i\le u_i=\frac{e_i^{\max}D_i}{T},
+\qquad \sum_i p_i=1,\quad p_i\ge0.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(p_i\) | Allocated scored-target share of source \(i\) |
+| \(u_i\) | Maximum allowed share of that source |
+| \(e_i^{\max}\) | Maximum allowed exposure in corpus-equivalents |
+| \(D_i\) | Unique target capacity |
+| \(T\) | Total scored-target budget |
+| \(\sum_i\) | Sum over sources allowed positive weight |
+
+The simplex is the set of nonnegative shares that sum to one. Repetition caps restrict that set by placing an upper bound on each share.
+
+Assuming arbitrary target-level allocation among allowed sources, the budget is feasible only if
+
+$$
+\sum_i e_i^{\max}D_i\ge T.
+$$
+
+For a specified sampler support, apply this test only to sources allowed positive weight. Whole-record granularity can impose additional restrictions.
+
+Source C has \(D_C=20\)M. A four-pass cap and a 2B target budget allow at most \(80\)M targets, hence \(p_C\le4\%\). The original 10% proposal is infeasible under that cap.
+
+Simply clipping C from 10% to 4% leaves only 94% allocated. Renormalizing all five clipped values would raise C back above its limit. We need a constrained redistribution rule.
+
+For the running example, let only C's cap bind. Fix its share at 4% and distribute the remaining 96% proportionally across the other sources. This gives:
+
+| Source | Baseline share | Capped share | Capped exposure |
+| --- | ---: | ---: | ---: |
+| A | 50% | 53.333% | 1.333× |
+| B | 18% | 19.200% | 3.200× |
+| C | 10% | 4.000% | 4.000× |
+| D | 12% | 12.800% | 4.267× |
+| E | 10% | 10.667% | 2.133× |
+
+#### Scale uncapped weights to fill the remainder {#capped-proportional-allocation}
+
+The rule preserves relative baseline weights among uncapped sources:
+
+$$
+p_i=\min(u_i,\lambda b_i),
+\qquad
+\sum_i p_i=1.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(i,\sum_i\) | Source index and sum over all sources |
+| \(b_i\) | Original proposed target share |
+| \(u_i\) | Maximum allowed target share |
+| \(\lambda\) | Common multiplier chosen so the final shares sum to one |
+| \(p_i\) | Final capped target share |
+| \(\min\) | Select the smaller of the cap and the rescaled weight |
+
+In this example, the native-technical source originally had 10% of the weight and is fixed at its 4% cap. The remaining sources originally sum to 90%, and must now receive 96%:
+
+$$
+\lambda=\frac{1-0.04}{1-0.10}
+=\frac{0.96}{0.90}
+\approx1.0667.
+$$
+
+The numerator is the target mass left after fixing the capped share. The denominator is the original weight of the uncapped sources. For English, \(0.50\lambda\approx0.53333\), matching the table's 53.333%.
+
+Start with all sources active, distribute the remaining mass proportionally, fix any source exceeding its cap, then repeat on the remaining sources. If another cap binds, recompute the multiplier using the updated remaining mass and uncapped baseline weights. Each pass fixes at least one newly capped source or finishes. This is a capped proportional allocation, not a proof that the resulting mixture optimizes validation loss.
+
+Changing the total run budget changes the feasible simplex even if the capacities and repetition caps stay fixed. A mixture feasible for a proxy run can become infeasible at target scale.
+
+### 8. Separate language marginals from domain conditionals {#conditional-mixtures}
+
+Keep language, domain, and origin as the source labels from the corpus inventory. First allocate by language and domain:
+
+$$
+p(\ell,d)=p(\ell)\,p(d\mid\ell).
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(\ell,d,o\) | Language, domain, and origin labels |
+| \(p(\ell)\) | Overall target share assigned to language \(\ell\) |
+| \(p(d\mid\ell)\) | Fraction of that language assigned to domain \(d\) |
+| \(p(\ell,d)\) | Joint language-domain share of all targets |
+| \(p(o\mid\ell,d)\) | Origin share within a language-domain cell |
+
+The conditional bar means “within” the specified language or cell. Multiply the language share by the within-language domain share to obtain their joint share. A hierarchical sampler can also include origin:
+
+$$
+p(\ell,d,o)=p(\ell)\,p(d\mid\ell)\,p(o\mid\ell,d).
+$$
+
+For instance, 30% Armenian allocation and a 40% technical share within Armenian imply a 12% Armenian-technical joint share. If 25% of that technical slice is translated, the translated share of the entire run is \(0.30\cdot0.40\cdot0.25=3\%\), not 25%.
+
+Conditional weights are useful controls, but capacity constraints apply to the final joint cells. If the native-technical cell hits a repetition cap, reallocating mass to Armenian general preserves the Armenian marginal; reallocating it to English does not. State which constraint takes priority rather than independently normalizing every marginal.
+
+The final record-level draw probabilities still depend on cell-specific mean target lengths. A hierarchy over source names does not remove the record-to-target conversion from Part I.
+
+## Part III — Learn a mixture with proxy experiments {#proxy-mixtures}
+
+### 9. Why one source can help another {#gradient-transfer}
+
+#### Choose data that helps a scarce target domain {#transfer-motivation}
+
+After respecting repetition caps on the small native Armenian technical pool, we still need to decide which additional data helps that target. English technical text shares the domain; general Armenian text shares the language. Both are plausible auxiliary sources, but those labels do not tell us which source improves the current model on held-out Armenian technical text.
+
+Compare two runs from the same checkpoint, each using one million additional scored targets. Keep processed positions, optimizer, schedule, and the held-out target evaluation fixed. The following outcomes are constructed for illustration:
+
+| Target: Armenian technical | English technical training | General Armenian training |
+| --- | ---: | ---: |
+| Before extra training | Target loss: 2.00 | Target loss: 2.00 |
+| Same additional budget | 1M scored targets | 1M scored targets |
+| After extra training | Target loss: 1.96 | Target loss: 2.03 |
+
+Lower target loss is better. In this assigned comparison, English technical training helps the target while general Armenian training hurts it, even though the latter matches the target language. These are not measured results or general rankings: the outcome can change with the checkpoint, data, budget, and evaluation.
+
+Capacity constraints tell us whether a mixture can be executed; they do not tell us whether its updates help the desired task. The next calculation explains a local version of this effect through gradient alignment. Proxy experiments then test useful allocations over longer training runs.
+
+| Term | Meaning |
+| --- | --- |
+| \(\theta,\theta'\) | Model parameters before and after one update |
+| \(\eta\) | Learning rate: the gradient-step size |
+| \(i,j\) | Training source and another source being evaluated |
+| \(L_i(\theta),L_j(\theta)\) | Losses on the corresponding sources |
+| \(\nabla_\theta L_i\) | Gradient: how the source loss changes with the parameters |
+| \(g_i,g_v\) | Source gradient and fixed-validation gradient |
+| \(g_v^\top g_i\) | Dot product, measuring the alignment of those gradients |
+
+For a small step on source \(i\), the same calculation with \(L_j\) predicts the local loss change on source \(j\). A positive gradient dot product predicts a decrease in that loss; a negative dot product predicts interference.
+
+Let \(g_i=\nabla_\theta\overline\ell_i(\theta)\) be a source gradient and \(g_v=\nabla_\theta L_v(\theta)\) a gradient on a fixed validation distribution. A small SGD step on source \(i\) gives
+
+$$
+\theta'=\theta-\eta g_i,
+\qquad
+L_v(\theta')-L_v(\theta)
+\approx-\eta\langle g_v,g_i\rangle.
+$$
+
+Positive alignment predicts a local validation improvement; negative alignment predicts interference. For mixture \(p\), replace \(g_i\) with \(\sum_ip_i g_i\). This is a first-order approximation at the current parameters, not a complete training forecast or an exact description of Adam.
+
+As a scalar illustration, let \(g_v=2\), \(g_A=1\), and \(g_B=-1\). A 75:25 mixture has expected gradient \(0.5\) and first-order validation change \(-\eta\). Reversing the shares changes the prediction to \(+\eta\). Counts alone do not describe whether the gradients help the target objective.
+
+Raw source loss is not enough to estimate this effect. High loss might indicate useful headroom or unpredictable noise; low loss might indicate an already-learned source. Proxy methods use additional measurements to propose a distribution, and those measurements depend on model state and scale.
+
+### 10. DoReMi: reference losses and online domain weights {#doremi-update}
+
+[DoReMi](https://arxiv.org/abs/2305.10429) [@xie2023doremi] trains a reference model, then a small proxy whose domain weights adapt to excess loss. Averaged weights from that proxy trajectory define a resampling distribution for a larger model.
+
+For paired token losses, its Algorithm 1 estimates
+
+$$
+r_i=\frac1{n_i}\sum_{t\in B_i}
+\max(\ell_{\mathrm{proxy},t}-\ell_{\mathrm{ref},t},0).
+$$
+
+It updates domain weights using exponentiated ascent followed by smoothing:
+
+$$
+v_i=\alpha_i\exp(\eta_\alpha r_i),
+\qquad
+\alpha'_i=(1-c)\frac{v_i}{\sum_jv_j}+\frac cK.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(i,j,K\) | Domain indices and the number of domains |
+| \(B_i,n_i\) | Tokens from domain \(i\) in the batch and their count |
+| \(\ell_{\mathrm{proxy},t},\ell_{\mathrm{ref},t}\) | Proxy and reference losses for the same token \(t\) |
+| \(r_i\) | Mean positive tokenwise excess loss in domain \(i\) |
+| \(\alpha_i,v_i,\alpha'_i\) | Current weight, unnormalized updated weight, and smoothed next weight |
+| \(\widetilde\alpha_i=v_i/\sum_jv_j\) | Updated weights normalized to sum to one |
+| \(\eta_\alpha\) | Step size for updating domain weights |
+| \(c\) | Uniform smoothing fraction between zero and one |
+| \(\exp(x)\) | Exponential \(e^x\) |
+
+Larger positive excess loss increases a domain's weight exponentially. Normalize those weights, then mix in a uniform share \(c/K\) for each domain. In the abbreviated form \(\widetilde\alpha_i\propto\alpha_i\exp(\eta_\alpha r_i)\), the symbol \(\propto\) means proportional to, with normalization still required.
+
+The proxy model receives a gradient step under the reweighted domain objective. Algorithm 1 uses a uniform-domain minibatch proposal, not sampling and reweighting by \(\alpha\) twice. Domain estimates require observed tokens; an absent domain needs explicit handling rather than division by zero. Return the average domain weights across proxy steps, not only the final vector. The tokenwise clipping is an algorithmic modification of the unclipped minimax objective.
+
+#### Calculate one update
+
+Start with \(\alpha=(0.5,0.5)\), \(\eta_\alpha=1\), and \(c=0.001\). Use these constructed token losses:
+
+| Domain | Proxy losses | Reference losses | Tokenwise positive excess | Mean excess |
+| --- | --- | --- | --- | ---: |
+| A | \([2,4]\) | \([1,5]\) | \([1,0]\) | 0.5 |
+| B | \([8,10]\) | \([8,10]\) | \([0,0]\) | 0 |
+
+Although B's raw loss is much larger, it has no excess relative to the reference. A receives more weight:
+
+$$
+\frac{v_A}{v_A+v_B}
+=\frac{e^{0.5}}{e^{0.5}+1}\approx0.622459,
+\qquad
+\alpha'_A\approx0.622337.
+$$
+
+Clipping **after** averaging would give A the wrong score: \(\max((1-1)/2,0)=0\), instead of \((1+0)/2=0.5\). The order of reduction and clipping matters.
+
+For numerical stability, compute \(z_i=\log\alpha_i+\eta_\alpha r_i\), subtract \(\max_jz_j\), then exponentiate. Smoothing supplies a positive exploration floor when \(c>0\). These calculations reproduce the weight update, not a complete language-model training run.
+
+### 11. RegMix: fit the response over the simplex {#regmix-surrogate}
+
+[RegMix](https://arxiv.org/abs/2407.01492) [@liu2024regmix] instead trains small models under sampled mixtures and fits a regression from mixture weights to a fixed evaluation outcome. The paper evaluates ridge and LightGBM regressors, then uses predicted rankings to choose a mixture for larger-scale training. This transfers a proxy ranking hypothesis, not a guaranteed universal optimum.
+
+For \(K\) sources with shares restricted to multiples of \(1/m\), the number of nonnegative mixtures is
+
+$$
+\binom{m+K-1}{K-1}.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(K\) | Number of sources |
+| \(m\) | Total integer allocation units; the share step is \(1/m\) |
+| \(k_i\) | Units assigned to source \(i\), so its share is \(k_i/m\) |
+| \(\sum_i k_i=m\) | All allocation units must be assigned |
+| \(\binom nr\), or \(\operatorname{choose}(n,r)\) | Number of ways to choose \(r\) items from \(n\) |
+
+Five sources at 5% resolution give \(\binom{24}{4}=10{,}626\) mixtures. Scoring a surrogate on that many vectors is cheap compared with training that many language models. Apply capacity constraints before ranking candidates.
+
+A practical candidate generator is \(p\sim\operatorname{Dirichlet}(\kappa b)\), where \(b\) is a positive baseline probability vector with \(\sum_i b_i=1\). Its mean is \(b\); smaller concentration \(\kappa\) gives more extreme mixtures. Sampling around a feasible mean does **not** enforce repetition caps on each draw. Reject or explicitly project infeasible candidates, recording the resulting search distribution.
+
+#### Fit a small response surface
+
+To make the regression step inspectable, use a two-source synthetic fixture with source-A fraction \(z\):
+
+| \(z\) | Assigned proxy loss |
+| ---: | ---: |
+| 0 | 2.4 |
+| 0.5 | 2.3 |
+| 1 | 2.6 |
+
+Fit \(\widehat L(z)=a+bz+dz^2\). The first row gives \(a=2.4\); the other rows give \(0.5b+0.25d=-0.1\) and \(b+d=0.2\), hence \(b=-0.6\) and \(d=0.8\).
+
+$$
+\widehat L(z)=2.4-0.6z+0.8z^2,
+\qquad
+z^*=\frac{0.6}{1.6}=0.375,
+\qquad
+\widehat L(z^*)=2.2875.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(z\) | Source A's target share, between zero and one |
+| \(1-z\) | Source B's remaining share |
+| \(\widehat L(z)\) | Predicted fixed-evaluation loss from the surrogate |
+| \(d\widehat L/dz\) | Slope: how predicted loss changes as A's share changes |
+| \(z^*\) | Share minimizing the surrogate's predicted loss |
+
+For this upward-opening quadratic, setting \(d\widehat L/dz=-0.6+1.6z=0\) gives the predicted minimum at \(z^*=0.375\). The hat marks a prediction, and the star marks an optimizing value.
+
+Neither endpoint nor the best observed row attains the predicted interior minimum. This polynomial is a teaching fixture, not the paper's fitted response or a measured result. Three observations can fit three coefficients exactly without establishing predictive accuracy. Reserve unseen mixtures, then larger-model runs, to test the recommendation.
+
+With many sources, linear features obey \(\sum_i p_i=1\). An intercept plus every source column is redundant; drop a reference column or use a constrained/regularized fit. Hold out entire mixture runs rather than random checkpoints from the same trajectory. Ranking quality matters for selecting candidates even when absolute proxy and target losses have different scales.
+
+### 12. Compare mixtures under a fixed evaluation {#mixture-evaluation}
+
+Let fixed validation slices have losses \(L_s(\theta)\). Predeclare weights \(w_s\) and evaluate
+
+$$
+L_{\mathrm{eval}}(\theta)=\sum_s w_sL_s(\theta).
+$$
+
+For English/Armenian losses X = \((2.0,4.0)\) and Y = \((2.2,3.0)\), a 90:10 evaluation favors X: 2.20 versus 2.28. Equal weights favor Y: 3.00 versus 2.60. A proxy optimizer will inherit the metric it is asked to predict; multilingual balance does not emerge automatically from minimizing an English-heavy aggregate.
+
+Use the same experimental controls across the methods:
+
+| Fixed element | Why it matters |
+| --- | --- |
+| Corpus, tokenizer, sequence policy | Keeps a source and its target counts comparable |
+| Model, initialization protocol, optimizer, horizon | Isolates the mixture intervention |
+| Declared compute or target budget | Defines the resource tradeoff |
+| Family-disjoint validation slices and weights | Keeps the selection objective fixed |
+
+A target-matched comparison is not necessarily compute matched. A proxy run also spends part of the search budget: compare the cost of reference models, candidate runs, regression, and confirmation runs, not only the final model. Keep a final evaluation set outside mixture selection; testing many candidate mixtures can otherwise overfit validation noise.
+
+## Part IV — Allocate compute and order the data {#compute-and-curriculum}
+
+### 13. Count processed positions before estimating compute {#processed-compute}
+
+Let \(P\) be dense-model parameter count, \(N\) the number of positions processed in forward/backward training computation, and \(T\) the number of scored targets. Under the usual dense parameter-matmul planning approximation,
+
+$$
+C\approx6PN.
+$$
+
+Define scored-target utilization \(\rho=T/N\). If \(\rho\) is stable, then
+
+$$
+C\approx\frac{6PT}{\rho}.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(P\) | Dense-model parameter count |
+| \(N\) | Positions that receive training computation |
+| \(T\) | Scored prediction targets |
+| \(\rho=T/N\) | Fraction of processed positions that are scored |
+| \(C\) | Estimated training work in floating-point operations (FLOPs) |
+| \(6\) | Approximate forward-plus-backward parameter-work factor |
+
+Only when \(\rho\approx1\) can we replace processed positions with scored targets directly. A context-only token can still influence later predictions and incur model computation even when its own prediction is unscored. Dense kernels may also process padding; a kernel that removes padding has different processed-position accounting.
+
+For a 100M-parameter model and 2B scored targets:
+
+| Utilization | Processed positions \(N\) | Estimated training FLOPs |
+| ---: | ---: | ---: |
+| 1 | 2B | \(1.2\times10^{18}\) |
+| 0.5 | 4B | \(2.4\times10^{18}\) |
+
+The factor 6 approximates forward plus backward parameter-related work. Sequence-dependent attention, vocabulary operations, recomputation, and hardware efficiency need additional treatment. This is not an MoE cost model or a hardware profile. Lecture 8 develops the execution-level accounting.
+
+### 14. Derive the compute-optimal model and data sizes {#scaling-optimum}
+
+[Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556) [@hoffmann2022chinchilla] motivates fitting loss as a function of model and training-data scale. Use the empirical family
+
+$$
+L(P,T)=L_\infty+AP^{-a}+BT^{-b},
+\qquad A,B,a,b>0.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(L(P,T)\) | Predicted evaluation loss at the chosen model and target counts |
+| \(L_\infty\) | Fitted limiting loss floor |
+| \(P,T\) | Model parameter count and scored-target count |
+| \(A,B\) | Positive fitted scales for the parameter and data contributions |
+| \(a,b\) | Positive fitted exponents governing those contributions |
+| \(C,\rho\) | Training FLOP budget and fraction of processed positions scored |
+| \(P^*,T^*\) | Counts that minimize the fitted loss under the compute constraint |
+
+Increasing \(P\) reduces the fitted parameter contribution \(AP^{-a}\); increasing \(T\) reduces the data contribution \(BT^{-b}\). The star denotes an optimum within this model and its assumptions.
+
+For the following derivation assume \(\rho=1\), a fixed data/tokenizer regime, and the dense compute approximation. Then \(T=C/(6P)\), giving
+
+$$
+L(P;C)=L_\infty+AP^{-a}+B(6P/C)^b.
+$$
+
+Differentiating and setting the result to zero gives
+
+$$
+-aAP^{-a-1}+bB(6/C)^bP^{b-1}=0,
+$$
+
+or
+
+$$
+aAP^{-a}=bB(6P/C)^b.
+$$
+
+The optimal model and target budget are therefore
+
+$$
+P^*=\left[\frac{aA}{bB}(C/6)^b\right]^{1/(a+b)},
+\qquad T^*=\frac{C}{6P^*}.
+$$
+
+Thus \(P^*\propto C^{b/(a+b)}\) and \(T^*\propto C^{a/(a+b)}\). Equal fitted exponents imply square-root growth of both quantities; they do not fix a universal tokens-per-parameter ratio. With constant utilization below one, replace \(C\) by \(\rho C\) in this target-based derivation. If utilization changes across candidate models, this substitution alone is insufficient.
+
+#### A fully specified compute contour
+
+Use a synthetic loss law, with raw parameter and target counts:
+
+$$
+L(P,T)=1+\frac{10^8}{P}+\frac{2\times10^9}{T},
+\qquad C=1.2\times10^{18},\qquad\rho=1.
+$$
+
+| Parameters \(P\) | Targets \(T=C/(6P)\) | Capacity term | Data term | Assigned loss |
+| ---: | ---: | ---: | ---: | ---: |
+| 50M | 4B | 2 | 0.5 | 3.5 |
+| 100M | 2B | 1 | 1 | 3.0 |
+| 200M | 1B | 0.5 | 2 | 3.5 |
+
+The analytic optimum is \(P^*=100\)M and \(T^*=2\)B. Increasing parameters helps the capacity term but leaves too little data under the same compute budget. These coefficients and losses are deliberately assigned for calculation; they are not a fit to Armenian, English, or a released model.
+
+### 15. Fit and test a scaling law {#scaling-fit}
+
+A formula is useful only if its coefficients predict runs outside the fitted observations. Vary both \(P\) and \(T\): a fixed-token model sweep cannot identify a data exponent, and a single compute contour entangles the two effects.
+
+One positive-parameter fit writes \(A=e^{u}\), \(B=e^{v}\), \(L_\infty=e^{w}\), and fits the residuals between predicted and observed log loss. The Chinchilla paper uses a robust Huber objective and multiple initializations; these are fitting choices, not a reason to assume its coefficients apply to another dataset.
+
+For a small executable exercise, fix \(a=b=1\) and fit
+
+$$
+L=\beta_0+\beta_1/P+\beta_2/T.
+$$
+
+The three columns \((1,1/P,1/T)\) form an ordinary linear regression design. Independently vary model and data sizes, solve for the coefficients, and predict held-out combinations. Scaling the columns into millions/billions improves numerical conditioning but changes the coefficient units. Only after this exercise should we add free exponents and nonlinear optimization.
+
+For real runs, inspect residuals against model size, token budget, repetition level, and training horizon. Hold out runs, not arbitrarily selected checkpoints from schedules tuned for longer training. A long-horizon checkpoint before annealing is not interchangeable with a run whose schedule ends at that budget. Report prediction uncertainty before extrapolating orders of magnitude beyond the measured regime.
+
+The fixture above is a check of algebra and implementation. Recovering its assigned coefficients exactly is not empirical evidence that language-model loss follows that law.
+
+### 16. Add a unique-data constraint {#data-constrained-scaling}
+
+First consider a strict policy: use each target at most once, with total capacity \(D\). At fixed scoring density \(\rho\), the fixed-compute contour gives \(T=C\rho/(6P)\). Requiring \(T\le D\) therefore gives
+
+$$
+P\ge\frac{C\rho}{6D}.
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(D\) | Available unique scored-target capacity |
+| \(T\) | Scored-target budget, bounded by \(D\) for one pass |
+| \(P\) | Dense-model parameter count |
+| \(C\) | Training FLOP budget to be spent |
+| \(\rho\) | Fixed fraction of processed positions that are scored |
+
+The data limit caps the targets available for training. Spending the entire compute budget then requires a sufficiently large model.
+
+Under the positive two-term loss model and full budget use, the constrained optimum is
+
+$$
+P^*_{\mathrm{one\ pass}}=\max\left(P^*,\frac{C\rho}{6D}\right),
+\qquad
+T^*_{\mathrm{one\ pass}}=\frac{C\rho}{6P^*_{\mathrm{one\ pass}}}.
+$$
+
+For the synthetic contour with \(D=1\)B, one-pass training requires at least 200M parameters; its optimum becomes \((200\mathrm M,1\mathrm B)\), with assigned loss 3.5. The unconstrained \((100\mathrm M,2\mathrm B)\) point is unavailable under this policy. This does not establish that a larger model is better than repeating data: it solves a specifically restricted feasible set and assumes the full compute budget must be spent.
+
+If repetition is allowed, raw exposure \(T\) and unique capacity \(D\) differ. [Scaling Data-Constrained Language Models](https://arxiv.org/abs/2305.16264) [@muennighoff2023dataconstrained] fits diminishing returns to repeated exposures rather than treating every repeated token as equally valuable new data. Its effective-data terms are empirical, not the unique-coverage expectation from Section 5. Seeing a chunk at least once and learning more from seeing it again are different questions.
+
+Compare held-out outcomes while fixing \(D\) and varying total exposure. Then compare acquiring more unique material against another pass at matched compute. Source-level repetition caps constrain feasible mixtures; empirical learning curves decide whether those caps are sensible for the task.
+
+### 17. Replay and curricula are time-dependent mixtures {#mixture-curriculum}
+
+A continued-pretraining allocation can use
+
+$$
+p(t)=(1-\lambda(t))p_n(t)+\lambda(t)p_r(t).
+$$
+
+| Term | Meaning |
+| --- | --- |
+| \(t\) | Progress through training |
+| \(p(t)\) | Overall vector of source target shares at that point |
+| \(p_n(t)\) | Source shares within the new-data component |
+| \(p_r(t)\) | Source shares within the replay component |
+| \(\lambda(t)\) | Fraction of targets allocated to replay, between zero and one |
+
+Allocate \(\lambda(t)\) of targets to replay and \(1-\lambda(t)\) to new data. Each component distribution sums to one before these fractions are applied.
+
+Replay is an available retention source, not necessarily the original checkpoint's undisclosed training distribution. Tune \(\lambda\) using fixed adaptation and retention slices. For example, a run targeting 1B **new-domain** targets needs total budget \(1\mathrm B/(1-\lambda)\) if that new-domain component is held fixed. At \(\lambda=0.2\), it consumes 1.25B total targets. At a fixed 1B total budget instead, new-domain exposure falls to 800M. These are different replay experiments.
+
+A schedule using \(p^{(1)}\) for 80% of targets and \(p^{(2)}\) for 20% has overall exposure \(0.8p^{(1)}+0.2p^{(2)}\), but generally not the same final model as a static mixture with those totals.
+
+| Term | Meaning |
+| --- | --- |
+| \(p^{(1)},p^{(2)}\) | Source-share vectors in stages one and two |
+| \(0.8,0.2\) | Fractions of all scored targets assigned to those stages |
+| \(\bar p=0.8p^{(1)}+0.2p^{(2)}\) | Target-weighted average source shares over the run |
+
+This average describes exposure totals. It leaves out which examples met which parameter state, learning rate, or optimizer state.
+
+We can show order dependence without a neural network. Let
+
+$$
+\ell_A(\theta)=\tfrac12(\theta-1)^2,
+\qquad
+\ell_B(\theta)=\tfrac12(\theta+1)^2,
+\qquad\theta_0=0,\quad\eta=0.1.
+$$
+
+An SGD step toward center \(c\) is \(\theta'=(1-\eta)\theta+\eta c\). Training A then B gives \(0\to0.1\to-0.01\); B then A gives \(0\to-0.1\to0.01\). The same two losses appear once each, with identical step size and count, yet the final parameter differs.
+
+In longer training, changing parameters, learning rates, and optimizer states make schedule effects more complex. Compare a static mixture with the staged version at matched budgets before attributing gains to ordering. Mixture, training horizon, and optimizer schedule form one experiment, even though their implementations are taught separately.
+
+## Practical checkpoint {#mixture-lab}
+
+Run the numerical examples without a GPU:
+
+```bash
+python3 scripts/lecture7-mixture-examples.py
+python3 tests/lecture7-mixtures.test.py
+```
+
+Then make four small changes and predict the result before executing them:
+
+1. Double B's mean record length while keeping desired target shares fixed. Recompute record probabilities and verify that the induced target shares stay unchanged.
+2. Compare three replacement draws with a shuffled pass over probabilities \((0.8,0.1,0.1)\). Explain the distinction between realized coverage and its expectation.
+3. Lower C's repetition cap from four to two. Solve the capped mixture, check every cap, and deliberately test a total budget larger than the allowed capacities.
+4. Move the synthetic compute budget up by a factor of four. With equal exponents, verify that the optimal parameter and target counts each double. Then enforce the 1B one-pass capacity.
+
+For the proxy-search exercise, fit the three-point quadratic from Section 11 and predict losses at \(z=0.25\) and \(z=0.75\): they are 2.3 and 2.4 respectively in this assigned fixture. Add noisy observations and ask how the recommended interior optimum changes. These calculations test a search mechanism, not a trained proxy model.
+
+The deliverable is one executable experiment and a short results table: intended weights, induced target shares, repetition ratios, constrained shares, and the compute-optimal pair. State which results follow from exact arithmetic, which use a long-run approximation, and which would require real training measurements. After Lecture 8 provides the training loop, replace assigned proxy losses with measured runs while preserving these controls.
+
+## Check your understanding
+
+1. Why does averaging record means induce a different gradient from averaging all target losses?
+2. A 90% record-draw share yields 47.37% target share. Which two source statistics produced this example?
+3. Why can one corpus-equivalent of replacement draws leave about 36.8% of chunks unseen?
+4. How does square-root smoothing affect the exposure-ratio ratio of pools differing by 100×?
+5. Why is clipping shares and then renormalizing insufficient to enforce repetition caps?
+6. In the DoReMi fixture, why does the lower-raw-loss domain receive higher weight? Why must clipping precede averaging?
+7. What is learned by a DoReMi proxy, and what is learned by a RegMix regression?
+8. Why can a surrogate fit all observed mixtures exactly yet rank unseen mixtures incorrectly?
+9. How does halving scored-target utilization change the compute needed for a fixed model and target budget under the dense approximation?
+10. Which assumptions make the one-pass constrained scaling solution valid?
+11. How can identical total source counts lead to different final parameters?
+
+## What to remember
+
+* Target weights become record probabilities through \(q_i\propto p_i/\mu_i\); the loss reduction determines the resulting objective.
+* Replacement coverage, target exposure, and learning value are different quantities.
+* Smoothing smaller pools increases their repetition pressure; capacity and repetition caps define a constrained simplex.
+* DoReMi adapts domain weights using reference-relative losses; RegMix predicts outcomes from proxy mixture runs. Both require target-scale validation.
+* Compute follows processed positions. A target budget is a compute budget only under stated utilization and model assumptions.
+* Scaling optima come from a fitted loss surface and constraints, not a universal tokens-per-parameter rule.
+* A source schedule is a training trajectory, not just a final histogram.
+
+## References and reading
+
+* [DoReMi: Optimizing Data Mixtures Speeds Up Language Model Pretraining](https://arxiv.org/abs/2305.10429) [@xie2023doremi], especially Algorithm 1 for tokenwise excess losses and domain-weight updates.
+* [RegMix: Data Mixture as Regression for Language Model Pre-training](https://arxiv.org/abs/2407.01492) [@liu2024regmix], for candidate mixtures, proxy regressions, and ranking transfer.
+* [Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556) [@hoffmann2022chinchilla], for empirical loss surfaces and compute/data allocation.
+* [Scaling Data-Constrained Language Models](https://arxiv.org/abs/2305.16264) [@muennighoff2023dataconstrained], for empirical scaling when data must be repeated.
+
+Lecture 8 takes the selected mixture, target horizon, and compute assumptions into an actual training loop: target-correct gradient accumulation, optimization, numerical precision, distributed loading, and checkpoint recovery.
