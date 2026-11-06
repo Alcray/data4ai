@@ -1,0 +1,226 @@
+---
+title: "Lecture 7.5: Robot learning and vision-language-action models"
+order: 9
+description: "Understand robot policies, ACT and VLAs, their training data, and adaptation to a new robot and task."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+A robot sees a cup and receives the instruction “put the cup in the tray.” Recognizing the objects is only part of the problem. The robot must select a grasp, move its own joints, close its gripper at the right time, and respond when the cup moves. Learning these decisions requires data connecting observations to physical actions.
+
+This lecture takes approximately **35–40 minutes**. Its three parts introduce robot policies and their data, compare model families and training methods, and explain adaptation to a local setup. The goal is to understand what a model has learned and what evidence is still needed before it can perform your task.
+
+**Learning outcomes.** Distinguish perception, language-conditioned policies, and controllers; explain action chunks and demonstration learning; compare ACT, Diffusion Policy, OpenVLA, π0, and Perceptron's models; and identify the data needed for adaptation and evaluation.
+
+## Part I — Robot policies and their data {#robot-policies}
+
+### 1. Observation, action, and feedback {#control-loop}
+
+A **policy** maps observations to actions. Observations can include camera images, joint positions, gripper state, and recent history. An action might specify joint targets, an end-effector displacement, or a gripper command. A lower-level **controller** converts the chosen commands into actuator behavior; the policy need not predict motor torques.
+
+An **embodiment** is the physical robot and its sensing and actuation arrangement: its joints, gripper, cameras, and control interfaces. Two arms observing the same cup may need different commands because their geometry and available motions differ.
+
+The control loop repeatedly observes, chooses an action, executes it, and observes again. This is **closed-loop control**. Errors change later observations: a missed grasp leaves the object on the table. A policy trained only on successful grasps can then encounter a state absent from its demonstrations.
+
+![The controller executes policy commands, physical movement changes the scene, and new camera images and robot state feed the next prediction.](lecture-8/robot-feedback-loop.svg?v=5b4077df372e)
+
+### 2. Perception models and action policies {#vlm-vla}
+
+The diagrams below show **inference**: the data received during execution and the outputs passed to the next component. A **vision-language-action model (VLA)** uses images and language to predict actions. Its action representation determines what must happen before the robot moves. Colors distinguish functional modules; gray processing boxes identify fixed conversions. The numerical rows and tool call shown here are schematic interface examples.
+
+#### A VLM produces an answer {#vlm-interface}
+
+A **vision-language model (VLM)** receives an image and a question. In this interface, its output is text or spatial data such as an image point or bounding box. An image coordinate identifies a location in the picture; a separate action policy or skill must connect that location to physical motion.
+
+![Image and question enter a vision-language model; text or spatial data comes out.](lecture-8/vlm-interface.svg?v=7bb163b99b68)
+
+#### A tool-using agent delegates motion {#tool-agent-interface}
+
+An agent receives the scene, goal, and descriptions of available tools. It emits a structured call naming a skill and its arguments. The supplied skill implements the movement using a planner, learned policy, or both; a controller executes the resulting commands. This is the tool interface illustrated by [Perceptron Mk1.5](https://www.perceptron.inc/blog/introducing-perceptron-mk1-5) [@perceptron2026mk15]. The call below is illustrative, rather than a vendor API specification.
+
+![Scene, goal, and skill API enter an agent; a structured skill call is executed by a separate motion skill and robot controller.](lecture-8/tool-agent-interface.svg?v=90a0c3f59d70)
+
+#### ACT predicts numerical joint targets {#act-interface}
+
+Original [ACT](https://tonyzhaozh.github.io/aloha/) [@zhao2023act] receives camera images and measured joint positions. At inference, its decoder predicts future joint targets and gripper values as a numerical action chunk. Postprocessing restores the action scale and selects commands or combines overlapping predictions through temporal ensembling. The joint controller tracks these targets and drives the motors. Original ACT has no language input.
+
+Its visual backbone extracts spatial features. Projected joint state and a latent variable set to the prior mean enter an encoder–decoder Transformer with those features. Learned step queries identify future positions in the chunk; a linear action head produces the numerical targets.
+
+![Images and joint state enter ACT; numerical joint-target chunks pass through postprocessing to a joint controller and the motors.](lecture-8/act-interface.svg?v=79544f5ca72a)
+
+#### A token-based VLA requires action decoding {#token-vla-interface}
+
+Original [OpenVLA](https://openvla.github.io/) [@kim2024openvla] receives an image and instruction, then predicts discrete action token IDs. Its [fixed decoder](https://github.com/openvla/openvla/blob/main/prismatic/extern/hf/modeling_prismatic.py) maps IDs to action-bin centers and restores scale using the selected dataset's statistics. For an end-effector action interface, the decoded values specify translation, rotation, and gripper control. A robot controller converts these into joint motion and motor actuation. The tokens encode action values; decoding them is distinct from asking another model to plan a movement.
+
+The original architecture combines DINOv2 and SigLIP visual features, projects them into the language model's input space, and uses a Llama 2 backbone for action-token prediction.
+
+![An image and instruction enter OpenVLA; action token IDs are deterministically decoded and unnormalized into motion values that a robot controller executes.](lecture-8/token-vla-interface.svg?v=be5cf3df09f4)
+
+#### A continuous VLA predicts an action chunk {#continuous-vla-interface}
+
+[π0](https://www.pi.website/blog/pi0) [@black2024pi0] receives images, an instruction, and robot state. A flow-based action expert generates a floating-point action chunk. A fixed output adapter restores units and robot conventions; the controller executes selected steps. The diagram shows a joint-target interface such as [ALOHA in openpi](https://github.com/Physical-Intelligence/openpi/blob/main/src/openpi/policies/aloha_policy.py). Other embodiments can use different action spaces. A continuous action vector can specify joint targets without specifying motor currents or torques: those remain controller responsibilities.
+
+PaliGemma supplies visual-language context. The action expert also receives robot-state embeddings, noisy action values, and flow time. It predicts a velocity field used to update those action values over repeated integration steps.
+
+![Images, language, and state enter π0; continuous action chunks pass through an output adapter to joint targets and motor actuation.](lecture-8/continuous-vla-interface.svg?v=86c19388bf9c)
+
+### 3. A demonstration is a timed trajectory {#trajectory-data}
+
+A **demonstration** records a person or another controller performing a task. An **episode** is a complete trial, including its start, sequence of observations and actions, and termination. Teleoperation produces action labels along with observations; video alone generally does not provide the robot's joint commands.
+
+Each training record needs aligned camera frames, robot state, and action targets. Document joint order, units, coordinate frames, absolute versus relative commands, gripper convention, and control frequency. A measured position is not necessarily the command sent at that instant: actuators respond with delay.
+
+This constructed record illustrates the metadata contract:
+
+```json
+{
+  "episode_id": "cup-012", "step": 40,
+  "instruction": "put the cup in the tray",
+  "images": ["front/0040.jpg", "wrist/0040.jpg"],
+  "state": "measured joint positions and gripper state",
+  "action": "commanded joint targets and gripper target",
+  "action_units": "radians; declared gripper scale"
+}
+```
+
+If the camera frame is paired with a command from the wrong time, the model learns the wrong response. More samples of that mismatch do not repair the supervision. Keep whole episodes and their acquisition conditions identifiable throughout processing.
+
+### 4. Policies can predict action chunks {#action-chunks}
+
+An **action chunk** contains several consecutive future commands. A language-conditioned policy can be written as:
+
+::: {#chunk-equations}
+$$
+A_t=(a_t,\ldots,a_{t+H-1}),
+$$
+
+$$
+A_t\sim\pi_\theta(\cdot\mid o_t,s_t,\ell).
+$$
+:::
+
+$t$ is the control-step index; $H$ is the number of predicted steps. $a_t$ is one action vector and $A_t$ the whole chunk. $o_t$ denotes visual observations, potentially including history; $s_t$ is robot state; $\ell$ is the instruction. $\pi_\theta$ is the policy with learned parameters $\theta$. The symbol $\sim$ means a prediction is sampled from its conditional distribution. A deterministic decoder instead chooses a single output. A policy without language omits $\ell$.
+
+Predicting a chunk does not require executing the entire chunk without feedback. A system can execute a prefix and replan, or combine overlapping predictions. Prediction horizon, execution horizon, and control frequency are separate choices.
+
+#### Action-chunk example {#chunk-example}
+
+At a constructed control rate of 20 commands per second, a ten-command prediction covers half a second. Executing two commands before replanning gives a new observation every tenth of a second, provided sensing and inference meet that timing. Increasing the prediction length alone does not increase feedback frequency.
+
+## Part II — Model families and training {#model-families}
+
+### 5. Demonstration learning and model types {#imitation-learning}
+
+**Behavior cloning** trains a policy to reproduce demonstrated actions under the corresponding observations. Supervision may come from human teleoperation, a scripted controller, or a previously trained policy. **Reinforcement learning** instead uses a reward to improve decisions through interaction or recorded experience; demonstrations and rewards can be combined in a larger training process.
+
+A general probabilistic behavior-cloning objective is:
+
+::: {#bc-equation}
+$$
+\mathcal L_{\mathrm{BC}}(\theta)
+=-\frac1N\sum_{i=1}^{N}\log p_\theta(A_i\mid c_i).
+$$
+:::
+
+$N$ is the number of training windows and $i$ indexes them. $A_i$ is the demonstrated action chunk. $c_i$ contains its observations, state, and any instruction. $p_\theta$ is the predicted conditional action distribution, parameterized by $\theta$. $\mathcal L_{\mathrm{BC}}$ is the mean negative log-likelihood; $\log$ is the natural logarithm and $\sum$ adds the window contributions. Training increases the probability of demonstrated behavior.
+
+This describes the statistical goal, not an identical implementation for every model. ACT uses a reconstruction term and latent regularization; diffusion policies learn denoising; flow models learn a velocity field. Their practical losses and sampling procedures differ.
+
+### 6. ACT predicts chunks from vision and state {#act}
+
+[Action Chunking with Transformers](https://tonyzhaozh.github.io/aloha/) [@zhao2023act] was introduced with the ALOHA teleoperation system. Images from multiple cameras and current joint positions condition a Transformer that predicts a sequence of joint targets. ALOHA is the hardware system; ACT is the learning method.
+
+ACT trains a **conditional variational autoencoder (CVAE)**. During training, an encoder summarizes a demonstrated action sequence and joint state into a latent variable representing variation in demonstrations. The decoder predicts the action chunk, with reconstruction and regularization losses. At inference the original method removes that encoder and uses the prior mean for the latent variable. Temporal ensembling can combine overlapping predictions for smoother commands.
+
+The original [ACT implementation](https://github.com/tonyzhaozh/act) learns task policies from demonstrations with a pretrained visual backbone. Training such a policy is different from adapting a broadly pretrained language-conditioned robot model. ACT is useful for understanding direct imitation on a defined setup without assuming that every robot policy needs a language model.
+
+### 7. Actions can be generated in different ways {#action-models}
+
+| Model family | Action interface | Main distinction |
+|---|---|---|
+| ACT | Joint-target chunks | Vision and state; latent imitation model |
+| Diffusion Policy | Continuous action sequences | Iterative conditional denoising |
+| Original OpenVLA | Discrete action tokens | Autoregressive language-conditioned prediction |
+| π0 | Continuous action chunks | VLM conditioning and a flow-based action expert |
+
+[Diffusion Policy](https://diffusion-policy.cs.columbia.edu/) [@chi2023diffusionpolicy] starts from noise and iteratively produces an action sequence conditioned on observations. It can represent multiple plausible behaviors; language conditioning is a separate architectural choice. Diffusion and flow matching are related generative approaches, but they use different training constructions.
+
+[OpenVLA](https://openvla.github.io/) [@kim2024openvla] adapts a pretrained VLM to predict tokenized actions, which are decoded into robot commands. Token-based does not mean the physical robot moves in words: the interface converts predicted symbols into numerical controls. Action representation and language conditioning are separate design axes.
+
+### 8. π0 transfers visual and language representations {#pi0}
+
+[π0](https://www.pi.website/blog/pi0) [@black2024pi0] combines a pretrained VLM with an action expert trained using flow matching. The expert learns how to transform a noisy action chunk into a continuous prediction conditioned on the scene, instruction, and robot state. Robot pretraining supplies the connection between representations and physical actions; web-language pretraining alone does not establish it.
+
+The training sequence is broadly: initialize visual-language representations, train on diverse robot trajectories, then adapt to a target setting when necessary. The [released checkpoints](https://github.com/Physical-Intelligence/openpi) distinguish base policies from specialists adapted to particular robots and tasks. A specialist's name is not evidence that it matches another installation's cameras or action conventions.
+
+[π0.5](https://www.pi.website/blog/pi05) [@pi2025pi05] illustrates a later extension: heterogeneous robot data, semantic tasks, and multimodal web data are combined to improve generalization. The important distinction is what each data source teaches, rather than treating a newer model name as a guarantee of success on an arbitrary robot.
+
+### 9. Perceptron separates agent tools and action generation {#perceptron}
+
+Two Perceptron releases illustrate different interfaces. This comparison uses their public descriptions available on **30 October 2026**.
+
+[Perceptron Mk1.5](https://www.perceptron.inc/blog/introducing-perceptron-mk1-5) [@perceptron2026mk15], announced in September 2026, processes text, images, video, and audio. Its outputs include text and spatial structures such as points and tracks, and it can invoke supplied tools. An embodied application can expose robot skills as tools. That control surface should be distinguished from a learned continuous joint-action decoder.
+
+[Perceptron Isaac 0.5](https://www.perceptron.inc/blog/introducing-isaac-0-5) [@perceptron2026isaac], announced in August 2026, combines video understanding, spatial reasoning, and robot control. Its [model repository](https://github.com/perceptron-ai-inc/isaac) describes separate continuous Flow and discrete FAST action interfaces sharing a backbone. Inputs include robot state and previous actions alongside visual and language information.
+
+Perceptron reports joint training on video, spatial grounding, task progress, future semantic descriptions, and robot actions. General video can teach what tends to happen next; robot trajectories supply action-grounded supervision. The company reports reduced teleoperation requirements at a specified held-out action-loss target. That result does not establish a universal demonstration count or equal closed-loop success on every robot. Inspect the measured outcome before transferring a data-efficiency claim to a new task.
+
+## Part III — Adapting to a local robot and task {#local-adaptation}
+
+### 10. General knowledge does not specify local controls {#adaptation-gap}
+
+A policy may recognize a cup and understand the requested goal while failing to grasp it on a new setup. The relevant differences include:
+
+| Difference | What local evidence must establish |
+|---|---|
+| Robot geometry and gripper | Reachable poses and effective grasps |
+| Camera placement and optics | Relation between appearance and motion |
+| Action convention | Joint order, units, frames, and gripper scale |
+| Timing and dynamics | Response delays and command frequency |
+| Task and environment | Desired outcomes, contacts, and recovery states |
+
+**Fine-tuning** updates a pretrained policy's parameters using target-domain data. It can connect existing representations to local observations and successful actions. It is often useful when the deployment setting differs from pretraining. It is not universally required: a compatible policy may generalize without additional updates. Establish the baseline before deciding which mismatch needs adaptation.
+
+Some problems are interface errors. If training actions use radians and execution interprets degrees, repair the conversion. If a required input is unavailable, resolve compatibility. Training on more demonstrations cannot make an incorrectly specified action contract reliable.
+
+#### Camera-change example {#camera-example}
+
+Keep the robot and task fixed but move a wrist camera. The same gripper pose now produces a different image. Recognition may remain correct while grasp alignment deteriorates. Demonstrations from the new view can support adaptation; restoring the expected camera configuration may also resolve the mismatch. Compare these interventions rather than assuming every failure requires more training.
+
+### 11. Collect variation that matches the task {#local-data}
+
+Useful demonstrations cover deployment conditions: object positions and orientations, plausible lighting and backgrounds, starting arm poses, and meaningful task variations. Include successful corrections from small disturbances so the policy sees states caused by its own errors. Repeating an identical trajectory adds frames without comparable coverage.
+
+Use consistent instruction labels when language matters. To teach the difference between “pick the cup” and “pick the bowl,” vary the instruction and target in comparable scenes. A single instruction attached to every episode provides little evidence that the model uses language. Avoid demonstrations in which an irrelevant background predicts the target perfectly.
+
+Check time alignment, action semantics, and failed or truncated episodes before training. Fit normalization statistics on the training split and preserve the inverse transformation used at execution. The checkpoint, observation adapter, action adapter, and normalization metadata together define the deployed policy.
+
+### 12. Adaptation must improve closed-loop behavior {#robot-evaluation}
+
+Split by complete episodes, with held-out object arrangements or collection sessions matching the generalization question. Adjacent frames from one demonstration should not appear in both training and validation; their near-duplication gives an optimistic estimate.
+
+Evaluate the starting policy and the adapted policy under matched conditions. Record task success, completion time, interventions, and failure categories such as wrong object, missed grasp, dropped object, or failure to recover. Include unsuccessful trials in the denominator. A low action-prediction loss on recorded states does not establish that a policy succeeds after its own actions change the scene.
+
+There is no universal number of demonstrations that makes a VLA work. Required coverage depends on the starting checkpoint, robot compatibility, task variation, and success criterion. Use observed failures to choose the next data to collect, then test on new episodes. Local adaptation is an empirical process connecting a particular model to a particular physical task.
+
+<details>
+<summary>Check: object recognition is correct, but grasping fails after a camera change. What should be tested?</summary>
+
+Check the observation adapter, camera configuration, and action contract first. Compare the compatible pretrained baseline with adaptation using demonstrations from the changed view. Evaluate both through complete held-out trials, including failed grasps and recovery behavior.
+
+</details>
+
+## What to remember
+
+Robot learning connects observations with action trajectories. Original ACT learns vision-and-state imitation; VLAs also use language, with different token or continuous action interfaces. Pretraining provides transferable representations and behaviors. Local data addresses the remaining robot, sensor, task, and environment differences, while correct interfaces and closed-loop evaluation determine whether adaptation actually works.
+
+## References

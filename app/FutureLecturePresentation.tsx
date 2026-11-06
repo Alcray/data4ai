@@ -1,3 +1,4 @@
+import RoboticsPresentation from "./RoboticsPresentation";
 import { useState } from "react";
 import { Slide } from "@revealjs/react";
 import Presentation from "./Lecture1Presentation";
@@ -102,6 +103,7 @@ function Content({ slide, lectureNumber }: { slide: SlideSpec; lectureNumber: nu
 }
 
 export default function FutureLecturePresentation({ lectureNumber, onExit }: { lectureNumber: number; onExit: () => void }) {
+  if (lectureNumber === 8) return <RoboticsPresentation lectureNumber={8} onExit={onExit} />;
   const deck = decks[lectureNumber];
   if (!deck) return null;
   const isDraft = deck.number > 7;
