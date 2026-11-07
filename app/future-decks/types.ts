@@ -12,6 +12,8 @@ export type SlideSpec = {
   formulaAnchor?: string;
   /** Wider term legend for formulas with several defined quantities. */
   formulaLayout?: "legend";
+  /** Authored native MathML for structured formula legend labels. */
+  termMath?: Record<string, string>;
   /** Plain-language interpretation displayed beside the formula. */
   formulaExplanation?: string;
   code?: string;

@@ -1,0 +1,710 @@
+---
+title: "Lecture 8: Evaluation from perplexity to real tasks"
+order: 10
+description: "Build a reproducible evaluation system, connect token likelihood to useful outcomes, quantify paired uncertainty, and distinguish capability from selection, contamination, and grading artifacts."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+A checkpoint can have a traceable training history. Evaluation measures what that checkpoint can do under specified inputs, inference procedures, and grading rules. A lower training loss alone does not establish better performance on the requests a system will receive.
+
+Consider an assistant that returns the right value with the wrong unit, cites an irrelevant passage, or succeeds only after several attempts. These outcomes require distinct measurements. A useful evaluation preserves those differences and makes comparisons reproducible.
+
+Our running system is a multilingual technical assistant. It should answer questions against an approved documentation snapshot, cite the supporting passage, and occasionally use a calculator or a small code tool. Some questions have exact answers. Others require combining evidence or recognizing that the documentation does not contain an answer. We will follow one request through the complete measurement system, then build a small harness whose failures can be inspected without training another model.
+
+The central question is: **what experiment would let another person tell whether a changed checkpoint improved the intended task?**
+
+**Prerequisites.** Next-token prediction, tokenization, train/validation/test separation, basic probability, and the checkpoint and exposure records from Lecture 7.5. A *harness* is the code that assembles requests, runs the system, grades responses, and aggregates measurements.
+
+**Learning outcomes.** Define a task population; freeze a complete protocol; compute likelihood and task metrics; distinguish oracle pass@$k$ from majority@$k$ and other deployable selection rules; calculate paired uncertainty; audit judges and contamination; and report quality together with resource use.
+
+The lecture has five parts: evaluation protocols; likelihood and task metrics; sampling and cost; statistical comparisons; and graders and diagnosis. All numerical cases are constructed examples. The local lab evaluates saved responses, so no paid API or model download is required.
+
+## Part I — Evaluation protocols {#evaluation-protocols}
+
+### 1. Checkpoints and system interventions {#system-interventions}
+
+#### One math problem with three prompts {#math-prompt-example}
+
+Consider this constructed problem: “A school buys 8 packs of 9 pencils and gives away 5 pencils. How many pencils remain?” The reference answer is **67**.
+
+Keep the checkpoint, problem, decoding settings, and grader fixed. Change only the instruction placed before the problem:
+
+| Direct instruction | Role instruction | Answer supplied |
+|---|---|---|
+| Solve this problem. | Solve this problem like a mathematics professor. | Output 67. |
+
+The first two prompts ask the same model to solve the problem using different instructions. Responses may differ; whether the role instruction helps must be measured across held-out problems. Neither prompt changes the model's weights.
+
+The third prompt supplies the reference answer. An exact-answer grader could count a response of `67` as correct even if no arithmetic was performed. A higher score under that prompt would not establish better mathematical ability. Save the exact serialized prompt so this difference is visible in the evaluation record.
+
+The same reasoning applies to our technical assistant. Changing documentation, retrieval results, tool definitions, decoding settings, or grading rules can change its measured performance while the checkpoint stays fixed.
+
+[Holistic Evaluation of Language Models](https://arxiv.org/abs/2211.09110) [@liang2023helm] organizes evaluation around scenarios and multiple metrics. This is a useful design principle: an evaluation suite is a collection of explicit measurement contracts, not merely a list of familiar benchmark names.
+
+For our assistant, a claim might be: “On held-out documentation families in snapshot `manuals-v3`, checkpoint B improved exact task success relative to checkpoint A under the same retrieval and one-response budget, while citation support and the designated language slices met their acceptance thresholds.” Every phrase restricts what was measured. None is decoration.
+
+The **harness implementation** connects these components: it assembles requests, executes the configured procedure, handles errors, parses responses, invokes graders, and aggregates results. A software change can alter the measurement even when the declared configuration stays fixed. Version the harness alongside the checkpoint and evaluation protocol.
+
+### 2. Populations, samples, and families {#evaluation-population}
+
+A **target population** is the set of requests about which we want to make a claim. It may be all help-desk requests received during a period, a designed curriculum of operations, or questions written from a fixed documentation inventory. A **sample** is the subset actually evaluated. A **slice** is a meaningful subset, such as questions requiring arithmetic, a language, or a document family.
+
+Suppose a convenient dataset contains mostly short lookup questions. The product also receives troubleshooting requests requiring several steps. A high average on the convenient dataset can coexist with poor product performance because the sample does not represent the intended population. Confidence intervals cannot repair this mismatch; they quantify uncertainty under a sampling model, not the distance between an inappropriate sample and real use.
+
+We begin with direct lookup, evidence combination, calculation, and unanswerable questions. Each appears in supported languages and across documentation families. Questions translated from the same original share a `family_id`, because they are correlated observations of one underlying item. A template that changes only a number is also one family for splitting purposes.
+
+Keep a development set for designing prompts and parsers, a validation set for choosing checkpoints, and a locked test set for the final claim. If the team repeatedly inspects test errors and repairs them, the test has become a development resource. A fresh confirmation set is then needed for an independent final estimate.
+
+A source document can legitimately be available to a retrieval system at evaluation time. Its presence is part of the intended open-document task. The protected material is the held-out question, reference answer, hidden tests, and other information the protocol says the system should not receive. Seeing the manual and seeing the test solution are different findings.
+
+#### Variants of one math problem {#math-problem-family}
+
+These constructed problems vary their wording, objects, and numbers while sharing a solution procedure:
+
+| Variant | Problem | Solution |
+|---|---|---|
+| Pencils | A school buys 8 packs of 9 pencils and gives away 5. How many pencils remain? | 8 × 9 − 5 = 67 |
+| Buns | A bakery makes 12 buns on each of 6 trays. After 7 buns are sold, how many are left? | 6 × 12 − 7 = 65 |
+| Seats | A hall has 5 rows of 14 seats. Nine seats are blocked. How many seats are available? | 5 × 14 − 9 = 61 |
+
+Each solution multiplies the number of groups by the number of items per group, then subtracts the unavailable items. Assign these related variants a common `family_id`. For an evaluation of generalization to new problem families, keep the whole family in one split. Success on several variants gives evidence about this shared structure; it does not demonstrate equally broad coverage across unrelated mathematical skills.
+
+### 3. Protocol and failure definitions {#evaluation-protocol}
+
+Identify artifacts by version or digest, not a mutable display name. A checkpoint called `latest` can change during an experiment. A tokenizer revision can alter the request even when visible text appears identical. A retrieval index can return a new passage without any model code changing.
+
+```yaml
+protocol_id: docs-eval-v1
+checkpoint: checkpoint-b-digest
+tokenizer: tokenizer-digest
+task_set: docs-heldout-v3-digest
+documentation: manuals-v3-digest
+prompt_template: cite-and-abstain-v2
+retrieval: fixed-top3-index-v3
+tools: calculator-v1
+decoding: {temperature: 0.0, max_new_tokens: 192}
+budget: {responses_per_task: 1, tool_calls: 2}
+grader: exact-fields-and-support-v1
+aggregation: task-weighted-with-language-slices
+```
+
+Temperature zero is not a universal guarantee of bitwise determinism. Kernels, numerical precision, hardware, batching, and near-tied logits can matter. Record the runtime and repeat a small fixture to detect unexpected changes. For stochastic decoding, record seeds where supported and distinguish variation over requests from variation over completions of the same request.
+
+Specify failure behavior. If a tool times out, is the task failed, retried, or excluded? If generation exceeds the limit, does truncation count as invalid? A parser that cannot find an answer should produce a named outcome such as `parse_error`. Quietly dropping malformed responses inflates scores by changing the denominator.
+
+Save the exact serialized request and raw response, subject to the data's access requirements. “Used three passages” is insufficient for reconstructing why the assistant invented a command. Diagnosis requires the text and metadata actually presented at that decision.
+
+<details>
+<summary>Checkpoint: which comparison isolates the checkpoint?</summary>
+
+Run A uses checkpoint A, one response, and no tools. Run B uses checkpoint B, eight responses, and a calculator. B has higher task success. The complete system improved under a different inference procedure. To estimate the checkpoint effect, evaluate A and B with the same prompts, tools, budget, and grader; then separately measure the effect of sampling or tools.
+
+</details>
+
+## Part II — Likelihood and task metrics {#evaluation-metrics}
+
+### 4. Negative log-likelihood and perplexity {#likelihood}
+
+Before asking the model to act as an assistant, measure how well it predicts held-out text. Let a document become tokens $x_1,\ldots,x_T$. The model assigns a conditional probability to each scored token given its allowed context. Its negative log-likelihood, using natural logarithms, is
+
+::: {#nll-equation}
+$$
+L=-\sum_{t=1}^{T}m_t\log p_\theta(x_t\mid x_{<t}).
+$$
+:::
+
+The mask $m_t$ is one for a scored target and zero otherwise. $T$ is the number of positions, $N$ the number of scored targets, $x_t$ the observed token, and $x_{<t}$ its allowed preceding context. The distribution $p_\theta$ is defined by model parameters $\theta$. $L$ is total negative log-likelihood and $\bar L$ its target mean. Logarithms are natural, so loss is in nats. Lower $\bar L$ means higher geometric-mean probability on the observed targets.
+
+#### Token loss calculation {#nll-worked-example}
+
+Read the held-out sentence **“The cat sat on the mat.”** Suppose `mat` is one token in our toy vocabulary. At this step the model receives only the prefix “The cat sat on the”. The next observed token in the held-out text is `mat`; it is the target being scored.
+
+The model assigns probability 0.50 to `mat`, 0.25 to `floor`, and 0.25 to `sofa`. Look up the probability assigned to the observed token, then take its negative natural logarithm: `−ln(0.50) ≈ 0.6931` nats. We score the reference token even if the model's most likely prediction is another word. If the probability assigned to `mat` falls to 0.25, the loss rises to approximately 1.3863 nats. Whole-text loss repeats this operation for every intended target and adds the contributions.
+
+![A held-out next word is identified, its predicted probability is highlighted, and that probability is converted to loss.](lecture-9/nll-worked-example.svg?v=b5a3c5532d5a)
+
+**Perplexity** is
+
+::: {#perplexity-equations}
+$$
+N=\sum_{t=1}^{T}m_t,
+$$
+
+$$
+ \bar L=L/N,
+$$
+
+$$
+ \mathrm{PPL}=\exp(\bar L).
+$$
+:::
+
+$\exp$ is the exponential function with base $e$. Lower perplexity is better under the same tokenization and context policy.
+
+#### Likelihood example {#likelihood-example}
+
+Consider the prefix **“I like ___”** in a toy vocabulary where each displayed word is one token. If the model assigns equal probability to exactly two possible next tokens, `apple` and `pear`, the observed token has probability one half. Its loss is the natural logarithm of two, and exponentiating gives **perplexity 2**. If there are ten equally likely choices, the observed token has probability one tenth and the same calculation gives **perplexity 10**. Assume the observed token is one of the displayed choices and that all other tokens have probability zero in these constructed distributions.
+
+![Two equally likely next-token choices give perplexity two; ten equally likely choices give perplexity ten.](lecture-9/perplexity-worked-example.svg?v=89fe7a07988f)
+
+The exact choice-count interpretation requires equal probabilities. With unequal probabilities or many positions, perplexity is the equivalent number of equally likely choices associated with the mean observed-token loss. It is the reciprocal geometric mean of the probabilities assigned to the scored targets, rather than the vocabulary size or a task-success percentage.
+
+When documents have different lengths, summing all losses and dividing by all targets estimates token-weighted cross entropy. Averaging each document's mean gives every document equal weight. A ten-token note and a thousand-token chapter then influence the result equally. Both statistics can be meaningful, but they answer different questions.
+
+Context also matters. Longer preceding context may make the same text easier to predict. Resetting at every document, allowing cross-document attention, or using a sliding window changes the conditional distributions being tested. Score each intended target exactly once and record which context it could see. Otherwise an apparent architecture advantage may be a context-accounting advantage.
+
+Suppose a long document is evaluated using overlapping windows. The overlap can supply context without being scored again. If every window scores its entire content, repeated central tokens acquire extra weight. If windows discard too much at their boundaries, some targets disappear. A fixture with identifiable token positions should prove the intended scoring coverage before a large evaluation starts.
+
+### 5. Byte-normalized likelihood {#byte-normalization}
+
+Per-token perplexity is generally unsuitable for directly comparing different tokenizers. One tokenizer might encode a technical identifier as one token while another uses five. The prediction tasks and counts differ. A model can have a higher token perplexity yet assign better total likelihood to the same text.
+
+For a fixed byte representation, **bits per byte** provides a common denominator:
+
+::: {#bpb-equation}
+$$
+\operatorname{bpb}=\frac{L}{B\log 2},
+$$
+:::
+
+where $B$ is the number of evaluated UTF-8 bytes. The numerator must correspond to the same content and boundary convention. Do not include unscored prompt bytes in $B$ or compare normalized text with original text. Declare document boundaries, special-token likelihoods, truncation, and lossy preprocessing.
+
+#### Bits-per-byte calculation {#bpb-worked-example}
+
+For a separate byte-counting example, tokenize `I go.` into `I`, one space, `go`, and `.`. Assign those four observed tokens probabilities 0.5, 0.25, 0.5, and 0.25. Their total loss is six times the natural logarithm of two, approximately 4.1589 nats. The text contains **five UTF-8 bytes**: one for `I`, one for the space, two for `go`, and one for the period. The visual shows byte values in hexadecimal.
+
+Convert the unrounded total loss of approximately 4.1589 nats to bits by dividing by the natural logarithm of two. The result is exactly six bits for these chosen probabilities. Divide by five scored bytes to obtain **1.2 bits per byte**. Include the space and punctuation because their likelihoods were scored; exclude the unscored start marker and any prompt content.
+
+![The four toy tokens map to five UTF-8 bytes; total loss converts from nats to six bits and then to 1.2 bits per byte.](lecture-9/bpb-worked-example.svg?v=f9bd9e52048a)
+
+#### Tokenizer comparison example {#tokenizer-comparison}
+
+Consider the same constructed 100-byte text. Model A uses 25 tokens with total negative log-likelihood 60 nats; B uses 50 tokens with total negative log-likelihood 65 nats.
+
+| Model | Tokens | Token perplexity | Bits per byte |
+|---|---:|---:|---:|
+| A | 25 | 11.023 | 0.866 |
+| B | 50 | 3.669 | 0.938 |
+
+Token perplexity is lower for B, while byte-normalized negative log-likelihood is lower for A. The ranking changes because token counts are different. The byte-normalized score compares likelihood under the declared encodings; it is not necessarily a marginal probability summed over every possible tokenization of the same byte string.
+
+A byte denominator does not remove every difference. Irreversible normalization changes the modeled byte string. A model unable to represent some input also needs explicit handling. Keep the raw evaluation corpus fixed, report preprocessing, and state when a comparison is only approximately aligned.
+
+For the multilingual assistant, report loss by language and document family as well as overall. Improvement on the largest language can hide regression in a smaller slice. Whether the aggregate follows traffic frequency or gives languages equal importance is a product and research choice, not a mathematical default.
+
+### 6. Task success and component checks {#task-success}
+
+An **extrinsic metric** measures an outcome, such as whether the assistant returned the correct upload limit and citation. Numeric tasks can compare parsed values with declared tolerances. Code tasks can execute isolated tests. Open explanations may require a rubric and human review.
+
+#### One task through the grader {#task-checks-example}
+
+The user asks **“What is the maximum upload size?”** The approved source `limits-v1` states: **“Maximum upload size: 20 MB.”** The assistant returns:
+
+```json
+{"answer": 20, "unit": "MB", "citation": "limits-v1"}
+```
+
+First, parse the JSON and verify that the required fields exist. Second, compare the parsed value and unit with the reference: 20 MB passes. Third, resolve `limits-v1` and check that its content supports the claimed limit. Finally, record task success only if all three checks pass. The response can parse successfully yet still fail if its value is 200, its unit is GB, or its citation points to a passage about an unrelated limit.
+
+![One upload-limit question passes through response parsing, value and unit checking, evidence checking, and final task success.](lecture-9/task-checks-example.svg?v=128fa37da081)
+
+Exact matching works when the target space is genuinely exact. For natural-language answers, normalize conservatively: whitespace normalization may be harmless; removing negation is not. Unit conversions may be accepted if the grader checks them. Reference answers should represent acceptable alternatives instead of assuming one phrasing is uniquely valid.
+
+Preserve `invalid_json`, `wrong_value`, `wrong_unit`, `unsupported_citation`, `unanswerable_but_answered`, and `tool_failure`. The final success metric may require every component to pass, but the error taxonomy tells the training team what intervention to try.
+
+Public benchmarks provide complementary probes. [MMLU](https://arxiv.org/abs/2009.03300) [@hendrycks2021mmlu] uses multiple-choice knowledge questions; [GSM8K](https://arxiv.org/abs/2110.14168) [@cobbe2021gsm8k] uses mathematical word problems; [HumanEval](https://arxiv.org/abs/2107.03374) [@chen2021humaneval] tests generated functions. Their contracts differ from documentation assistance. Success on one supports a narrower claim than “the assistant is ready.”
+
+#### Concrete task examples {#task-contract-examples}
+
+These are constructed illustrations of task types, rather than quoted benchmark items:
+
+| Task type | Example request | Check |
+|---|---|---|
+| Multiple-choice knowledge | Which planet is closest to the Sun? A: Mars; B: Mercury. | Select B. |
+| Mathematical reasoning | An art class has 6 boxes of 8 markers and gives away 13. How many remain? | Return 35 markers. |
+| Code generation | Implement `square(n)`. | Test positive and negative inputs, such as `square(3) = 9` and `square(-2) = 4`. |
+| Documentation assistance | What is the upload limit in `limits-v1`? | Return 20 MB and a citation that supports it. |
+
+Functional tests also have boundaries. A program that passes visible examples may fail hidden edge cases. A repository patch might pass existing tests while introducing an untested regression. The grader is evidence about the properties it checks. It is not a proof of every property users care about.
+
+### 7. Abstention and confidence calibration {#abstention}
+
+The manual does not answer every request. A model that guesses on unsupported questions may have high coverage but poor reliability. A model that always says “I do not know” avoids many false claims but is rarely useful. Evaluation should expose this tradeoff.
+
+Define **coverage** as the fraction of requests the system attempts to answer and **selective risk** as error rate among answered requests:
+
+::: {#abstention-equations}
+$$
+\mathrm{coverage}=\frac{\sum_i a_i}{n},
+$$
+
+$$
+\mathrm{risk}=\frac{\sum_i a_i(1-z_i)}{\sum_i a_i}.
+$$
+:::
+
+$n$ is the request count, $i$ indexes requests, $a_i$ is one when the system answers and zero when it abstains, and $z_i$ is one when that answer is correct under the task contract. Set $z_i=0$ for abstentions; their contribution is removed by $a_i$. Risk is undefined when no request is answered, rather than automatically zero.
+
+#### Abstention example {#abstention-example}
+
+In 100 questions, the assistant answers 80 and gets 72 correct. Coverage is 80%, selective risk is $8/80=10\%$, and overall correct answers are 72%. These are different numbers.
+
+For unanswerable questions, measure correct abstention. For answerable questions, measure unnecessary abstention. Include missing, contradictory, outdated, and difficult-to-retrieve evidence. A refusal metric alone is incomplete because the desirable action depends on the task.
+
+#### Confidence scores {#confidence-calibration}
+
+Confidence should refer to an event: “the parsed answer is correct under this contract.” Calibration asks whether predicted probabilities agree with empirical event frequencies. [On Calibration of Modern Neural Networks](https://proceedings.mlr.press/v70/guo17a.html) [@guo2017calibration] studies calibration and post-processing for classification; transferring a calibration method to generated answers requires a defined answer-correctness event and held-out validation.
+
+If confidence is $c_i\in[0,1]$ and correctness is $z_i\in\{0,1\}$, the Brier score is
+
+::: {#brier-equation}
+$$
+\operatorname{Brier}=\frac1n\sum_i(c_i-z_i)^2.
+$$
+:::
+
+Here $n$ is the number of evaluated predictions and $i$ indexes them. Lower is better; the score measures probability accuracy, including both calibration and discrimination, rather than isolating calibration alone. For confidences $0.9,0.6$ on outcomes $1,0$, it is $(0.01+0.36)/2=0.185$. Fit confidence mappings or abstention thresholds on development data and evaluate on held-out requests. Token probability and fluent certainty are not automatically calibrated probabilities of a complete answer's correctness.
+
+Inspect calibration within important slices. A system can be calibrated on average while overconfident in one language and underconfident in another. Confidence bins are useful, but bin choices and small counts can obscure error. Report counts and avoid treating a smooth reliability plot as a guarantee for rare situations.
+
+An abstention threshold is a policy choice informed by costs. If a wrong operational command is much worse than an unnecessary request for clarification, the desired operating point differs from a low-risk brainstorming assistant. Evaluate the actual action policy, including clarifying questions, rather than only the underlying confidence score.
+
+## Part III — Sampling and inference cost {#sampling-cost}
+
+### 8. Candidate generation and selection {#pass-at-k}
+
+**Pass@$k$** asks: did at least one of the $k$ generated answers get it right? **Majority@$k$** asks: did the most frequent answer get it right? Here $k$ is simply the number of answers generated for each task.
+
+#### Voting example {#majority-vote-example}
+
+Generate five answers to `8 × 9 − 5`, whose correct answer is 67. The model returns **65, 65, 67, 65, 66**.
+
+- **Pass@5 succeeds:** 67 appears among the five answers.
+- **Majority@5 fails:** 65 is the most frequent answer, with three votes, and it is wrong.
+
+![The same five answers pass the any-correct check but fail the most-frequent-answer check.](lecture-9/majority-vote-example.svg?v=618ad39a62a6)
+
+For a benchmark, apply each rule to every task and report the fraction that succeed. The five-answer example describes one task's outcome. A correct answer appearing somewhere in the samples does not guarantee that voting will select it.
+
+#### Estimating pass at k {#passk-estimator}
+
+Suppose the assistant generates ten code solutions for one task and three pass hidden tests. If we choose two uniformly without replacement, what is the probability that at least one passes? There are $\binom{10}{2}$ pairs, and $\binom72$ contain only failures:
+
+$$
+\widehat{\operatorname{pass@}2}=1-\frac{\binom72}{\binom{10}2}
+=1-\frac{21}{45}\approx0.5333.
+$$
+
+More generally, the estimator used in [HumanEval](https://arxiv.org/abs/2107.03374) [@chen2021humaneval] is
+
+::: {#passk-equation}
+$$
+\widehat{\operatorname{pass@}k}=1-\frac{\binom{n-c}{k}}{\binom nk},
+$$
+
+$$
+ n\geq k,
+$$
+:::
+
+where $c$ of $n$ samples pass. Under independent samples from the same generation distribution, it estimates the probability that at least one of $k$ new samples succeeds. Compute it per task and aggregate across tasks; pooling all completions estimates something different. If $n-c<k$, the numerator is zero.
+
+The hidden tests act as an oracle recognizing success after generation. A real user receives one selected response. Unless the deployed system has an equally reliable selector, pass@$k$ does not measure the correctness of that delivered response. A model can possess a correct candidate but rank it below a polished wrong one.
+
+#### Majority-vote selection {#majority-at-k}
+
+**Majority@$k$** evaluates the answer selected by voting over $k$ sampled completions. Extract and normalize their final answers under the task contract, count the votes, choose the most frequent answer, then grade that choice. This is a concrete selector related to [self-consistency](https://arxiv.org/abs/2203.11171) [@wang2023selfconsistency]. Here “majority” means the mode, so a winner need not receive more than half the votes. Freeze tie-breaking and invalid-output handling before evaluation; for example, break ties by earliest occurrence and represent invalid outputs by a reserved answer that always grades as wrong.
+
+::: {#majority-equations}
+$$
+v_i=\operatorname{mode}(a_{i1},\ldots,a_{ik}),
+$$
+
+$$
+\operatorname{majority@}k=\frac{1}{M}\sum_{i=1}^{M}\mathbf{1}[v_i=y_i].
+$$
+:::
+
+$i$ indexes the $M$ evaluated tasks; $j$ indexes the $k$ sampled completions for each task. $a_{ij}$ is a normalized final answer, $v_i$ is the mode selected using the fixed tie rule, and $y_i$ is the reference answer. The indicator $\mathbf{1}[\cdot]$ is one when the selected answer matches the reference and zero otherwise. The sum adds these task outcomes, and division by $M$ gives the accuracy. Voting uses the sampled answers, without consulting the reference during selection. The formula assumes exact normalized-answer grading; other tasks require their declared grader.
+
+
+Report **selected success@$k$** for a specified selector using only permitted information. Generate four candidates, run public checks, select the best survivor, then evaluate that choice on hidden tests. Keep selection checks distinct from final grading. Using hidden tests to choose an answer creates an oracle study, which can be informative when labeled honestly.
+
+Sampling can also produce correlated failures. Every candidate may follow the same wrong assumption. Record temperature, truncation, duplicate candidates, and distinct solutions. Ten copies of one completion do not provide ten independent opportunities in the way the idealized derivation assumes.
+
+### 9. Quality and inference cost {#inference-cost}
+
+Suppose a constructed system succeeds on 60% of tasks with one response and on 75% after four candidates plus selection. The gain is useful, but it spends more generation and verification work. A quality–budget curve shows whether improvement continues, saturates, or reverses.
+
+For a 100-task comparison, suppose those procedures cost 20 and 80 arbitrary units respectively. Their costs per success are approximately 0.333 and 1.067 units. Higher task success does not imply lower cost per solved task. These are constructed accounting values, not prices for an actual model service.
+
+Record input tokens, output tokens, tool calls, retries, elapsed time, and the hardware or price schedule used to turn work into cost. A smaller model can be more expensive per solved task if it needs many retries. Repeatedly processing long context can dominate cost even when answers are short.
+
+A cost-per-success summary is
+
+::: {#cost-equation}
+$$
+C_{\mathrm{success}}=\frac{\sum_i C_i}{\sum_i z_i}.
+$$
+:::
+
+$C_i$ is all cost incurred on request $i$, $z_i$ indicates final task success, and $C_{\mathrm{success}}$ is cost per successful task. The ratio is undefined if there are no successes. If 100 tasks cost 20 units and 80 succeed, it is 0.25 units per success. This does not price the harm of incorrect answers. Failed requests still consume resources.
+
+Latency needs a distribution. Median latency describes a typical request; high percentiles reveal slow tails. Specify whether timings include retrieval, queueing, model loading, tools, and retries. Saturated-batch throughput measures a different use case from interactive single-user latency.
+
+Compare checkpoints at matched budgets when testing model quality, and complete systems at intended operating points when testing product usefulness. Their labels should identify whether the intervention was the checkpoint, inference procedure, or both.
+
+## Part IV — Statistical comparisons {#statistical-comparisons}
+
+### 10. Paired differences and uncertainty {#paired-comparison}
+
+Suppose model A scores 80% and model B scores 82% on [MATH-500](https://huggingface.co/datasets/HuggingFaceH4/MATH-500) [@math500dataset], which contains 500 test problems. These are hypothetical model results. A answers 400 questions correctly and B answers 410: a gain of **2 percentage points**. To quantify uncertainty about a population of similar tasks, we need to know which questions each model answered correctly.
+
+For task $i$, define correctness indicators $a_i,b_i\in\{0,1\}$ for A and B and difference $d_i=b_i-a_i$. With $n$ paired tasks,
+
+::: {#paired-difference-equations}
+$$
+d_i=b_i-a_i,
+$$
+
+$$
+ \bar d=\frac1n\sum_i d_i.
+$$
+:::
+
+#### Example: ten net gains on 500 questions {#paired-mean-example}
+
+![Paired outcomes for the same 500 questions: 380 both correct, 20 A only, 30 B only, and 70 both wrong.](lecture-9/paired-mean-example.svg?v=c49e9493f657)
+
+The 30 questions only B solves contribute $+1$ each. The 20 questions only A solves contribute $-1$ each. The other 450 pairs contribute zero. The mean change is $(30-20)/500=0.02$. Pairing compares the models on the same task sample, rather than confounding model differences with different selections of easy and hard questions.
+
+The standard error describes how the estimated mean would vary across independent task samples. First measure variation in the paired differences:
+
+::: {#paired-se-equations}
+$$
+s_d^2=\frac{\sum_i(d_i-\bar d)^2}{n-1},
+$$
+
+$$
+\mathrm{SE}=\frac{s_d}{\sqrt n}.
+$$
+:::
+
+$s_d^2$ is the sample variance of paired differences, $s_d$ its square root, and SE the estimated standard error under independent sampling of pairs. Dividing the standard deviation by $\sqrt n$ gives the standard error of the mean.
+
+#### Example: standard error for the same questions {#paired-se-example}
+
+![The same paired outcomes give a sum of squared deviations of 49.8, sample variance 0.0998, and standard error 0.01413.](lecture-9/paired-se-example.svg?v=2ddd62468a87)
+
+All differences are measured relative to the mean 0.02. The 450 ties contribute $450(0-0.02)^2=0.180$ to the squared-deviation sum. The 20 losses contribute $20(-1-0.02)^2=20.808$, and the 30 gains contribute $30(1-0.02)^2=28.812$. The total is 49.8. Dividing by $500-1$ gives variance approximately 0.0998; its square root is 0.3159. The standard error is $0.3159/\sqrt{500}\approx0.01413$, or **1.41 percentage points**.
+
+An approximate normal interval for the population mean change is
+
+::: {#paired-interval-equation}
+$$
+\bar d\pm z_{1-\alpha/2}\mathrm{SE}.
+$$
+:::
+
+Here $\alpha$ is the total tail probability excluded and $z_{1-\alpha/2}$ the corresponding standard-normal quantile. For a 95% interval, $\alpha=0.05$ and the critical value is approximately 1.96. The approximation can be poor with few disagreements or small samples.
+
+#### Example: an interval for the two-point gain {#paired-interval-example}
+
+![The approximate 95 percent interval for the same two-point gain extends from minus 0.77 to plus 4.77 percentage points and crosses zero.](lecture-9/paired-interval-example.svg?v=beebc76a7269)
+
+Continuing the same example, $0.02\pm1.96(0.01413)$ is approximately $[-0.0077,0.0477]$, or **−0.77 to +4.77 percentage points**. This interval includes zero, so the sample does not establish a positive population gain. It also does not prove equality: both a small regression and a larger improvement remain compatible with the observations under this model.
+
+The scores 80% and 82% are exact summaries of the saved outcomes on these 500 questions. The interval describes uncertainty when generalizing to a population of similar tasks under the sampling assumptions. A fixed benchmark is not automatically a random sample of future requests. Before collecting more tasks, ask whether the population and independence assumptions are credible.
+
+The interval summarizes sampling uncertainty under assumptions. It excludes unmeasured prompt sensitivity, judge errors, contamination, and model-selection effects. Those require separate design choices or sensitivity analyses.
+
+### 11. Family-level bootstrap {#family-bootstrap}
+
+A **bootstrap** approximates sampling variation by resampling observed units with replacement and recomputing the statistic. In a paired comparison, each resampled unit contains both systems' outcomes. Resampling A and B independently destroys the pairing.
+
+The unit should match independent evidence. Suppose 200 questions are ten paraphrases of each of 20 documentation problems. Treating all 200 as independent can produce an interval that is too narrow. A **cluster bootstrap** resamples the 20 families and carries their questions together.
+
+#### Example: related variants in a math benchmark {#benchmark-families-example}
+
+![Three constructed math families with original, reworded, and numeric variants; one bootstrap draw selects family two twice and family one once.](lecture-9/benchmark-families-example.svg?v=a192cd84ce34)
+
+For a small constructed benchmark, group variants by their shared seed or solution template. Solving $x+3=7$, rewording it as a missing-number question, and changing its numbers to $x+5=11$ produces related evidence. Another seed asks for rectangle area; a third asks for an integer remainder. Every variant retains its paired A and B outcomes.
+
+One bootstrap draw selects F2, F2, F1. Include every variant of F2 twice and every variant of F1 once, then recompute the same gain. F3 is absent in this draw. Repeat the procedure many times and use the distribution of gains to estimate an interval. Three families illustrate the mechanism; reliable inference needs enough independent families.
+
+These are constructed variants, not official MATH-500 family labels. Broad subject categories such as algebra are useful reporting slices, but do not by themselves identify shared-seed families. Establish the relevant dependency groups from benchmark provenance before resampling.
+
+#### Example: what 80% versus 82% can establish {#math500-gain-uncertainty}
+
+The same aggregate MATH-500 scores can arise from different paired outcomes:
+
+| Hypothetical paired results | Only B correct | Only A correct | Approximate 95% paired interval |
+|---|---:|---:|---|
+| Continuing example | 30 | 20 | −0.77 to +4.77 percentage points |
+| B keeps every A success | 10 | 0 | +0.77 to +3.23 percentage points |
+
+Both cases have A correct on 400 of 500 and B correct on 410 of 500. The second has less paired variation because B adds ten successes without losing any of A's successes. These intervals use the independent-task normal approximation, not the family bootstrap; rare disagreements need particular care.
+
+There is no unique interval available from the two percentages alone. Save question-level paired outcomes. If related variants form families, also save those family IDs and bootstrap whole families. Their composition determines the family-aware interval, which cannot be calculated from 80% and 82% alone. Prompt choice, grading errors, and repeated benchmark selection require additional evaluation controls.
+
+A family-weighted estimate averages family means equally. A request-weighted estimate gives families influence proportional to represented requests. The following code implements the first. It assumes independent family-level mean differences and uses a percentile interval as a teaching approximation.
+
+```python
+import random
+from statistics import mean
+
+def family_bootstrap(differences, seed=7, repeats=5000):
+    rng = random.Random(seed)
+    n = len(differences)
+    if n < 2:
+        raise ValueError("Need at least two independent families")
+    draws = sorted(mean(rng.choices(differences, k=n))
+                   for _ in range(repeats))
+    lo = draws[int(0.025 * (repeats - 1))]
+    hi = draws[int(0.975 * (repeats - 1))]
+    return mean(differences), (lo, hi)
+
+assert family_bootstrap([0.0, 0.0, 0.0])[1] == (0.0, 0.0)
+```
+
+For a request-weighted estimand, resample whole clusters and compute total differences divided by total requests in the resampled data. Do not silently replace that ratio with a mean of cluster means. Unequal cluster sizes can make the distinction substantial.
+
+With few families, no observed errors, or unrepresentative clusters, resampling cannot invent missing evidence. The all-zero assertion above verifies algorithmic behavior on a fixture; it does not establish identical future performance. Report the number of independent families alongside request count.
+
+For multilingual paired tests, preserving entire language families in each resample also preserves cross-language dependence. A translated question may expose both shared conceptual weakness and language-specific weakness. Keeping both identifiers—source family and language—allows uncertainty over families while still reporting the language slices.
+
+### 12. Precision and decision thresholds {#precision-planning}
+
+A statistically detectable difference can be operationally trivial. Before the final comparison, define the smallest gain justifying an intervention and the largest regression tolerated on protected slices. These are decision thresholds, not conclusions read from a p-value.
+
+For one proportion $p$ under independent sampling, an approximate sample-size calculation for interval half-width $h$ is
+
+::: {#sample-size-equation}
+$$
+n\approx\frac{z_{1-\alpha/2}^2p(1-p)}{h^2}.
+$$
+:::
+
+$n$ is the required independent-trial count and $z_{1-\alpha/2}$ is the standard-normal quantile for the chosen confidence level. If $p$ is unknown, $p=0.5$ maximizes the variance term. A 95% interval with half-width about 0.05 then needs roughly 385 observations. This plans one proportion's precision, not paired differences or clustered tasks. The [NIST interval reference](https://www.itl.nist.gov/div898/software/dataplot/refman1/auxillar/propconf.htm) discusses alternatives when normal approximations perform poorly.
+
+For paired differences, pilot disagreement variance helps plan sample size. With zero failures in $n$ independent Bernoulli trials, a one-sided upper confidence bound is
+
+::: {#zero-failure-equation}
+$$
+p_{\mathrm{upper}}=1-\alpha^{1/n}.
+$$
+:::
+
+$p_{\mathrm{upper}}$ bounds the failure probability at confidence $1-\alpha$. It follows by setting the probability of observing no failures, $(1-p)^n$, equal to $\alpha$. At 95% confidence the small-rate approximation is $3/n$. For 100 trials, the exact bound is approximately 2.95%, potentially far above an acceptable rate. Independence and a common event probability are assumptions.
+
+Repeatedly testing checkpoints, prompts, and metrics creates selection bias. The best observed result tends to include favorable noise. Keep the search history, select on validation data, and reserve a confirmation set. For many confirmatory hypotheses, plan a multiple-comparison procedure or identify the analysis as exploratory.
+
+A decision can combine a meaningful primary gain, no large language regression, bounded unsupported-answer rate, and acceptable latency. A single weighted score can hide which requirement failed. Preserve components even when the final product decision is binary.
+
+## Part V — Graders and diagnosis {#graders-diagnosis}
+
+### 13. Model and human graders {#grader-audit}
+
+Continue the upload-limit task: the approved manual says **20 MB**. A numeric check can compare the answer with 20 and check the unit. A model or human judge may also need to assess whether the cited passage supports the answer. These are different checks: a correct number can have an unsupported citation.
+
+Give the judge the question, permitted passage, response, and a rubric with separate fields for value, unit, and evidence support. Allow ties between equally correct responses and an insufficient-evidence result when support cannot be established. Save the judge's input and output, model version, decoding settings, and rubric version.
+
+[Large Language Models are not Fair Evaluators](https://arxiv.org/abs/2305.17926) [@wang2023faireval] studies positional effects. [Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena](https://arxiv.org/abs/2306.05685) [@zheng2023mtbench] also examines position, verbosity, and self-enhancement biases. The following constructed probes turn these concerns into specific tests.
+
+#### Example: order, length, and identity probes {#grader-style-probes}
+
+| Probe | Controlled change | Failure to look for |
+|---|---|---|
+| Candidate order | Grade “20 MB” against “200 MB”, then reverse their positions | The winner changes when its position changes |
+| Answer length | Compare “20 MB” with a longer response repeating exactly the same facts | Extra wording changes a factual-correctness grade |
+| Model identity | Keep both responses fixed; hide or swap the displayed model labels | The preferred content changes with the label |
+
+For order, map each decision back to the original response ID before comparing runs. If the judge selects the first slot in both orders, it has selected different content. On a constructed set of 20 pairs, two such winner changes would be 2 of 20 order inconsistencies. Count them across the audit set instead of relying on one demonstration. Repeat identical inputs as a control to distinguish input sensitivity from judge variability.
+
+For length, the factual rubric should treat the short and long answers equally when they contain the same claims and evidence. If concision is a separate criterion, grade it separately; a justified concision preference is not a factual error. For identity, even equal-quality answers should not switch preference merely because labels changed. Swapping labels is a test for identity sensitivity, not proof that every anonymous judgment is unbiased.
+
+#### Example: support and language probes {#grader-evidence-probes}
+
+Keep the response fixed at `{"answer":20,"unit":"MB","citation":"limits-v1"}`. First let `limits-v1` say “Maximum upload size: 20 MB.” Then replace only that passage with “Maximum upload size: 200 MB.” In this **counterfactual support test**, the expected support label changes from supported to unsupported. If the judge keeps approving the citation, it may be matching the citation ID or recalling the answer without reading the supplied passage. This probe changes the audit evidence; it does not revise the production task's answer key.
+
+For language, use bilingual review to produce equivalent English and Armenian questions, passages, and answers, including “What is the maximum upload size?” and “Ո՞րն է ֆայլի առավելագույն չափը։”. Preserve the value and the canonical unit `MB`. Include both a supported 20 MB answer and an unsupported 200 MB answer in each language. Compare false passes among human-labeled failures and false rejections among human-labeled successes separately for each language. A different mix of correct and incorrect candidates should not be mistaken for different grading reliability.
+
+Build the audit set with independently adjudicated labels, ambiguous cases, polished wrong answers, and missing evidence. Resolve human disagreements using the rubric before treating the labels as a reference. Agreement on this set describes this population; it does not establish correctness on arbitrary future responses.
+
+Keep fields such as `judge_support_label` separate from deterministic value and unit checks. Shared generator and judge biases can reward the same attractive error. Executable checks and independently collected human assessments provide additional evidence.
+
+### 14. Evaluation contamination {#evaluation-contamination}
+
+Contamination means information intended to be held out influenced the system in a way that invalidates the intended generalization claim. It can enter through pretraining, fine-tuning, preferences, generated solutions, retrieval indexes, demonstrations, or repeated developer inspection.
+
+Exact matching catches only part of the problem. A translated question, paraphrased solution, or repository test copied into a training fixture can preserve the answer while changing surface text. Family lineage should therefore extend into evaluation records. Protect original tasks and known descendants together.
+
+Fresh benchmarks can reduce exposure to older training corpora, but freshness does not guarantee independence. [LiveBench](https://arxiv.org/abs/2406.19314) [@white2024livebench] illustrates refreshed evaluation with objective grading. New questions can reuse old templates or become development resources after publication. Record date and version instead of treating a name as a permanent cleanliness certificate.
+
+#### Example: permitted retrieval and a leaked answer key {#retrieval-leakage-example}
+
+The question is “What is the maximum upload size?”. An open-document protocol permits retrieving `limits-v1`, which says “Maximum upload size: 20 MB.” Finding that answer in the manual is the task's intended evidence access.
+
+A held-out record such as `test/upload-07.json` instead contains the test question, `expected_answer: 20`, and `unit: MB`. Adding that record to the retrieval index, a few-shot demonstration, or synthetic fine-tuning data exposes protected evaluation information. Both runs may return 20 MB, so the final number alone cannot identify the leak. Inspect what information reached the system.
+
+Likewise, a calculator is allowed only when declared by the protocol. Hidden code-grading tests must remain inaccessible if the claim concerns performance on unseen tests. A diagnostic run supplied with protected information must be reported separately from the main benchmark.
+
+#### Example: tracing contamination through the pipeline {#contamination-audit-example}
+
+| Route to test | Concrete inspection | What it can establish |
+|---|---|---|
+| Exact copies | Normalize Unicode, case, and whitespace; compare questions and known solutions with training and index records | Literal matches under the stated normalization |
+| Generated descendants | Follow `parent_id` from a paraphrase or translation to its seed test record | Known family members that exact matching misses |
+| Runtime leakage | Inspect retrieved document IDs, text, and tool payloads for answer-key records or hidden tests | Protected material actually exposed during a run |
+| Score sensitivity | Remove flagged families from both models' results and recompute scores on the same retained tasks | How the reported comparison changes on that subset |
+
+Exact matching cannot detect every paraphrase, and missing lineage prevents a complete descendant audit. Similarity search can find candidates for inspection, but similarity alone does not prove answer leakage. Record which corpora, versions, normalization, and lineage fields were available.
+
+For a constructed sensitivity example, A scores 90 of 120 and B scores 96 of 120: 75% versus 80%. Suppose 20 flagged requests contain 8 A successes and 20 B successes. Excluding them leaves A at 82 of 100 and B at 76 of 100. The observed difference changes from +5 to −6 percentage points. This exposes dependence on the flagged subset; it does not prove contamination caused the difference. Exclusion also changes the evaluated population, so report both comparisons and their task and family counts.
+
+A defensible conclusion is “No exact matches found in these versioned corpora under this normalization.” That statement leaves translated, unknown, and inaccessible training material outside the audit's scope.
+
+### 15. Per-request evaluation records {#evaluation-records}
+
+Save enough information to replay a failure without rerunning the model. For the upload-limit task, retrieval returns `limits-v1`, which states 20 MB, and `quota-v1`, which describes an unrelated storage quota. The response gives the correct value but cites `quota-v1`. Parsing, value, and unit checks pass; evidence support fails.
+
+Keep each check separate. The status `unsupported_citation` locates a problem hidden by a single numeric-accuracy score. The task remains in the denominator and its raw response remains unchanged when another grader is tested.
+
+```json
+{
+  "task_id": "upload-07-en", "family_id": "upload-family-07",
+  "protocol_id": "docs-eval-v1", "checkpoint": "checkpoint-b-digest",
+  "grader_version": "grader-v1", "snapshot_id": "manual-v1",
+  "request_digest": "sha256:...", "raw_response_digest": "sha256:...",
+  "retrieved_ids": ["limits-v1", "quota-v1"],
+  "parsed": {"answer": 20, "unit": "MB", "citation": "quota-v1"},
+  "checks": {"schema": true, "value": true, "unit": true,
+             "support": false},
+  "status": "unsupported_citation", "input_tokens": 420, "output_tokens": 28,
+  "tool_calls": 0, "elapsed_ms": 310
+}
+```
+
+The token and timing values are constructed examples, not performance claims about a real model. Digests identify stored artifacts; retain the underlying request, raw response, ordered passages, and tool trace so the digests can be resolved. A hash without the artifact cannot reconstruct the evidence. Also retain decoding settings and any seed, context limits, and grader outputs. Replaying the saved response under another grader tests measurement sensitivity while keeping generation fixed.
+
+### 16. Controlled diagnostic interventions {#diagnostic-interventions}
+
+Each diagnostic changes one part of the experiment and tests a specific hypothesis. Freeze the checkpoint, task IDs, prompt template, decoding settings, and answer budget across paired conditions, except for the stated intervention. Repeat over independent task families and, when generation is stochastic, use repeated runs. One successful rescue is a clue, not a general causal conclusion.
+
+#### Example: retrieval and context-use tests {#retrieval-diagnostic-example}
+
+| Controlled substitution | Constructed observation | Next component to investigate |
+|---|---|---|
+| Replace an irrelevant timeout passage with the approved “20 MB” passage | Upload answer and citation become correct | Retrieval missed useful evidence |
+| Keep the same passages; highlight only the existing “20 MB” sentence | Upload answer improves without adding facts | Sensitivity to salience or distractors |
+
+For the retrieval test, record whether the gold source was present before serialization and whether its relevant span survived truncation. A source returned by the retriever but absent from the final model input points to context assembly. If the gold span was never retrieved, inspect indexing, query construction, and ranking. Supplying gold evidence is an **oracle diagnostic condition**; its score remains separate from the production score and is not a universal upper bound on retrieval systems.
+
+For the context-use test, change only the marking around the existing sentence. Success suggests a context-use issue, but the formatting change may itself affect behavior. Test passage order and irrelevant text separately before choosing a fix. Failure after a gold-passage substitution shows that this substitution did not resolve the task; it does not prove that retrieval is flawless.
+
+#### Example: schema and arithmetic tests {#interface-diagnostic-example}
+
+| Controlled test | Constructed observation | Next component to investigate |
+|---|---|---|
+| Replay the same saved “20 MB” response under a separate semantic diagnostic | The content is correct; strict JSON parsing still fails | Output serialization or schema compliance |
+| For a free-capacity task, compare evaluation of the same `68 − 51` expression with a calculator | A wrong result becomes 17 MB with the tool result | Arithmetic execution or tool integration |
+
+Keep the strict schema failure in the primary score. The semantic diagnostic explains which requirement failed; accepting free text afterward would change the benchmark. Test constrained output or structured training on new validation families, and recheck value and citation quality as well as JSON validity.
+
+In the arithmetic probe, both conditions use the same already specified expression. Validate a calculator call with arguments `68 - 51` and result 17. If the system instead chooses the wrong expression, a correct calculator cannot repair its interpretation. A supplied correct expression is an additional oracle intervention and must be labeled accordingly. To test a deployable tool policy, let the system choose calls under the declared budget and measure their arguments, errors, final answers, and added cost.
+
+Use the resulting failure categories to propose a specific next experiment: retrieval ranking for missing evidence, context assembly for truncation, output constraints for schema failures, or tool integration for arithmetic. Confirm improvements on uninspected validation families, then evaluate the frozen choice on a protected confirmation set. The inspected test answers themselves remain protected.
+
+### 17. Executable evaluation lab {#evaluation-lab}
+
+Download the [evaluation lab](lecture-9/evaluation_lab.py). Run it with Python's standard library:
+
+```bash
+python3 evaluation_lab.py
+```
+
+The saved-response fixture preserves missing responses and tool failures in the denominator. It rejects nonfinite numeric values and Boolean values, checks allowed citation IDs against known fixture support, computes paired outcomes, and resamples independent families. The citation check is specific to these finite examples; a general semantic support grader needs additional evidence and validation.
+
+The first executable assignment needs no model API. A harness that cannot grade known responses should not be trusted with an expensive batch. This fixture distinguishes invalid structure from wrong values and units.
+
+```python
+import json
+import math
+
+tasks = [
+    {"id": "a", "family": "retry", "answer": 2, "unit": "retries"},
+    {"id": "b", "family": "capacity", "answer": 8, "unit": "GiB"},
+    {"id": "c", "family": "timeout", "answer": 30, "unit": "seconds"},
+]
+responses = [
+    '{"answer": 2, "unit": "retries"}',
+    '{"answer": 8, "unit": "GB"}',
+    'The timeout is thirty seconds.',
+]
+
+def grade(task, response):
+    try:
+        parsed = json.loads(response)
+    except (json.JSONDecodeError, TypeError):
+        return "parse_error"
+    if not isinstance(parsed, dict):
+        return "schema_error"
+    if (type(parsed.get("answer")) not in (int, float)
+            or not math.isfinite(parsed["answer"])):
+        return "schema_error"
+    if not isinstance(parsed.get("unit"), str):
+        return "schema_error"
+    if parsed["answer"] != task["answer"]:
+        return "wrong_value"
+    if parsed["unit"] != task["unit"]:
+        return "wrong_unit"
+    return "success"
+
+results = [grade(t, r) for t, r in zip(tasks, responses)]
+assert results == ["success", "wrong_unit", "parse_error"]
+assert sum(r == "success" for r in results) / len(tasks) == 1 / 3
+assert grade(tasks[0], '{"answer": true, "unit": "retries"}') == "schema_error"
+assert grade(tasks[0], '[]') == "schema_error"
+print(results)
+```
+
+The exact unit policy rejects `GB` for `GiB`; supporting conversions requires a specified conversion contract and tests. The type check rejects Boolean values even though Python's `bool` subclasses `int`. Such details can otherwise turn malformed responses into apparent successes.
+
+#### Example: grader cases with known outcomes {#grader-fixture-cases}
+
+Use the downloaded lab's authored retry task, whose expected answer is 2 retries and whose allowed citation is `retry`. First check that `{"answer":2,"unit":"retries","citation":"retry"}` succeeds. Then test distinct failure paths:
+
+| Changed input or execution | Expected status |
+|---|---|
+| Retry answer is Boolean `true` | `schema_error` |
+| Memory task answers `8 GB` when `8 GiB` is required | `wrong_unit` |
+| Retry answer cites unknown ID `missing` | `unknown_citation` |
+| Retry answer cites existing, unrelated passage `memory` | `unsupported_citation` |
+| No response record exists for a task | `missing_response` |
+| A response record reports a tool timeout | `tool_timeout` |
+
+The last two cases test the harness rather than just the response grader. Match results to task IDs and keep both failures in the denominator. Unknown and unsupported citations are different: one cannot be resolved; the other resolves to evidence that does not support this answer. Replay these cases whenever grading rules change, and verify which saved outcomes change before interpreting a new model score.
+
+Add a new unanswerable family and an additional citation-support case without removing the existing failure fixtures. Keep every task in the denominator. Add a second response set, compute paired outcomes, and bootstrap families. Change one grader rule and identify which saved outcomes change. That is a sensitivity analysis of the measurement system.
+
+For an additional numerical test, implement pass@$k$ using products rather than enormous binomial coefficients: when $n-c\geq k$, the failure probability is $\prod_{j=0}^{k-1}(n-c-j)/(n-j)$. Verify `pass_at_k(10, 3, 2)` is approximately `0.5333333333`, that zero successes gives zero, and that all successes gives one. Reject $k>n$ rather than silently extrapolating.
+
+The deliverable contains tasks, raw responses, protocol manifest, grader tests, per-task results, and one report. State population, family count, metric, uncertainty method, taxonomy, and resource accounting. A later model runner should implement the same interface without changing grading rules.
+
+## What to remember
+
+A checkpoint becomes a claim through a complete protocol. Likelihood measures prediction of specified text; task metrics measure outcomes under specified prompts, tools, and graders. Pass@$k$ asks whether a good candidate exists; majority@$k$ grades the most frequent sampled answer. Delivered success depends on the selection policy. Paired comparisons and family-level uncertainty preserve the evidence's structure. Judges, contamination audits, and cost measurements are parts of the experiment.
+
+The assistant's wrong retry answer is now useful in a new way: it is a classified failure under a reproducible protocol. We can propose a training intervention and distinguish improvement from a new prompt, larger budget, or easier grader.
+
+## References

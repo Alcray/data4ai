@@ -30,3 +30,5 @@ The published course material begins with the architectural background and then 
 **Lecture 6: Tokenization and sequence construction.** Byte-level BPE and unigram segmentation; vocabulary and representation trade-offs; multilingual tokenizer audits; special tokens and chat formats; multimodal embeddings; next-token targets; document boundaries; attention and loss masks; long-document handling; and packing.
 
 **Lecture 7: Data mixtures, multilingual exposure, and scaling.** Record probabilities versus realized loss-bearing targets; finite-source coverage and repetition; multilingual, domain, and origin allocation; continued pretraining and replay; controlled mixture experiments; compute-optimal and data-constrained scaling; DoReMi, RegMix, and staged curricula.
+
+**Lecture 8: Evaluation from perplexity to real tasks.** Versioned evaluation protocols; likelihood, perplexity, and bits per byte; task checks, calibration, abstention, pass at k, majority voting, inference costs, paired comparisons, and family-level uncertainty.

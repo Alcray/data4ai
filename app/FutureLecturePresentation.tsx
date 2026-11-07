@@ -1,3 +1,4 @@
+import EvaluationPresentation from "./EvaluationPresentation";
 import RoboticsPresentation from "./RoboticsPresentation";
 import { useState } from "react";
 import { Slide } from "@revealjs/react";
@@ -103,6 +104,7 @@ function Content({ slide, lectureNumber }: { slide: SlideSpec; lectureNumber: nu
 }
 
 export default function FutureLecturePresentation({ lectureNumber, onExit }: { lectureNumber: number; onExit: () => void }) {
+  if (lectureNumber === 9) return <EvaluationPresentation lectureNumber={9} onExit={onExit} />;
   if (lectureNumber === 8) return <RoboticsPresentation lectureNumber={8} onExit={onExit} />;
   const deck = decks[lectureNumber];
   if (!deck) return null;
