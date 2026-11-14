@@ -1,0 +1,488 @@
+---
+title: "Lecture 9: Continued pretraining, SFT, and instruction data"
+order: 11
+description: "How continued pretraining, supervised fine-tuning, and LoRA change a pretrained checkpoint, and the data each method needs."
+bibliography: ../references.bib
+citeproc: true
+format:
+  html:
+    minimal: true
+    html-math-method: mathml
+    title-block-style: none
+    anchor-sections: false
+    link-external-newwindow: true
+execute:
+  enabled: false
+---
+
+A pretrained checkpoint is a starting point for further training. [Code Llama](https://arxiv.org/abs/2308.12950) [@roziere2023codellama] is Llama 2 after 500 billion more tokens of mostly code. [HyGPT](https://gen2b.ai/hygpt-release-1-0) is Gemma 2 9B after roughly 10 billion Armenian tokens and an instruction-tuning stage. The model released with [OpenMathInstruct-2](https://arxiv.org/abs/2410.01560) [@toshniwal2024openmathinstruct2] is the Llama 3.1 8B base model after supervised fine-tuning on 14 million mathematics problems with solutions.
+
+This lecture covers the two training methods behind these models, **continued pretraining (CPT)** and **supervised fine-tuning (SFT)**, the data each method needs, and **LoRA**, which trains a small set of added parameters with either method.
+
+## Learning objectives
+
+By the end of this lecture, you should be able to:
+
+1. separate methods that change a model's input from methods that change its weights;
+2. explain what continued pretraining trains on and when it is used;
+3. describe catastrophic forgetting and how a fixed evaluation, replay, the learning rate, and the training length control it;
+4. turn a conversation into an SFT training sequence with a chat template and a loss mask;
+5. explain what SFT teaches, using OpenMathInstruct-2 as the example;
+6. write the LoRA update, count its trainable parameters, and compare it with full fine-tuning.
+
+## Part 1 — Introduction {#introduction}
+
+### One request, three outputs
+
+A request says that a service allows three retries after the first attempt and asks for the total number of attempts as JSON with the fields `answer` and `unit`. The total is four.
+
+![](lecture-10/assistant-output-examples.svg){#assistant-output-examples fig-alt="Three outputs for the same request: the wrong value 3 in valid JSON, the right value four in plain text, and the expected JSON with the value 4."}
+
+The first output follows the format and gives the wrong number. The second gives the right number in plain text. The third is right in both. The value and the format are separate properties of an answer, and an evaluation scores them separately.
+
+### Methods for improving a model's answers
+
+**Prompting methods** leave the weights unchanged and change what the model reads:
+
+- a **zero-shot prompt** gives the instruction alone;
+- a **few-shot prompt** places several solved examples before the question;
+- a **chain-of-thought prompt** asks for the intermediate steps before the final answer;
+- a **self-checking prompt** asks the model to review its own answer;
+- **retrieval-augmented generation (RAG)** searches a document collection and adds the passages it finds to the prompt.
+
+**Training methods** change the weights:
+
+- **continued pretraining (CPT)** continues next-token prediction on additional text;
+- **supervised fine-tuning (SFT)** trains on inputs paired with the desired responses.
+
+Either training method can update every weight of the model, which is called **full fine-tuning**, or train a small set of added matrices with [LoRA](https://arxiv.org/abs/2106.09685) [@hu2022lora] while the original weights stay frozen.
+
+![](lecture-10/adaptation-methods.svg){#adaptation-methods fig-alt="A tree of methods. Prompting with fixed weights covers prompt design and retrieval. Training with parameter updates covers CPT and SFT, each done by full fine-tuning or LoRA."}
+
+::: {.protocol-table}
+| Method | What changes | Data it needs | Typical use |
+|---|---|---|---|
+| Prompting | The input | A few examples at most | A task the model can already do |
+| Retrieval | The input | A searchable document collection | Facts that change often |
+| CPT | The weights | Unlabeled text, usually billions of tokens | Knowledge of a domain or a language |
+| SFT | The weights | Input–response pairs, from a thousand to millions | How the model responds: instructions, format, solution method |
+:::
+
+## Part 2 — Continued pretraining {#continued-pretraining}
+
+### What continued pretraining is
+
+**Continued pretraining (CPT)** resumes pretraining from an existing checkpoint on new text. The training step is the pretraining step: the model reads a prefix, predicts the next token, and the prediction error updates the weights. The new text needs no labels and no question–answer structure, because every next token is its own target.
+
+![](lecture-10/cpt-token-loop.svg){#cpt-token-loop fig-alt="A prefix from the new text enters the pretrained model. The next token of the same text is the target, and the prediction error updates the weights."}
+
+For one training sequence of tokens $x_1,\ldots,x_T$ from the new corpus, the loss is
+
+$$
+\mathcal L_{\mathrm{CPT}}(\theta)=-\frac{1}{T}\sum_{t=1}^{T}\log p_\theta(x_t\mid x_{<t}).
+$$
+
+Here $\theta$ denotes the model parameters, which start at the pretrained values $\theta_0$; $T$ is the number of tokens in the sequence; $x_t$ is the token at position $t$; and $x_{<t}$ is every token before it. The term $p_\theta(x_t\mid x_{<t})$ is the probability the model assigns to the actual next token given the tokens before it. The logarithm turns that probability into a penalty that grows as the probability falls, and dividing the sum by $T$ averages the penalty over the sequence. This is the pretraining loss. Two things differ from pretraining: the starting point $\theta_0$ is a trained checkpoint, and the corpus is new.
+
+### When continued pretraining is used
+
+CPT puts knowledge of a domain or a language into the weights when pretraining a new model from random initialization costs too much.
+
+[]{#code-llama-stages}
+
+**A domain: Code Llama.** Llama 2 was pretrained on 2 trillion tokens, of which 80 billion were code. Code Llama starts from the Llama 2 weights and continues training in stages:
+
+::: {.protocol-table}
+| Stage | Starts from | Training data | Tokens |
+|---|---|---|---:|
+| Code Llama | Llama 2 | 85% code, 8% natural language about code, 7% general natural language | 500B |
+| Code Llama – Python | Code Llama | A Python-heavy mixture, 75% Python | 100B |
+| Long-context fine-tuning | The previous stage | Sequences of 16,384 tokens | 20B |
+| Code Llama – Instruct | Code Llama | Instruction–response data | about 5B |
+:::
+
+The 7B, 13B, and 34B models use the 500-billion-token budget; the 70B model uses 1 trillion. The first three stages are CPT: code and text with the next-token loss. The last stage is SFT.
+
+The paper reports two results that show what the 500 billion tokens bought. Llama 2 70B and Code Llama 7B score about the same on Python coding benchmarks, so continued pretraining on code closed a tenfold gap in model size. A 7B model trained from random initialization on the same data ended with the loss that Code Llama 7B had reached at about half of its training, 240 billion tokens earlier.
+
+![](lecture-10/cpt-reuse.svg){#cpt-reuse fig-alt="Training from random weights needs general pretraining before the domain corpus. Training from an existing checkpoint goes straight to the domain corpus."}
+
+[]{#armenian-models}
+
+**A language: Armenian.** HyGPT continued training from Gemma 2 9B on roughly 10 billion Armenian tokens before instruction tuning. [arm-gemma-e4b](https://huggingface.co/COPA-AI/arm-gemma-e4b), released with [*From Zero to Hero: An Open LLM Ecosystem for Armenian*](https://arxiv.org/abs/2609.03350), is Gemma-4-E4B after 10 billion tokens of continued pretraining on a documented mixture of Armenian news and verified mathematics and science problems.
+
+**A longer context.** Llama 2 and the first Code Llama stage train on sequences of 4,096 tokens. The long-context stage trains on sequences of 16,384 tokens and changes the base period of the rotary position embeddings from 10,000 to 1,000,000. After it, the models accept inputs of up to 100,000 tokens.
+
+![](lecture-9-1/cpt-context.svg){#cpt-context fig-alt="Code Llama training sequences grow from 4,096 tokens in initial training to 16,384 tokens in the long-context stage."}
+
+[]{#roberta-domains}
+
+The method is older than large decoder models. [*Don't Stop Pretraining*](https://aclanthology.org/2020.acl-main.740/) [@gururangan2020dontstop] continued the pretraining of RoBERTa on text from four domains (biomedical papers, computer science papers, news, and reviews) and improved eight classification tasks in those domains.
+
+### Catastrophic forgetting {#cpt-forgetting}
+
+**Catastrophic forgetting** is a large loss of earlier abilities after training on new data. The updates that fit the new corpus move weights that other abilities depend on.
+
+[*LoRA Learns Less and Forgets Less*](https://arxiv.org/abs/2405.09673) [@biderman2024lora] measured it. The authors continued the pretraining of Llama-2-7B on Python code from the StarCoder dataset for up to 20 billion tokens. At each budget they measured the target ability with HumanEval, which asks for Python functions and checks them with unit tests (pass@1 measures success for one generated solution), and the earlier abilities with the average accuracy on three general benchmarks: HellaSwag, which asks for plausible event continuations, and WinoGrande, which tests pronoun resolution, and ARC-Challenge, which contains grade-school science questions. Higher is better in both columns.
+
+::: {.protocol-table}
+| Training tokens | HumanEval pass@1 | Mean: HellaSwag, WinoGrande, ARC-Challenge |
+|---|---:|---:|
+| 0.25B | 0.152 | 0.625 |
+| 1B | 0.172 | 0.625 |
+| 4B | 0.218 | 0.599 |
+| 8B | 0.258 | 0.583 |
+| 20B | 0.263 | 0.545 |
+:::
+
+From 0.25 to 20 billion tokens, code generation rose by 11 points and the general benchmarks fell by 8 points. The loss of general ability grew with every increase of the budget after the first billion tokens.
+
+![](lecture-9-1/cpt-forgetting.svg){#cpt-forgetting-chart fig-alt="Code training increases HumanEval while reducing general benchmark accuracy."}
+
+[]{#armenian-forgetting}
+
+The COPA experiments show the same effect in Armenian. Continued pretraining focused on news, at a learning rate of $10^{-4}$, made the model more fluent in Armenian and reduced its accuracy on Belebele, a reading-comprehension benchmark, from 0.619 to 0.407.
+
+### Fix the evaluation before the first update {#cpt-evaluation}
+
+Forgetting is visible only when the earlier abilities were measured before training. The training loss measures how well the model predicts the new corpus. It carries no information about abilities that the new corpus does not exercise.
+
+Four decisions are made before training starts:
+
+1. a target evaluation for the new domain and a retained evaluation for the abilities that must survive;
+2. the score of the starting checkpoint on both, with fixed prompts, decoding settings, and graders;
+3. the largest acceptable drop in the retained score;
+4. a final test set that is used once, after the checkpoint is chosen.
+
+During training the same evaluation runs on every saved checkpoint. The chosen checkpoint has the best target score among those within the allowed drop.
+
+![](lecture-10/cpt-evaluation.svg){#cpt-evaluation fig-alt="The validation data and scoring are frozen first. The starting checkpoint and every later checkpoint receive the same evaluation, and the selection is confirmed once on the final test set."}
+
+### Reducing forgetting {#cpt-replay}
+
+**Replay.** Replay mixes text that resembles the original pretraining data into the new corpus. Code Llama's mixture is an example: 15% of it is natural language, 8% about code and 7% general, although the goal is code. With a share $\alpha$ of the training tokens taken from the new domain, the loss is
+
+::: {#replay-objective}
+$$
+\mathcal L_{\mathrm{mix}}=\alpha\,\mathcal L_{\mathrm{target}}+(1-\alpha)\,\mathcal L_{\mathrm{replay}}.
+$$
+:::
+
+Here $\mathcal L_{\mathrm{target}}$ is the average next-token loss on the new-domain text, $\mathcal L_{\mathrm{replay}}$ is the average next-token loss on the replay text, $\alpha$ is the share of tokens that come from the new domain, and $1-\alpha$ is the share that comes from replay.
+
+A budget of 10 million tokens with $\alpha=0.7$ holds 7 million tokens of domain text and 3 million tokens of replay text. The shares count tokens. Documents differ in length, so 70% of the documents is generally a different share of the tokens.
+
+![](lecture-10/cpt-replay.svg){#cpt-replay fig-alt="Domain text and replay text form one mixed training batch that updates the weights."}
+
+![](lecture-9-1/replay-budget.svg){#replay-budget fig-alt="A 10-million-token budget contains 7 million domain and 3 million replay tokens."}
+
+**Learning rate and training length.** A smaller learning rate makes each update smaller, and a shorter run makes fewer updates. In the Llama-2-7B experiment above, the general benchmarks lost 2.6 points between 0.25 and 4 billion tokens and 8 points by 20 billion.
+
+[]{#armenian-mixture}
+
+**Mixture content.** In the COPA experiments, replacing six percentage points of the news mixture with verified mathematics and science problems and lowering the learning rate raised Belebele accuracy from 0.407 to 0.716, above the 0.619 of the starting model.
+
+**A restricted update.** LoRA, described in Part 4, trains far fewer parameters than full fine-tuning and forgets less.
+
+## Part 3 — Supervised fine-tuning {#supervised-fine-tuning}
+
+### What supervised fine-tuning is
+
+**Supervised fine-tuning (SFT)** trains a pretrained model on pairs: an input and the response the model should give to it. The input can hold a system instruction, a user question, retrieved passages, and earlier turns of a conversation. Training raises the probability of the response tokens given the input.
+
+![](lecture-9-1/sft-demonstration.svg){#sft-demonstration fig-alt="A request enters the base model. The tokens of the desired response are the targets, and their prediction error updates the model."}
+
+[]{#base-continuation}
+
+SFT is the step that turns a base model into an instruction-following model. Meta's [prompt-format specification for Llama 3.1](https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/prompt_format.md) shows the two kinds of checkpoint. The base model receives text and continues it:
+
+```text
+Prompt:        <|begin_of_text|>Color of sky is blue but sometimes can also be
+Continuation:   red, orange, yellow, green, purple, pink, brown, gray, black, …
+```
+
+[]{#sft-dataset-sizes}
+
+The instruction-tuned model receives a conversation and writes the assistant's turn. The amount of data used for this step ranges from a thousand pairs to millions:
+
+::: {.protocol-table}
+| Model | Starts from | SFT data |
+|---|---|---|
+| [InstructGPT](https://arxiv.org/abs/2203.02155) [@ouyang2022instructgpt] | GPT-3 | About 13,000 prompts with human-written demonstrations |
+| [LIMA](https://arxiv.org/abs/2305.11206) [@zhou2023lima] | LLaMA 65B | 1,000 curated prompt–response pairs |
+| Code Llama – Instruct | Code Llama | About 5 billion tokens of instruction data |
+| OpenMath2-Llama3.1-8B | Llama 3.1 8B base | 14 million mathematics problem–solution pairs |
+:::
+
+### CPT and SFT compared {#cpt-sft-comparison}
+
+::: {.protocol-table}
+| | CPT | SFT |
+|---|---|---|
+| Training data | Plain text or code | Inputs paired with desired responses |
+| Tokens that are scored | Every token | The response tokens |
+| Usual size | Billions of tokens | A thousand to millions of pairs |
+| Main effect | Knowledge of a domain or a language | How the model responds: instructions, format, solution method |
+:::
+
+The Llama-2-7B study ran both methods in the same domain. Continued pretraining on 20 billion tokens of Python code reached a HumanEval score of 0.263. Supervised fine-tuning on Magicoder-Evol-Instruct-110K, a set of 110,000 coding instructions with solutions that totals 73 million tokens, reached 0.497. The instruction pairs have the form of the benchmark's tasks, a request followed by a program, and a dataset about 270 times smaller moved the score much further.
+
+### OpenMathInstruct-2: what the demonstrations teach {#openmathinstruct-2}
+
+OpenMathInstruct-2 is an SFT dataset for mathematics. Its seeds are the training sets of MATH and GSM8K. Llama-3.1-405B-Instruct wrote new solutions to the seed problems and 592,000 new problems with their solutions. A solution to a seed problem was kept when it reached the known answer; the answer to a new problem was set by a majority vote over 32 sampled solutions. The result is 14 million problem–solution pairs over about 600,000 distinct problems. One record from the [released dataset](https://huggingface.co/datasets/nvidia/OpenMathInstruct-2):
+
+```{.json .sft-record}
+{
+  "problem": "120 small stones are needed to fill a decorative vase. Emma has already collected 45 stones, but she needs to fill 3 vases. How many more stones must Emma collect?",
+  "generated_solution": "Emma needs 120 stones per vase, and she needs to fill 3 vases. \nSo, she needs 3 * 120 = 360 stones in total.\nShe already has 45 stones, so she needs 360 - 45 = 315 more stones.\nThus, Emma must collect \\boxed{315} more stones.",
+  "expected_answer": "315",
+  "problem_source": "augmented_gsm8k"
+}
+```
+
+The value `augmented_gsm8k` marks a problem that the teacher model wrote in the style of GSM8K. During SFT, `problem` is the input and `generated_solution` is the response.
+
+[]{#openmath-scores}
+
+Fine-tuning Llama-3.1-8B-Base on the dataset gave 67.8% on MATH and 91.7% on GSM8K. Llama-3.1-8B-Instruct, Meta's instruction-tuned version of the same base model, scores 51.9% and 84.2%.
+
+[]{#openmath-properties}
+
+The paper's experiments on smaller training sets show which properties of the demonstrations matter. All scores are accuracy on a MATH validation set.
+
+::: {.protocol-table}
+| Property | Experiment | Result |
+|---|---|---|
+| Solution format | Short solutions (237 tokens on average) against the model's default longer style (331 tokens) | 44.5% against 40.6% |
+| Teacher strength | Solutions written by Llama-3.1-405B-Instruct against the same amount written by Llama-3.1-8B-Base | 37.9% against 30.1% |
+| Wrong solutions removed | Filters removed the 6–12% of solutions judged wrong | 43–44%, the same as the unfiltered 43.6% |
+| Wrong solutions added | Up to 20% of solutions replaced by ones with a wrong final answer, in sets of at least 256,000 pairs | Little change |
+| Question diversity | 256,000 pairs built from 1,000 distinct problems against 6,500 | 10.5 points higher with 6,500 |
+:::
+
+Accuracy depends on the form of the solutions, on the model that wrote them, and on the variety of problems. It changes little when a fifth of the solutions end in a wrong answer. This pattern fits a base model that already holds the mathematical knowledge from pretraining and learns from the demonstrations how to work through a problem and present the result.
+
+### From a conversation to a training sequence {#chat-template-examples}
+
+A model reads one sequence of tokens. A **chat template** is the rule that turns a list of messages into that sequence. It marks where each message starts and ends and who wrote it, using **special tokens**: tokens reserved in the tokenizer for this purpose. Each model family has its own template. The same exchange looks like this in three of them.
+
+[]{#llama-template}
+
+**Llama 3.1 Instruct**, with the system message from Meta's specification:
+
+```text
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+You are a helpful assistant<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+Capital of France?<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+Paris.<|eot_id|>
+```
+
+[]{#qwen-template}
+
+**Qwen2.5 Instruct**, whose [tokenizer template](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/tokenizer_config.json) inserts a default system message when the conversation has none:
+
+```text
+<|im_start|>system
+You are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>
+<|im_start|>user
+Capital of France?<|im_end|>
+<|im_start|>assistant
+Paris.<|im_end|>
+```
+
+[]{#gemma-template}
+
+**Gemma 2**, which has no system role and names the assistant `model` in [Google's format](https://ai.google.dev/gemma/docs/core/prompt-structure):
+
+```text
+<bos><start_of_turn>user
+Capital of France?<end_of_turn>
+<start_of_turn>model
+Paris.<end_of_turn>
+```
+
+Fine-tuning data is rendered with the template of the checkpoint being trained, because its special tokens are the ones that checkpoint learned during its own instruction tuning. A base model has no template; the SFT run chooses one, and the model learns it from the data.
+
+### The loss is computed on the response {#sft-loss}
+
+In SFT the model reads the whole sequence, and the loss counts the response tokens. Write the rendered sequence as tokens $z_1,\ldots,z_S$, and let $A$ be the set of positions that hold the assistant's response, including its end-of-turn token. The loss is
+
+::: {#sft-objective}
+$$
+\mathcal L_{\mathrm{SFT}}(\theta)=-\frac{1}{|A|}\sum_{t\in A}\log p_\theta(z_t\mid z_{<t}).
+$$
+:::
+
+Here $z_t$ is the token at position $t$, and $z_{<t}$ is everything before it: the system message, the user turn, and the part of the response already written. The term $p_\theta(z_t\mid z_{<t})$ is the probability the model assigns to the correct response token. $|A|$ is the number of response tokens, so the loss is the average penalty per response token. Positions outside $A$ add no term to the sum.
+
+The Qwen sequence above, divided into pieces:
+
+```text
+piece                                      in the loss
+<|im_start|>system … <|im_end|>            no
+<|im_start|>user                           no
+Capital of France?                         no
+<|im_end|>                                 no
+<|im_start|>assistant                      no
+Paris                                      yes
+.                                          yes
+<|im_end|>                                 yes
+```
+
+The response has three scored pieces. Scoring `<|im_end|>` teaches the model to end its turn. The earlier pieces stay in the context of every scored prediction: the model reads the question to give `Paris` a high probability. In training code the positions outside $A$ receive the label `-100`, the value that the cross-entropy loss in PyTorch ignores by default.
+
+![](lecture-9-1/response-mask.svg){#response-mask fig-alt="System and user context are masked; Paris, punctuation and the end-of-turn token are scored."}
+
+### Tool calls {#tool-calls}
+
+A conversation with a tool has four turns: the user asks, the assistant writes a call, the tool returns a result, and the assistant answers. The assistant wrote the call and the answer, so both are scored. The tool wrote the result, so it is masked like the user turn, and it stays in the context for the final answer.
+
+![](lecture-9-1/tool-result-mask.svg){#tool-result-mask fig-alt="The user turn and the tool result are masked. The assistant's call and the assistant's answer are scored."}
+
+### How long to train {#sft-training-length}
+
+An **epoch** is one pass over the whole dataset. More epochs over the same pairs help up to a point. Full fine-tuning of Llama-2-7B on the 110,000 coding instructions gave:
+
+::: {.protocol-table}
+| Epochs | HumanEval pass@1 | Mean: HellaSwag, WinoGrande, ARC-Challenge |
+|---|---:|---:|
+| 1 | 0.302 | 0.595 |
+| 2 | 0.464 | 0.579 |
+| 4 | 0.470 | 0.512 |
+| 8 | 0.497 | 0.446 |
+| 16 | 0.416 | 0.414 |
+:::
+
+The target score peaked at eight epochs and fell after that. The general benchmarks fell at every step, by 18 points between the first and the sixteenth epoch. In this study SFT caused more forgetting than CPT: 0.414 after sixteen epochs against 0.545 after 20 billion tokens of code. The checkpoint is chosen with the fixed evaluation, as in CPT.
+
+![](lecture-9-1/sft-epochs.svg){#sft-epochs fig-alt="HumanEval pass@1 and mean HellaSwag, WinoGrande, ARC-Challenge accuracy across one to sixteen SFT epochs."}
+
+## Part 4 — LoRA {#lora}
+
+### Memory for an 8B model {#memory-8b-weights}
+
+Start with 8 billion parameters. **BF16** (bfloat16) stores each value in 16 bits, or 2 bytes; **FP32** stores it in 32 bits, or 4 bytes. Packed **INT4** stores a quantized value in 4 bits, so two values fit in one byte. The raw weights therefore occupy 8 billion × 2 = **16 GB** in BF16, or 8 billion × 0.5 = **4 GB** in INT4. Here GB means one billion bytes; GiB means $2^{30}$ bytes. Those sizes are about 14.90 GiB and 3.73 GiB.
+
+Quantization also stores scales and sometimes zero points, which map the small integer codes back to approximate weights. Some layers may stay at higher precision. These add to the 4 GB payload. The stored weight precision also differs from the precision used for matrix multiplication and intermediate results.
+
+![](lecture-9-1/memory-weights.svg){#memory-weights fig-alt="Eight billion parameters occupy 16 GB at two bytes per BF16 value or 4 GB at half a byte per packed INT4 value. Quantization metadata is additional."}
+
+### Full training adds gradients and optimizer state {#memory-8b-training}
+
+For a concrete full-training budget, use BF16 working weights, FP32 accumulated gradients, an FP32 master copy of the weights, and the two FP32 state arrays maintained by AdamW. A **gradient** records how the loss changes with a weight. The **master copy** preserves small updates before converting the weight back to BF16. AdamW's **first moment** averages gradients; its **second moment** averages their squares. The [Hugging Face memory guide](https://huggingface.co/docs/transformers/main/en/model_memory_anatomy) describes this allocation pattern.
+
+Each parameter now needs 2 + 4 + 4 + 4 + 4 = **18 bytes** of persistent training state. For 8 billion parameters, that is **144 GB**, before activations and temporary buffers. Different implementations use different allocations: keeping gradients in BF16 reduces this particular subtotal to 128 GB; omitting a master copy changes it again. Precision labels alone do not specify the optimizer's memory use.
+
+![](lecture-9-1/memory-training.svg){#memory-training fig-alt="An 8B full-training ledger: BF16 working weights 16 GB, FP32 gradients 32 GB, FP32 master weights 32 GB, and two FP32 AdamW moments 32 GB each. The subtotal is 144 GB before activations and temporary buffers."}
+
+This persistent-state calculation applies to **pretraining, CPT, and full-parameter SFT** with the same implementation. Response-only SFT changes which predictions are scored; the model still processes the prompt and backpropagates through the computation used by the response. A smaller SFT dataset reduces the number of training steps, but does not shrink these state arrays.
+
+### Activations depend on the batch and sequence {#memory-8b-activations}
+
+**Activations** are intermediate values computed during the forward pass. Training retains some of them for the backward pass. Take a decoder with 32 layers and a hidden width of 4,096. One BF16 hidden-state tensor for a microbatch of one sequence of 4,096 tokens holds 1 × 4,096 × 4,096 values. At 2 bytes each, it occupies **33,554,432 bytes**, or **32 MiB**. The **microbatch** is the set of sequences processed together in one forward/backward pass.
+
+Keeping one such tensor at each of the 32 layers would occupy **1 GiB**, or about **1.074 GB**. This counts only those hidden-state tensors. Attention, feed-forward intermediates, logits, and backward operations need further memory. Their peak depends on the implementation.
+
+![](lecture-9-1/memory-activations.svg){#memory-activations fig-alt="One sequence times 4096 tokens times 4096 hidden values times two bytes gives a 32 MiB hidden-state tensor. One saved tensor in each of 32 layers totals 1 GiB; four sequences total 4 GiB for these tensors alone."}
+
+[Activation checkpointing](https://huggingface.co/docs/transformers/main/en/gradient_checkpointing) stores selected intermediates and recomputes others during backward. Memory-efficient attention avoids storing the full attention-score matrix. Gradient accumulation runs several microbatches before an update, so a larger effective batch can use a small activation budget per microbatch. To obtain the peak allocation, measure a complete forward, backward, and optimizer step with the chosen sequence length and microbatch after optimizer state has been initialized. Add runtime workspace and allocator headroom when choosing a GPU. Sharding or offloading can distribute these allocations across devices or CPU memory.
+
+### Inference adds a key–value cache {#memory-8b-cache}
+
+Autoregressive inference stores attention **keys and values** for earlier tokens so that later tokens can reuse them. This is the [KV cache](https://huggingface.co/docs/transformers/main/en/kv_cache). Continue with 32 layers and assume 8 KV heads per layer, 128 values per head, and a BF16 cache. For one sequence containing 4,096 cached tokens, count:
+
+- 2 arrays: keys and values;
+- 32 layers;
+- 1 sequence × 4,096 cached tokens;
+- 8 KV heads × 128 values per head;
+- 2 bytes per value.
+
+Multiplying these counts gives **536,870,912 bytes = 0.5 GiB ≈ 0.537 GB**. Cached tokens include the prompt and generated continuation. Four equally long sequences require 2 GiB; one sequence at 32,768 tokens requires 4 GiB under the same configuration.
+
+![](lecture-9-1/memory-cache.svg){#memory-cache fig-alt="A BF16 KV cache with keys and values, 32 layers, one 4096-token sequence, eight KV heads and head width 128 occupies 0.5 GiB. Four such sequences occupy 2 GiB; one 32768-token sequence occupies 4 GiB."}
+
+[]{#memory-8b-inference}
+
+Inference has no optimizer state or training gradients. For the one-sequence, 4,096-token case, BF16 weights plus the BF16 KV cache occupy **16 + 0.537 ≈ 16.537 GB**. INT4 weight payload plus the same cache occupies **4 + 0.537 ≈ 4.537 GB**, before quantization metadata and any higher-precision layers. Both also need transient activations and execution buffers, especially while processing the prompt. Quantizing the weights leaves the cache at BF16 in this calculation; cache quantization is a separate choice.
+
+![](lecture-9-1/memory-inference.svg){#memory-inference fig-alt="Inference subtotals for an 8B model and one 4096-token BF16 cache: 16.537 GB with BF16 weights and 4.537 GB with packed INT4 weights. Runtime memory and quantization overhead are additional."}
+
+### Four-bit adaptation trains a small set of parameters {#memory-8b-qlora}
+
+LoRA keeps the base weights frozen and trains added adapter matrices. [QLoRA](https://arxiv.org/abs/2305.14314) [@dettmers2023qlora] also compresses the frozen base to four bits and performs computation at higher precision. Its **NF4** format, or NormalFloat 4, uses a nonuniform set of representable values; it differs from INT4 even though both have a raw storage cost of half a byte per value. Ordinary four-bit loading does not make all weights directly trainable with AdamW. The [bitsandbytes integration](https://huggingface.co/docs/transformers/main/en/quantization/bitsandbytes) supports training additional parameters around the quantized base.
+
+Suppose the chosen adapters contain **40 million trainable parameters**. With the same 18-byte training-state budget as above, they need 40 million × 18 = **0.72 GB**. The frozen base needs no gradient, master-weight, or optimizer arrays. BF16 LoRA therefore has a **16 + 0.72 = 16.72 GB** state subtotal. With a four-bit frozen base, the QLoRA subtotal is **4 + 0.72 = 4.72 GB**, plus quantization overhead. The actual adapter count depends on the rank and the layers being adapted.
+
+![](lecture-9-1/memory-adapters.svg){#memory-adapters fig-alt="With 40M trainable adapters using 18 bytes per parameter, adapter state costs 0.72 GB. A frozen BF16 8B base plus adapters totals 16.72 GB; a frozen four-bit base plus adapters totals 4.72 GB before quantization overhead, activations, and runtime buffers."}
+
+Both adapter methods still require activations for backpropagation. They can use a CPT or SFT objective, but QLoRA adapts an existing pretrained model; it does not pretrain the frozen base from scratch. These state subtotals explain the savings. A GPU capacity estimate must also include the peak activation and runtime allocations for the selected run.
+
+### The cost of full fine-tuning {#full-tuning-cost}
+
+Full fine-tuning trains every weight and stores a full copy of the model for every task. For GPT-3 with 175 billion parameters, the LoRA paper reports 1.2 TB of GPU memory during training and a 350 GB checkpoint for each fine-tuned model.
+
+### The low-rank update
+
+**LoRA**, short for low-rank adaptation, freezes each pretrained weight matrix $W_0$ and learns a correction to it as the product of two small matrices:
+
+::: {#lora-update}
+$$
+W' = W_0+\frac{\alpha}{r}\,BA,
+\qquad B\in\mathbb R^{d_{\mathrm{out}}\times r},
+\quad A\in\mathbb R^{r\times d_{\mathrm{in}}}.
+$$
+:::
+
+Here $W_0$ is a pretrained weight matrix with $d_{\mathrm{out}}$ rows and $d_{\mathrm{in}}$ columns, for example the query projection of an attention layer; it receives no updates. $A$ and $B$ are the trained matrices. The **rank** $r$ is their shared inner dimension, a small number such as 4, 16, or 256. The constant $\alpha$ scales the correction, and $W'$ is the matrix the adapted model uses. At the start of training $A$ holds random values and $B$ holds zeros, so $BA=0$ and the adapted model equals the pretrained one.
+
+A weight matrix of size 4,096 × 4,096 has 16,777,216 values. With $r=16$, $A$ has 16 × 4,096 values and $B$ has 4,096 × 16. Together they hold 131,072 values, 0.78% of the matrix.
+
+![](lecture-9-1/lora-matrices.svg){#lora-matrices fig-alt="A full 4096 by 4096 matrix and rank-16 factors; the factors hold 131072 trainable values."}
+
+[]{#lora-costs}
+
+For GPT-3 175B with $r=4$ on the query and value projections, the LoRA paper reports:
+
+- training memory reduced from 1.2 TB to 350 GB;
+- checkpoint size reduced from 350 GB to 35 MB;
+- training about 25% faster;
+- 100 fine-tuned variants stored in 354 GB, against 35 TB for 100 full copies.
+
+After training, the product $BA$ can be added into $W_0$ once, and the adapted model then runs at the speed of the original. LoRA decides which parameters are trained. The objective is still CPT or SFT, with the same data, template, and loss mask.
+
+### What LoRA gives up and what it keeps {#lora-tradeoff}
+
+The Llama-2-7B study trained LoRA at three ranks next to full fine-tuning, on the same code data as above. HumanEval pass@1 measures Python code generation. The mean accuracy on HellaSwag (plausible event continuations), WinoGrande (pronoun resolution), and ARC-Challenge (grade-school science) measures retention of earlier abilities. The CPT columns are scores after 20 billion tokens, and the SFT columns are scores after 4 epochs.
+
+::: {.protocol-table}
+| Method | CPT: HumanEval pass@1 | CPT: three-benchmark mean | SFT: HumanEval pass@1 | SFT: three-benchmark mean |
+|---|---:|---:|---:|---:|
+| Full fine-tuning | 0.263 | 0.545 | 0.470 | 0.512 |
+| LoRA, $r=16$ | 0.162 | 0.635 | 0.358 | 0.652 |
+| LoRA, $r=64$ | 0.196 | 0.626 | 0.417 | 0.632 |
+| LoRA, $r=256$ | 0.224 | 0.617 | 0.498 | 0.631 |
+:::
+
+In continued pretraining, LoRA learned less than full fine-tuning at every rank. In supervised fine-tuning, rank 256 matched full fine-tuning and ranks 16 and 64 stayed below it. LoRA kept more of the general abilities in every setting. The study also measured the weight change produced by full fine-tuning and found its rank to be 10 to 100 times higher than the ranks commonly used for LoRA.
+
+The authors' recommendations:
+
+- LoRA for supervised fine-tuning, full fine-tuning for continued pretraining;
+- LoRA applied to all layer types of the Transformer, with rank 256 when memory allows;
+- $\alpha=2r$;
+- the highest learning rate between $10^{-5}$ and $5\times10^{-4}$ that trains stably.
+
+## What to remember
+
+1. **Prompting changes the input; training changes the weights.** CPT and SFT are the two training objectives, and LoRA is a way to train fewer parameters with either.
+2. **CPT is pretraining continued on new text.** Code Llama is Llama 2 plus 500 billion tokens of mostly code, and starting from the pretrained weights saved about half of the training.
+3. **New training erases earlier abilities.** In a 20-billion-token code run, HumanEval rose by 11 points and general benchmarks fell by 8, so the retained abilities are measured before the first update.
+4. **Replay, a lower learning rate, and a shorter run reduce forgetting.** Code Llama keeps 15% natural language in its mixture, and the Armenian experiments moved Belebele from 0.407 to 0.716 by changing the mixture and the learning rate.
+5. **SFT trains on input–response pairs and scores the response tokens.** The chat template defines the sequence, and the loss mask excludes the system, user, and tool turns.
+6. **SFT demonstrations teach how to respond.** OpenMathInstruct-2 raised an 8B base model to 67.8% on MATH, and its accuracy depended on solution format and question diversity more than on removing wrong solutions.
+7. **LoRA trains two small matrices for each weight matrix.** It cut GPT-3 checkpoints from 350 GB to 35 MB; in the Llama-2-7B study it learned less than full fine-tuning at low rank and forgot less at every rank.
+
+## References
